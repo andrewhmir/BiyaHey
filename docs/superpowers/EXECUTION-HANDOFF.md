@@ -98,14 +98,15 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
   imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
   `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-02):** Tasks 1–7 **complete and reviewed clean** — Task 1
+- **Plan 2 progress (2026-11-02):** Tasks 1–8 **complete and reviewed clean** — Task 1
   scaffold; Task 2 tokens/shell/sheet (`b2baea3`); Task 3 map (`afbd7a1`); Task 4 typed API
   client + debounced grouped search (`9942b4b`, fix round `693c5e4`); Task 5 route options
   over the map (`673df80`, fix round `0cd528b`); Task 6 trip detail + leg stops (`23b6d4a`,
-  `f67a23b`, fix round `03f995c`); Task 7 About-data provenance L2/L3 (`2af7bbb`, review
-  APPROVED — 0 Critical/Important, minors owned by Task 9/10). Root suite 270 passed /
-  4 skipped. **Task 8 (saved/recent/offline) is in flight.** Next per plan: 9 Taglish/a11y,
-  10 perf/E2E, 11 acceptance. Ledger has all rulings (R39–R71).
+  `f67a23b`, fix round `03f995c`); Task 7 About-data provenance L2/L3 (`2af7bbb`); Task 8
+  saved/recents/offline + installable PWA (`57efbe8`, `265c8e2`, fix round `9e1b51c` —
+  Workbox rules anchored per R72, PUV-only staleness per R73; root suite 335 passed /
+  4 skipped). **Task 9 (Taglish strings + a11y) is in flight.** Next per plan: 10 perf/E2E,
+  11 acceptance. Ledger has all rulings (R39–R74).
 - **Plan-2 contract addendum (R61, 2026-11-02):** MOTIS `leg.intermediateStops` is present
   (verified live: 8 stops on MRT-3 Cubao→Buendia) but the shared `LegDto` exposed no stops,
   so the trip-detail stop list (spec §11 screen 4) was impossible. Task 6 adds an **optional**
