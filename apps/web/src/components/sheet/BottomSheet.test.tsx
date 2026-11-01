@@ -211,6 +211,41 @@ describe('BottomSheet', () => {
     expect(screen.queryByRole('button', { name: /collapse sheet/i })).not.toBeInTheDocument();
   });
 
+  it('keeps focus on the expand handle when the collapse control unmounts at peek', async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet detents={[...DETENTS]} initial="expanded">
+        <p>content</p>
+      </BottomSheet>,
+    );
+
+    const collapse = screen.getByRole('button', { name: /collapse sheet/i });
+    await user.click(collapse); // expanded -> half
+    await user.click(collapse); // half -> peek; the focused control unmounts
+
+    expect(screen.queryByRole('button', { name: /collapse sheet/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /expand sheet/i })).toHaveFocus();
+  });
+
+  it('moves focus to the expand handle when Escape collapses the last detent', async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet detents={[...DETENTS]} initial="expanded">
+        <p>content</p>
+      </BottomSheet>,
+    );
+
+    const collapse = screen.getByRole('button', { name: /collapse sheet/i });
+    collapse.focus();
+    await user.keyboard('{Escape}'); // expanded -> half, control still mounted
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'half');
+    expect(collapse).toHaveFocus();
+
+    await user.keyboard('{Escape}'); // half -> peek, control unmounts
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'peek');
+    expect(screen.getByRole('button', { name: /expand sheet/i })).toHaveFocus();
+  });
+
   it.each(['peek', 'half', 'expanded'] as const)('has no axe violations at %s', async (initial) => {
     const { container } = render(
       <BottomSheet detents={[...DETENTS]} initial={initial}>

@@ -153,6 +153,8 @@ export function BottomSheet({
   const suppressClickRef = useRef(false);
   /** Set while a pushed history entry is guarding "back collapses the sheet". */
   const historyGuardRef = useRef(false);
+  /** Focus target when the collapse control unmounts at peek (focus order). */
+  const expandRef = useRef<HTMLButtonElement>(null);
 
   const detentName = names[index] ?? 'peek';
   const detentHeight = resolveHeight(resolvedDetents[index] ?? 'peek', viewportHeight, peekHeight);
@@ -165,6 +167,22 @@ export function BottomSheet({
     if (clamped === index) return;
     setIndex(clamped);
     onDetentChange?.(names[clamped]);
+  };
+
+  /**
+   * Collapse one detent and keep focus somewhere real.
+   *
+   * The collapse control only renders above peek, so collapsing to peek
+   * unmounts the focused element and the browser drops focus to `<body>`
+   * (Task 2 review minor, closed here as part of the Task 9 focus-order pass).
+   * Move focus to the always-rendered expand handle in that case.
+   */
+  const collapseOneDetent = () => {
+    const next = index - 1;
+    commitDetent(next);
+    if (next === 0) {
+      expandRef.current?.focus();
+    }
   };
 
   // Map padding is snapped, not live during a drag, so consumers do not thrash.
@@ -184,7 +202,7 @@ export function BottomSheet({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
-      commitDetent(index - 1);
+      collapseOneDetent();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -327,6 +345,7 @@ export function BottomSheet({
         {/* Balances the collapse control so the grip stays visually centred. */}
         {atPeek ? null : <span aria-hidden="true" className="size-12 shrink-0" />}
         <button
+          ref={expandRef}
           type="button"
           aria-label={t('sheet.expand')}
           aria-expanded={atExpanded}
@@ -351,7 +370,7 @@ export function BottomSheet({
             type="button"
             aria-label={t('sheet.collapse')}
             aria-controls={bodyId}
-            onClick={() => commitDetent(index - 1)}
+            onClick={collapseOneDetent}
             className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
           >
             <ChevronDown aria-hidden="true" className="size-5" />
