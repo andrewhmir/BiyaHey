@@ -98,4 +98,8 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
   imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
   `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-01 late):** Task 1 complete (scaffold); Task 2 implemented + fix round 1 committed (2baea3), scoped re-review in flight. Next: Task 3 (MapLibre map — resolve R49 registry blocker: try adjacent 6.x or fall back to 5.x; wire `--map-padding-bottom` into map padding; render straight leg polylines between from/to stops as v1 approximation unless Plan 1 DTO gains geometry). Tasks 4–11 follow the plan order; ledger has all rulings.
+- **Plan 2 progress (2026-11-01 late):** Task 1 complete (scaffold); Task 2 complete
+  (tokens/shell/sheet, fix round `b2baea3`); Task 3 (map) implemented (`7a97bb1`) with
+  fix round in flight (style-load gate + marker updates). Next per plan: Task 4 search, then
+  5 route options, 6 trip detail, 7 provenance, 8 saved/offline, 9 Taglish/a11y, 10 perf/E2E,
+  11 acceptance. Ledger has all rulings (R39-R55).
