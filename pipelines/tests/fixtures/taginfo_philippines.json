@@ -1,0 +1,41 @@
+{
+  "_snapshot": {
+    "kind": "synthesized taginfo snapshot - NOT a live query",
+    "description": "Small hand-written snapshot of the taginfo figures the research note recorded for the Philippines on 2026-10-31. It is committed so the coverage stage and its tests run offline; these numbers are a dated snapshot, not freshly queried statistics.",
+    "mirrored_from": "docs/research/ph-transit-datasets.md section 1, 'Live PTv2 coverage in PH (taginfo, 2026-10-31)'",
+    "source_urls": [
+      "https://taginfo.geofabrik.de/asia:philippines/",
+      "https://taginfo.geofabrik.de/asia:philippines/api/4/key/values?key=route",
+      "https://taginfo.geofabrik.de/asia:philippines/api/4/tag/stats?key=type&value=route",
+      "https://taginfo.geofabrik.de/asia:philippines/api/4/tag/stats?key=public_transport:version&value=2"
+    ],
+    "captured_on": "2026-11-01",
+    "notes": [
+      "Only the route=* values reported by the research note are listed; the residual 2851 - 2767 = 84 relations carry other route=* values and are omitted, so by_mode deliberately does not sum to route_relations.",
+      "ptv2 counts: 1930 relations tagged public_transport:version=2 out of 1940 relations carrying the tag at all (99.5%), so ptv2_share = 0.9948 is derived, not quoted.",
+      "JSON has no comment syntax, so these _snapshot fields carry the provenance that would otherwise be a file header."
+    ]
+  },
+  "data_until": "2026-10-31T21:22:57Z",
+  "type_route": {
+    "key": "type",
+    "value": "route",
+    "type": "relation",
+    "count": 2851
+  },
+  "route_values": [
+    { "value": "bus", "count": 1425 },
+    { "value": "ferry", "count": 1243 },
+    { "value": "share_taxi", "count": 76 },
+    { "value": "train", "count": 14 },
+    { "value": "light_rail", "count": 6 },
+    { "value": "subway", "count": 2 },
+    { "value": "jeepney", "count": 1 }
+  ],
+  "ptv2": {
+    "key": "public_transport:version",
+    "value": "2",
+    "relations": 1930,
+    "tagged_relations": 1940
+  }
+}

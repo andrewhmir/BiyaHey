@@ -1,0 +1,60 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Synthesized miniature "Philippines" extract used by pipelines/tests/test_osm.py.
+  It is hand-written, not downloaded: the OSM stage tests must run offline.
+
+  Geography (NCR bbox is 14.35..14.80 N / 120.90..121.15 E, ruling R5):
+    node 1  (14.60, 121.00)  inside the bbox, part of way 10
+    node 2  (14.61, 121.01)  inside the bbox, part of ways 10 and 11
+    node 3  (14.62, 121.02)  inside the bbox, referenced by no way (must survive)
+    node 4  (10.00, 122.00)  far outside (Visayas) — way 12 is entirely outside
+    node 5  (14.90, 121.20)  just outside the bbox — way 11 crosses the boundary,
+                             so node 5 must be kept to keep way 11 complete
+
+  Objects:
+    way 10  nodes 1,2   highway=primary          -> inside   -> kept
+    way 11  nodes 2,5   highway=secondary        -> crossing -> kept, node 5 kept
+    way 12  nodes 4     highway=track            -> outside  -> dropped
+    rel 100 type=route route=bus, ways 10, node 1 -> kept
+    rel 101 type=route route=ferry, way 12        -> dropped (all members outside)
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="1" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.60" lon="121.00">
+    <tag k="name" v="Cubao"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="2" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.61" lon="121.01"/>
+  <node id="3" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.62" lon="121.02"/>
+  <node id="4" version="1" timestamp="2026-10-31T21:23:00Z" lat="10.00" lon="122.00"/>
+  <node id="5" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.90" lon="121.20"/>
+
+  <way id="10" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="EDSA"/>
+  </way>
+  <way id="11" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="2"/>
+    <nd ref="5"/>
+    <tag k="highway" v="secondary"/>
+  </way>
+  <way id="12" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="4"/>
+    <tag k="highway" v="track"/>
+  </way>
+
+  <relation id="100" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="10" role=""/>
+    <member type="node" ref="1" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="name" v="Cubao-Baclaran"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="101" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="12" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+  </relation>
+</osm>
