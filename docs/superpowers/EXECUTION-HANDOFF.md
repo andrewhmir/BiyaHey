@@ -98,8 +98,14 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
   imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
   `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-01 late):** Task 1 complete (scaffold); Task 2 complete
-  (tokens/shell/sheet, fix round `b2baea3`); Task 3 (map) implemented (`7a97bb1`) with
-  fix round in flight (style-load gate + marker updates). Next per plan: Task 4 search, then
-  5 route options, 6 trip detail, 7 provenance, 8 saved/offline, 9 Taglish/a11y, 10 perf/E2E,
-  11 acceptance. Ledger has all rulings (R39-R55).
+- **Plan 2 progress (2026-11-02):** Tasks 1–4 **complete and reviewed clean** — Task 1
+  scaffold; Task 2 tokens/shell/sheet (`b2baea3`); Task 3 map (`afbd7a1`); Task 4 typed API
+  client + debounced grouped search (`9942b4b`, fix round `693c5e4`, scoped re-review
+  APPROVED — no open findings). Task 5 (route options screen) is in flight on base `693c5e4`.
+  Next per plan: 6 trip detail, 7 provenance, 8 saved/offline, 9 Taglish/a11y, 10 perf/E2E,
+  11 acceptance. Ledger has all rulings (R39–R55) and Task 5's pending R56.
+- **Durable-state hazard (fixed 2026-11-02):** both SDD `progress.md` ledgers had been
+  appended with cp1252-encoded em/en dashes (bytes `0x97`/`0x96` inside UTF-8 files), which
+  made them unreadable to UTF-8 readers. Both were byte-repaired (lone cp1252 bytes re-encoded
+  to UTF-8) and the whole repo (1171 text files) now scans clean. Append to ledgers/reports
+  with UTF-8 tooling only — never `Add-Content`/default-encoding appends.
