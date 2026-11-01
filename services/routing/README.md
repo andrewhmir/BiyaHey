@@ -32,15 +32,34 @@ docker compose up -d --wait routing   # --wait blocks until the healthcheck pass
 docker compose logs -f routing
 ```
 
-On first start the entrypoint runs `motis import` (graph preprocessing) into the
-container-local, writable `/var/lib/motis/data`, then runs `motis server` from
-that directory. On the Task 9 verification run the NCR import finished in about
-20 s and `docker compose up -d --wait routing` reported healthy 29 s after
-start; the compose healthcheck still allows a 600 s `start_period` for slower
-machines. The graph is discarded with the container, so a new container
-re-imports — that is intentional: it guarantees the served graph always matches
-the mounted inputs. After rebuilding the inputs, recreate the service:
-`docker compose down routing && docker compose up -d --wait routing`.
+Every start runs `motis import` (graph preprocessing) into the container-local,
+writable `/var/lib/motis/data` before running `motis server` from that
+directory. MOTIS records a completion hash for each import task in
+`/var/lib/motis/data/meta/*.json` and re-runs only the tasks whose inputs
+changed:
+
+- unchanged graph → `running tasks: []`, about 1.5 s, then the server starts;
+- fresh or interrupted graph → the missing tasks run (about 20 s for the NCR
+  inputs on the Task 9 verification machine; the compose healthcheck allows a
+  600 s `start_period` for slower machines);
+- rebuilt inputs → only the affected tasks re-run.
+
+The entrypoint deliberately does **not** use the presence of
+`/var/lib/motis/data/config.yml` as an "already imported" marker. MOTIS writes
+that file at the very start of the import, before any preprocessing, so an
+interrupted import (bad GTFS, OOM, reboot) leaves it behind. Using it as the
+marker made the next start skip the import and `motis server` exit with
+`[VERIFY FAIL] tt: no existing version found … please re-run import` — a crash
+loop under `restart: unless-stopped`. Running the import unconditionally closes
+that gap: an interrupted import is resumed on the next start, and no manual
+`down`/`up` is needed to recover.
+
+The graph is still container-local: a new container re-imports from scratch,
+which guarantees the served graph matches the mounted inputs. After rebuilding
+the inputs, `docker compose restart routing` (or
+`docker compose up -d --force-recreate routing`) is enough — the import detects
+the new hashes. The inputs must stay mounted: the import reads them on every
+start, so a missing `data/build` fails fast instead of serving a stale graph.
 
 To verify:
 
@@ -115,6 +134,7 @@ Docker service.
 | Symptom | Cause / fix |
 |---|---|
 | container exits with `path /data/... does not exist` | inputs missing — build them and check `data/build/osm/ncr.osm.pbf` and `data/build/gtfs/gtfs.zip` |
+| container logs `motis: import failed; refusing to serve…` then restarts | import failed (invalid/absent inputs); fix `data/build` — the service will not serve a stale graph |
 | healthcheck failing for the first several minutes | expected while `motis import` runs; watch `docker compose logs -f routing` |
 | `npm run smoke:routing` → `fetch failed` | service not up yet or not listening on 8080; check `docker compose ps` |
 | `geocode failed: no results for Cubao` | graph imported without the NCR extract (wrong `/data` mount) |
