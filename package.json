@@ -16,7 +16,8 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -b",
-    "test": "vitest run",
+    "test": "vitest run --tagsFilter=!integration",
+    "test:integration": "vitest run --tagsFilter=integration",
     "smoke:routing": "node scripts/motis-smoke.mjs",
     "stress:motis": "node scripts/motis-stress.mjs",
     "verify:phase1": "node scripts/verify-phase1.mjs",

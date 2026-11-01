@@ -23,9 +23,25 @@ export interface MapContext {
   curatedRouteIds: ReadonlySet<string>;
 }
 
+/**
+ * Raw (unrounded) duration in seconds of every mapped leg, keyed per itinerary.
+ *
+ * The guard must judge speed from the seconds MOTIS reported, not from the
+ * whole-minute `durationMin` it rounds to: a 1.4-minute leg would otherwise look
+ * 40% faster than it is. The property is symbol-keyed and non-enumerable, so it
+ * never appears in the HTTP response.
+ */
+const RAW_LEG_DURATION_SECONDS = Symbol('rawLegDurationSeconds');
+
+type ItineraryWithRawDurations = ItineraryDto & {
+  [RAW_LEG_DURATION_SECONDS]?: ReadonlyArray<number | undefined>;
+};
+
 interface MappedLeg {
   dto: LegDto;
   quote: FareQuote | null;
+  /** Raw MOTIS leg duration in seconds; drives the plausibility guard. */
+  durationSeconds?: number;
 }
 
 /** Route-id families whose first segment is the mode contract (R29). */
@@ -351,11 +367,13 @@ function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
     return undefined;
   }
 
-  const durationSeconds = asNumber(record.duration);
+  const declaredDurationSeconds = asNumber(record.duration);
+  const timestampDurationSeconds = (Date.parse(endTime) - Date.parse(startTime)) / 1000;
+  const rawDurationSeconds =
+    declaredDurationSeconds ??
+    (Number.isFinite(timestampDurationSeconds) ? timestampDurationSeconds : undefined);
   const durationMin =
-    durationSeconds !== undefined
-      ? Math.max(0, Math.round(durationSeconds / 60))
-      : Math.max(0, Math.round((Date.parse(endTime) - Date.parse(startTime)) / 60_000));
+    rawDurationSeconds === undefined ? 0 : Math.max(0, Math.round(rawDurationSeconds / 60));
 
   const chooseDeclaredFirst = mode === 'walk';
   const declared = declaredDistanceM(record);
@@ -427,7 +445,9 @@ function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
   if (signageLabel !== undefined) {
     dto.signage = `Look for: ${signageLabel}`;
   }
-  return { dto, quote };
+  return rawDurationSeconds === undefined
+    ? { dto, quote }
+    : { dto, quote, durationSeconds: rawDurationSeconds };
 }
 
 function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefined {
@@ -489,7 +509,16 @@ function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefin
     sources: [...sources],
     legs,
   };
-  return { ...draft, id: `it-${stableHash(itineraryKey(draft))}` };
+  const itinerary: ItineraryWithRawDurations = {
+    ...draft,
+    id: `it-${stableHash(itineraryKey(draft))}`,
+  };
+  // Attach the raw timings the guard needs without changing the served DTO.
+  Object.defineProperty(itinerary, RAW_LEG_DURATION_SECONDS, {
+    value: mappedLegs.map((leg) => leg.durationSeconds),
+    enumerable: false,
+  });
+  return itinerary;
 }
 
 /**
@@ -504,12 +533,18 @@ function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefin
  * no vehicle could run — a data defect, not a provincial-bus choice.
  *
  * A transit leg is implausible when its implied speed exceeds
- * {@link MAX_TRANSIT_SPEED_KMH}. 120 km/h is well above any scheduled NCR
- * movement (the fastest expressway/PNR stretches are ~90 km/h) but far below
- * the 2,100 km/h the bad `bus-61` shape implies. Long-distance provincial buses
- * are not pruned by this: a genuine 100 km run in 90 minutes (67 km/h) passes.
+ * {@link MAX_TRANSIT_SPEED_KMH}. 120 km/h is above the fastest legs the current
+ * feed keeps (~105 km/h on two golden corridors) and far below the 743-2,107 km/h
+ * the bad shapes imply. It is a gross-defect net, not proof of realism: the kept
+ * 104-105 km/h legs are themselves implausible for NCR traffic, and tightening the
+ * net depends on the GTFS rebuild recorded in the phase-1 acceptance runbook.
+ * Long-distance provincial buses are not pruned by this: a genuine 100 km run in
+ * 90 minutes (67 km/h) passes.
  *
- * `durationMin` is rounded to whole minutes, so a 0-minute leg is evaluated
+ * `durationMin` is rounded to whole minutes, so speed is judged from the raw
+ * MOTIS seconds attached by the mapper instead: a 1.4-minute leg would otherwise
+ * look 40% faster than it is and could be dropped for a legitimate ~90 km/h ride.
+ * DTOs without that metadata (hand-built fixtures) fall back to `durationMin`
  * with a 30-second floor: a sub-minute hop is not penalised, but a kilometre
  * claimed in "0 minutes" still is.
  *
@@ -520,7 +555,7 @@ function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefin
  */
 export const MAX_TRANSIT_SPEED_KMH = 120;
 
-/** Floor for a rounded-to-zero duration; see {@link MAX_TRANSIT_SPEED_KMH}. */
+/** Floor for a missing or rounded-to-zero duration; see {@link MAX_TRANSIT_SPEED_KMH}. */
 const MIN_EVALUATED_DURATION_MIN = 0.5;
 
 /** One transit leg that fails the plausibility guard. */
@@ -533,17 +568,29 @@ export interface ImplausibleLeg {
 }
 
 /**
+ * Duration used to judge implied speed, in minutes: the raw mapped seconds when
+ * present, else the rounded DTO minute with the sub-minute floor.
+ */
+function guardDurationMin(leg: LegDto, rawSeconds: number | undefined): number {
+  if (rawSeconds !== undefined && rawSeconds > 0) {
+    return rawSeconds / 60;
+  }
+  return Math.max(leg.durationMin, MIN_EVALUATED_DURATION_MIN);
+}
+
+/**
  * List the transit legs of `itinerary` whose implied speed exceeds
  * {@link MAX_TRANSIT_SPEED_KMH}. Walk legs are never flagged: walking distance
  * is a declared MOTIS value, not a route-shape artefact.
  */
 export function implausibleTransitLegs(itinerary: ItineraryDto): ImplausibleLeg[] {
   const flagged: ImplausibleLeg[] = [];
+  const rawDurations = (itinerary as ItineraryWithRawDurations)[RAW_LEG_DURATION_SECONDS];
   itinerary.legs.forEach((leg, legIndex) => {
     if (leg.mode === 'walk') {
       return;
     }
-    const evaluatedDurationMin = Math.max(leg.durationMin, MIN_EVALUATED_DURATION_MIN);
+    const evaluatedDurationMin = guardDurationMin(leg, rawDurations?.[legIndex]);
     const impliedSpeedKmh = leg.distanceM / 1000 / (evaluatedDurationMin / 60);
     if (impliedSpeedKmh > MAX_TRANSIT_SPEED_KMH) {
       flagged.push({

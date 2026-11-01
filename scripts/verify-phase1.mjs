@@ -10,7 +10,10 @@
  *
  * Checks, in order:
  *   1. pipeline tests            python -m pytest            (phase-1 pipeline)
- *   2. npm run ci                lint + typecheck + all vitest + validate:data
+ *   2. npm run ci                lint + typecheck + offline vitest (the
+ *                                `integration`-tagged live suites are filtered
+ *                                out) + validate:data, with API_URL/MOTIS_URL
+ *                                stripped from the child environment
  *   3. docker compose up -d --wait routing      (criterion 1: stack up)
  *   4. npm run smoke:routing                    (criterion 1: live router works)
  *   5. licence gate + coverage report           (criteria 8 and 7)
@@ -61,6 +64,20 @@ function pythonEnv(extra = {}) {
     PYTHONIOENCODING: 'utf-8',
     ...extra,
   };
+}
+
+/**
+ * Environment for checks that must not see a live stack.
+ *
+ * `npm run ci` already filters the `integration`-tagged suites out (root `test`
+ * script), but stripping the URLs here keeps the acceptance run hermetic even if
+ * the caller's shell exports them and a future script edit loses the filter.
+ */
+function hermeticEnv() {
+  const env = { ...process.env };
+  delete env.API_URL;
+  delete env.MOTIS_URL;
+  return env;
 }
 
 /** Run a command to completion, streaming its output to this process. */
@@ -218,7 +235,7 @@ async function main() {
   );
 
   // --------------------------------------------------------------- 2. npm ci
-  const ci = await npm('npm run ci', ['run', 'ci']);
+  const ci = await npm('npm run ci', ['run', 'ci'], { env: hermeticEnv() });
   record(
     'ci',
     ci.code === 0 ? 'PASS' : 'FAIL',

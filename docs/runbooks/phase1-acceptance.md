@@ -6,10 +6,13 @@ published GTFS feed, the Fastify API in front of it, the provenance registry, th
 fare engine, and the coverage report. The PWA (criteria 1's web service, 5's
 About-data screen and all of criterion 6) is Plan 2 by ruling R38.
 
-**Verdict 2026-11-01 (fix round 1): PARTIAL** — 5 criteria pass, 2 are partial for
+**Verdict 2026-11-01 (fix round 2, hermetic re-run): PARTIAL** — 5 criteria pass, 2 are partial for
 the Plan-2 reasons above, 1 is deferred to Plan 2, 0 fail. `npm run verify:phase1`
 exits 0 only because no criterion *and* no recorded check failed; the harness is
 fail-closed on the recorded pytest/ci/compose/smoke/gate/coverage/golden results.
+This run was made from a shell with `API_URL`/`MOTIS_URL` unset, and the `ci` step
+is now hermetic by construction (§2): with `API_URL` exported it still reports the
+same `106 passed | 4 skipped`.
 
 ## 1. Prerequisites
 
@@ -36,7 +39,7 @@ npm run verify:phase1
 | # | Command | Purpose |
 |---|---|---|
 | 1 | `pipelines\.venv\Scripts\python.exe -m pytest -q` (cwd `pipelines/`) | pipeline + coverage + alias tests |
-| 2 | `npm run ci` | lint, typecheck, all vitest, `validate:data` |
+| 2 | `npm run ci` | lint, typecheck, offline vitest (the `integration`-tagged live suites are filtered out), `validate:data` |
 | 3 | `docker compose up -d --wait routing` | router up and healthy |
 | 4 | `npm run smoke:routing` | live geocode + plan against MOTIS |
 | 5 | `python -m pipeline.cli licence-gate --manifest data\build\manifest.json` | criterion 8 |
@@ -50,33 +53,49 @@ records, so a failed pytest, `npm run ci`, compose, smoke, licence gate, coverag
 or golden suite always exits non-zero, even if the criteria table would not have
 mentioned it.
 
-The brief asked for the golden suite to be tagged `integration`. The pinned
-Vitest **5.0.5 has no tag/filter API**, so the suite is gated on `API_URL`
-instead: `npm test` / `npm run ci` skip it (offline), and `verify:phase1` sets
-`API_URL` to the API it starts. This is the same behaviour the tag was meant to
-buy, with the deviation documented here rather than inventing a tag Vitest
-ignores.
+The live suites are tagged `integration` (`services/api/test/golden.test.ts` and
+`services/api/test/motis-live.test.ts`) and the root `test` script runs
+`vitest run --tagsFilter=!integration`. Vitest 5.0.5 does support tags and
+`--tagsFilter`; the first fix round's claim that it had no tag/filter API was
+wrong and is retracted. Because the filter (not the `API_URL` gate) is what keeps
+CI offline, `npm test` / `npm run ci` skip both suites even when the caller's shell
+exports `API_URL` or `MOTIS_URL`; the acceptance harness also strips both variables
+from the `npm run ci` child environment as defence in depth. Run the live suites
+deliberately against a running stack:
+
+```powershell
+$env:API_URL = 'http://localhost:8787'    # API you started yourself
+$env:MOTIS_URL = 'http://localhost:8080'  # only the MOTIS suite needs this
+npm run test:integration                  # every integration-tagged test
+npx vitest run services/api/test/golden.test.ts   # the golden file alone
+```
+
+`test:integration` runs with the inverse filter, so Vitest reports every unit test
+as skipped: expect `4 passed | 106 skipped` with both URLs set, and
+`2 passed | 108 skipped` with only `API_URL` (the MOTIS suite stays env-skipped).
+The golden file alone runs `3 passed` — its offline shape test is untagged and runs
+because no filter is applied.
 
 Manual equivalents (useful when debugging one check):
 
 ```powershell
 $env:API_URL = 'http://localhost:8787'          # after starting the API yourself
 npx vitest run services/api/test/golden.test.ts  # 10 golden trips + 6 search queries
-$env:API_URL = 'http://localhost:8787'
 node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan probe
 ```
 
-## 3. Measured results (2026-11-01, fix round 1)
+## 3. Measured results (2026-11-01, fix round 2)
 
 | Check | Result |
 |---|---|
-| pytest | `145 passed in 8.79s` (10.4 s wall) |
-| `npm run ci` | lint + typecheck + 108 tests (104 passed, 4 live-gated skipped) + 6 data files validated (15.8 s) |
+| pytest | `145 passed in 5.97s` (7.1 s wall) |
+| `npm run ci` | lint + typecheck + **110 tests (106 passed, 4 `integration`-tagged skipped)** + 6 data files validated (18.4 s) |
+| hermeticity | with `API_URL` exported, `npm test` still reports **106 passed, 4 skipped**; the golden live tests run only through the explicit integration command |
 | `docker compose up -d --wait routing` | healthy in **1.1 s** (warm; cold re-import after republish **23.8 s**) |
 | `npm run smoke:routing` | `ok: 10 geocode hits, 10 transit itineraries` |
 | licence gate | `ok (4 datasets, ODbL-1.0 notice present, CC BY-SA 2.0 inventory attribution present in artifact, no blocked dataset)` |
 | coverage | **12/16 = 75.0 %**; missing T109, T112, T115, T420 |
-| golden suite | 10/10 trips within contract; p95 plan **196 ms**; p95 search **31 ms** |
+| golden suite | 10/10 trips within contract; p95 plan **183 ms**; p95 search **29 ms** |
 | plausibility guard | **55 impossible itineraries dropped** across the ten golden corridors (6 Cubao→Ayala, 15 Fairview→Manila, 15 Las Piñas→Makati, 12 Pasay→Taguig, 4 Cubao→Pasig, 3 Cubao→Manila); every returned itinerary passed the guard |
 | `/sources` | 10 registry rows served |
 
@@ -85,8 +104,8 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1 | `docker compose up` serves the full stack in < 20 min | **PARTIAL** | Router healthy in 1.1 s warm / 23.8 s after a republish (the healthcheck still allows 600 s for slower machines); API served on a free port; smoke 10/10. The web service does not exist yet (Plan 2), so the three-service clause cannot be fully measured. |
-| 2 | Grouped search, p95 ≤ 1.5 s | **PASS** | p95 **31 ms** over Cubao/Ayala/Novaliches/Fairview/Alabang/Divisoria; every response carried `stops`, `landmarks`, `routes`, `saved` groups and `partial: false`. The harness requires the golden suite exit code 0 **and** at least one recorded sample (`searchP95Ms > 0`), so a failed search test cannot read as PASS. |
-| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips met their minima (3 each) at the pinned 2026-11-02T08:00+08:00 departure; p95 **196 ms** (limit 1 500 ms). The BFF plausibility guard dropped 55 impossible options and the suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
+| 2 | Grouped search, p95 ≤ 1.5 s | **PASS** | p95 **29 ms** over Cubao/Ayala/Novaliches/Fairview/Alabang/Divisoria; every response carried `stops`, `landmarks`, `routes`, `saved` groups and `partial: false`. The harness requires the golden suite exit code 0 **and** at least one recorded sample (`searchP95Ms > 0`), so a failed search test cannot read as PASS. |
+| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips met their minima (3 each) at the pinned 2026-11-02T08:00+08:00 departure; p95 **183 ms** (limit 1 500 ms). The BFF plausibility guard dropped 55 impossible options and the suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
 | 4 | Fare engine ≥ 25 golden fare cases | **PASS** | 45 test cases in `packages/shared/src/fares.test.ts`, green under `npm run ci`: 2026-09-28 PUV matrix, 2026-03-23 LRT-2/MRT-3 50 % discount, LRT-1 exclusion, free-ride overrides, guards. The same criterion now also requires the pipeline pytest suite (145 passed), so a pytest failure fails criterion 4 and the process exit. |
 | 5 | Every itinerary `sources[]`; About-data lists every dataset; fares show `effective_from` | **PARTIAL** | Every golden itinerary was asserted to carry a non-empty `sources[]` and a dated `fare.effective_from`; `/sources` serves **10** datasets, and the API-side contract is covered by tests. The About-data *screen* is Plan 2 (there is no web app). |
 | 6 | PWA installable; offline saved trips + fare matrix | **DEFERRED** | Plan 2 (ruling R38). Not measured, not claimed. |
@@ -101,23 +120,23 @@ are the live observed min/max rounded outward. Every `minItineraries` is **3** a
 the suite asserts that value, so a corridor that cannot produce three plausible
 options is replaced, never lowered.
 
-All values below are from the 2026-11-01 fix-round run against the 494-route feed
+All values below are from the 2026-11-01 fix-round-2 run against the 494-route feed
 with the guard active. "Dropped" is the `x-biyahey-implausible-dropped` header: the
 number of unique itineraries removed because one of their transit legs implied more
 than 120 km/h.
 
 | Trip | Itineraries (min) | Modes seen | Fares observed (PHP) | MOTIS calls | Dropped | Plan ms |
 |---|---|---|---|---|---|---|
-| Cubao to Ayala | 4 (3) | mrt3, walk | 10.50 | 1 | 6 | 196 |
-| Marikina to Cubao | 12 (3) | bus, lrt2, walk | 17.16 / 23.00 / 28.20 | 1 | 0 | 82 |
-| Cubao to Manila | 11 (3) | bus, lrt2, walk | 24.00 / 25.93 / 26.90 | 1 | 3 | 152 |
-| Pasay to Monumento | 8 (3) | bus, lrt1, walk | 47.16 / 51.22 | 1 | 0 | 141 |
-| Cubao to Pasig | 4 (3) | bus, ferry, walk | 27.44 | 1 | 4 | 62 |
-| Pasay to Taguig | 12 (3) | bus, ferry, jeepney, walk | 61.29 / 84.52 / 89.37 | 1 | 12 | 157 |
-| Fairview to Manila | 10 (3) | bus, walk | 61.19 / 79.16 | 1 | 15 | 129 |
-| Novaliches to Cubao | 4 (3) | bus, walk | 104.46 | 1 | 0 | 97 |
-| Las Piñas to Makati | 4 (3) | bus, walk | 69.95 | 1 | 15 | 108 |
-| Cubao to Divisoria | 4 (3) | bus, walk | 51.92 | 1 | 0 | 129 |
+| Cubao to Ayala | 4 (3) | mrt3, walk | 10.50 | 1 | 6 | 150 |
+| Marikina to Cubao | 12 (3) | bus, lrt2, walk | 17.16 / 23.00 / 28.20 | 1 | 0 | 51 |
+| Cubao to Manila | 11 (3) | bus, lrt2, walk | 24.00 / 25.93 / 26.90 | 1 | 3 | 118 |
+| Pasay to Monumento | 8 (3) | bus, lrt1, walk | 47.16 / 51.22 | 1 | 0 | 115 |
+| Cubao to Pasig | 4 (3) | bus, ferry, walk | 27.44 | 1 | 4 | 94 |
+| Pasay to Taguig | 12 (3) | bus, ferry, jeepney, walk | 61.29 / 84.52 / 89.37 | 1 | 12 | 183 |
+| Fairview to Manila | 10 (3) | bus, walk | 61.19 / 79.16 | 1 | 15 | 136 |
+| Novaliches to Cubao | 4 (3) | bus, walk | 104.46 | 1 | 0 | 87 |
+| Las Piñas to Makati | 4 (3) | bus, walk | 69.95 | 1 | 15 | 118 |
+| Cubao to Divisoria | 4 (3) | bus, walk | 51.92 | 1 | 0 | 91 |
 
 Counts, modes and fares were identical across repeated probes; only latency moved.
 
@@ -138,11 +157,18 @@ the fare engine then prices kilometres no vehicle covers. Measured on the live f
 
 The BFF now drops any itinerary with a transit leg whose implied speed exceeds
 **`MAX_TRANSIT_SPEED_KMH = 120 km/h`** (`services/api/src/routing/map-itinerary.ts`,
-documented there with this rationale). The constant stays well above real scheduled
-NCR movement (~90 km/h worst case on expressways/PNR) and far below every observed
-defect, so a legitimate long-distance provincial bus (e.g. 100 km in 90 min,
-67 km/h) is **not** pruned. Walk legs are never flagged, and a leg rounded to
-`0 min` is evaluated with a 30-second floor rather than dividing by zero. A
+documented there with this rationale). 120 km/h is above the fastest legs this feed
+actually keeps — the two fastest kept legs are **105.4 km/h** (Las Piñas→Makati,
+`bus-23`, 14,054 m in 8 min) and **104.0 km/h** (Novaliches→Cubao, `bus-51`,
+31,190 m in 18 min) — and far below every observed defect (743–2,107 km/h), so kept
+legs of up to ~105 km/h remain under the guard. It is a gross-defect net, not a
+realism certificate: those two kept legs are themselves implausible for NCR traffic,
+so the guard leaves only ~15 km/h of headroom above them; tightening the net is the
+GTFS-rebuild work in §8. A legitimate long-distance provincial bus (e.g. 100 km in
+90 min, 67 km/h) is **not** pruned. Walk legs are never flagged. Speed is judged from
+the raw MOTIS leg duration in seconds, not the rounded whole-minute `durationMin`
+(a 1.4-minute leg would otherwise read 40 % faster than it is); a missing or zero
+duration is evaluated with a 30-second floor rather than dividing by zero. A
 geometry-to-straight-line ratio rule is deliberately not used: a route crossing the
 Pasig River can legitimately drive several kilometres between stops 1 km apart.
 

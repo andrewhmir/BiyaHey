@@ -6,13 +6,16 @@ import { implausibleTransitLegs, isPlausibleItinerary } from '../src/routing/map
 /**
  * Golden NCR acceptance suite (spec §3 criteria 2 and 3; Task 11).
  *
- * This is an integration test: it talks to a *running* stack over HTTP and is
- * skipped unless `API_URL` is set, so `npm test` / `npm run ci` stay offline.
- * `npm run verify:phase1` starts the API on a free port, sets `API_URL`, and
- * runs this file. Manual run:
+ * This is an integration test: it talks to a *running* stack over HTTP. It is
+ * tagged `integration`, so `npm test` / `npm run ci` filter it out (Vitest
+ * `--tagsFilter=!integration`; see `vitest.config.ts`) and no ambient `API_URL`
+ * can make CI depend on a live stack. It is also skipped unless `API_URL` is
+ * set. `npm run verify:phase1` starts the API on a free port, sets `API_URL`,
+ * and runs this file. Manual run:
  *
  *   $env:API_URL = 'http://localhost:8787'
- *   npx vitest run services/api/test/golden.test.ts
+ *   npm run test:integration            # every integration-tagged suite
+ *   npx vitest run services/api/test/golden.test.ts   # this file only
  *
  * What it asserts, per trip in `golden/routes.json`:
  *   - at least `minItineraries` itineraries (the live count the corridor really
@@ -115,7 +118,7 @@ it('defines exactly ten golden trips', () => {
   }
 });
 
-describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => {
+describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', { tags: ['integration'] }, () => {
   it(
     'plans every golden trip within its contract',
     async () => {
@@ -137,14 +140,19 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => 
 
         expect(response.status, `${trip.name}: POST /plan status`).toBe(200);
         const body = (await response.json()) as PlanResponse;
-        const motisCalls = Number(response.headers.get('x-biyahey-motis-calls'));
-        const implausibleDropped = Number(response.headers.get('x-biyahey-implausible-dropped'));
-        expect(Number.isInteger(motisCalls), `${trip.name}: x-biyahey-motis-calls header`).toBe(true);
-        expect(motisCalls, `${trip.name}: fan-out made at least one call`).toBeGreaterThanOrEqual(1);
+        const motisCallsHeader = response.headers.get('x-biyahey-motis-calls') ?? '';
+        const implausibleDroppedHeader =
+          response.headers.get('x-biyahey-implausible-dropped') ?? '';
+        // `Number(null)` is 0, so a missing header would otherwise read as a
+        // perfectly valid zero-drop count. Assert the header text itself first.
+        expect(motisCallsHeader, `${trip.name}: x-biyahey-motis-calls header`).toMatch(/^\d+$/);
         expect(
-          Number.isInteger(implausibleDropped),
+          implausibleDroppedHeader,
           `${trip.name}: x-biyahey-implausible-dropped header`,
-        ).toBe(true);
+        ).toMatch(/^\d+$/);
+        const motisCalls = Number(motisCallsHeader);
+        const implausibleDropped = Number(implausibleDroppedHeader);
+        expect(motisCalls, `${trip.name}: fan-out made at least one call`).toBeGreaterThanOrEqual(1);
         expect(
           implausibleDropped,
           `${trip.name}: implausible-drop count is non-negative`,

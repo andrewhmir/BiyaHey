@@ -8,6 +8,7 @@ import {
   decodePolyline,
   implausibleTransitLegs,
   isPlausibleItinerary,
+  mapPlanItineraries,
   modeFromRouteId,
   polylineLengthM,
 } from '../src/routing/map-itinerary.js';
@@ -120,6 +121,57 @@ describe('plausibility guard', () => {
 
   it('never flags a walk leg', () => {
     expect(isPlausibleItinerary(transitItinerary(10_000, 1, 'walk'))).toBe(true);
+  });
+});
+
+describe('plausibility guard raw durations', () => {
+  const context = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+  };
+
+  /** Map one synthetic 2.1 km bus leg that really takes `durationSeconds`. */
+  function mappedPlan(durationSeconds: number): ItineraryDto | undefined {
+    const startMs = Date.parse('2026-11-02T08:00:00+08:00');
+    const startTime = new Date(startMs).toISOString();
+    const endTime = new Date(startMs + durationSeconds * 1_000).toISOString();
+    return mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            duration: durationSeconds,
+            legs: [
+              {
+                mode: 'BUS',
+                routeId: 'gtfs_bus-61',
+                from: { name: 'A', lat: 14.6, lon: 121.0 },
+                to: { name: 'B', lat: 14.7, lon: 121.1 },
+                startTime,
+                endTime,
+                duration: durationSeconds,
+                distance: 2_100,
+              },
+            ],
+          },
+        ],
+      },
+      context,
+    )[0];
+  }
+
+  it('judges the raw 84 s, not the rounded 1 min (90 km/h kept, not 126 dropped)', () => {
+    const itinerary = mappedPlan(84);
+    expect(itinerary).toBeDefined();
+    // The served DTO carries only the rounded minute, which would read 126 km/h.
+    expect(itinerary?.legs[0]?.durationMin).toBe(1);
+    expect(isPlausibleItinerary(itinerary!)).toBe(true);
+  });
+
+  it('still drops the same 2.1 km claimed in 60 s (126 km/h)', () => {
+    const itinerary = mappedPlan(60);
+    expect(itinerary).toBeDefined();
+    expect(isPlausibleItinerary(itinerary!)).toBe(false);
   });
 });
 
