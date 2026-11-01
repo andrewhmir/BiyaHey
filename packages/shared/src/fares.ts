@@ -12,6 +12,10 @@ const PUV_SOURCE_ID: SourceId = 'ltfrb-fares';
 const RAIL_SOURCE_ID: SourceId = 'rail-fares';
 const FERRY_SOURCE_ID: SourceId = 'mmda-ferry';
 
+// The ferry is an MMDA service with no LTFRB effectivity date: 2026-11-01 is
+// when the free-ride terms were last verified (row-level override, R25).
+const FERRY_EFFECTIVE_FROM = '2026-11-01';
+
 type Confidence = FareQuote['confidence'];
 type BreakdownLine = FareQuote['breakdown'][number];
 
@@ -185,7 +189,7 @@ const FARE_RULES: Record<FareMode, FareRule> = {
     kind: 'ferry',
     label: 'Pasig River Ferry (free)',
     fare: 0,
-    effectiveFrom: PUV_EFFECTIVE_FROM,
+    effectiveFrom: FERRY_EFFECTIVE_FROM,
     sourceId: FERRY_SOURCE_ID,
     confidence: 'official',
   },
@@ -244,13 +248,20 @@ function distanceQuote(rule: DistanceFareRule, distanceKm: number): FareQuote {
 function railBandQuote(rule: RailBandRule, distanceKm: number): FareQuote {
   // Ruling R4: prorate the published band to whole pesos, then apply the
   // line discount. 8.2 km on MRT-3 → ₱20 published → ₱10 charged.
+  // Ruling R25: the band ends at the last station, so a leg longer than the
+  // line is clamped to `lengthKm` instead of being prorated past the maximum.
+  const clamped = distanceKm > rule.lengthKm;
+  const pricedKm = Math.min(distanceKm, rule.lengthKm);
   const published = Math.round(
-    rule.minFare + ((rule.maxFare - rule.minFare) * distanceKm) / rule.lengthKm,
+    rule.minFare + ((rule.maxFare - rule.minFare) * pricedKm) / rule.lengthKm,
   );
   const provisional = rule.provisional ? ', provisional band' : '';
+  const distanceLabel = clamped
+    ? `${formatKm(rule.lengthKm)} km line maximum, clamped from ${formatKm(distanceKm)} km`
+    : `${formatKm(distanceKm)} km`;
   const breakdown: BreakdownLine[] = [
     {
-      label: `${rule.label} published fare (${formatKm(distanceKm)} km${provisional})`,
+      label: `${rule.label} published fare (${distanceLabel}${provisional})`,
       amount: published,
     },
   ];
@@ -317,7 +328,10 @@ function freeRideQuote(rule: BaseFareRule): FareQuote {
  */
 export function quoteFareForLeg(input: LegFareInput): FareQuote {
   assertDistance(input.distanceKm);
-  const rule = FARE_RULES[input.mode] as FareRule | undefined;
+  // Own-property check (R25): `FARE_RULES[mode] === undefined` would let
+  // `toString`, `constructor` and `__proto__` through to a TypeError instead
+  // of the documented RangeError.
+  const rule = Object.hasOwn(FARE_RULES, input.mode) ? FARE_RULES[input.mode] : undefined;
   if (rule === undefined) {
     throw new RangeError(`Unknown fare mode: ${String(input.mode)}`);
   }

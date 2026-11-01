@@ -13,6 +13,9 @@ interface FareRow {
   multiplier?: number;
   fare?: number;
   source_id?: string;
+  /** Row-level overrides of the matrix header (ruling R25). */
+  effective_from?: string;
+  source_url?: string;
 }
 
 interface FareMatrixYaml {
@@ -213,6 +216,20 @@ describe('rail fares', () => {
     expect(quoteFareForLeg({ mode: 'mrt3', distanceKm: 16.9 }).amount).toBe(14);
   });
 
+  it('clamps a rail distance to the line length so the quote never exceeds the band maximum', () => {
+    // Ruling R25: the published band ends at the last station, so anything
+    // past `lengthKm` is clamped instead of prorated beyond the maximum.
+    const atEnd = quoteFareForLeg({ mode: 'mrt3', distanceKm: 16.9 });
+    const oneMetreOver = quoteFareForLeg({ mode: 'mrt3', distanceKm: 16.901 });
+    const farOver = quoteFareForLeg({ mode: 'mrt3', distanceKm: 20 });
+    expect(atEnd.amount).toBe(14);
+    expect(oneMetreOver.amount).toBe(14);
+    expect(farOver.amount).toBe(14);
+    expect(farOver.breakdown[0]?.amount).toBe(28);
+    expect(farOver.breakdown[0]?.label).toContain('clamped from 20 km');
+    expect(quoteFareForLeg({ mode: 'lrt2', distanceKm: 20 }).amount).toBe(14);
+  });
+
   it('charges LRT-2 with its provisional band and marks it as such', () => {
     const quote = quoteFareForLeg({ mode: 'lrt2', distanceKm: 13.6 });
     expect(quote.amount).toBe(14);
@@ -256,7 +273,9 @@ describe('ferry and free-ride overrides', () => {
     expect(quote.amount).toBe(0);
     expect(quote.currency).toBe('PHP');
     expect(quote.confidence).toBe('official');
-    expect(quote.effective_from).toBe('2026-09-28');
+    // Row-level override (ruling R25): MMDA last verified the free service on
+    // 2026-11-01, which is *not* the LTFRB matrix date in the YAML header.
+    expect(quote.effective_from).toBe('2026-11-01');
     expect(quote.source_id).toBe('mmda-ferry');
     expect(quote.breakdown).toEqual([{ label: 'Pasig River Ferry (free)', amount: 0 }]);
   });
@@ -280,6 +299,27 @@ describe('ferry and free-ride overrides', () => {
     });
     expect(quote.amount).toBe(0);
     expect(quote.confidence).toBe('estimated');
+  });
+});
+
+describe('input guards', () => {
+  it('rejects prototype keys as unknown modes instead of throwing a TypeError', () => {
+    for (const mode of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      expect(() => quoteFareForLeg({ mode: mode as FareMode, distanceKm: 1 }), mode).toThrow(
+        RangeError,
+      );
+      expect(() => quoteFareForLeg({ mode: mode as FareMode, distanceKm: 1 }), mode).toThrow(
+        /Unknown fare mode/,
+      );
+    }
+  });
+
+  it('rejects negative, NaN and infinite distances', () => {
+    for (const distanceKm of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => quoteFareForLeg({ mode: 'jeepney', distanceKm }), String(distanceKm)).toThrow(
+        RangeError,
+      );
+    }
   });
 });
 
@@ -394,7 +434,12 @@ describe('data/fares files stay in sync with the engine', () => {
       }
       const quote = quoteFareForLeg({ mode, distanceKm: 12, routeFare: 100 });
       expect(quote.amount, `amount for ${key}`).toBe(expectedRowAmount(row));
-      expect(quote.effective_from, `effective_from for ${key}`).toBe(matrix.effective_from);
+      // Row-level overrides (R25) must reach the quote; other rows inherit the
+      // matrix header.
+      expect(quote.effective_from, `effective_from for ${key}`).toBe(
+        row.effective_from ?? matrix.effective_from,
+      );
+      expect(quote.source_id, `source_id for ${key}`).toBe(row.source_id ?? matrix.source_id);
     }
   });
 
@@ -432,5 +477,15 @@ describe('data/fares files stay in sync with the engine', () => {
     expect(lrt2?.needs_verification).toBe(true);
     const quote = quoteFareForLeg({ mode: 'lrt2', distanceKm: 13.6 });
     expect(quote.breakdown[0]?.label).toContain('provisional band');
+  });
+
+  it('honours the ferry row-level provenance overrides', () => {
+    const ferryRow = matrix.fares.find((row) => row.mode === 'ferry');
+    expect(ferryRow?.source_id).toBe('mmda-ferry');
+    expect(ferryRow?.effective_from).toBe('2026-11-01');
+    expect(ferryRow?.source_url).toBe('https://mmda.gov.ph');
+    const quote = quoteFareForLeg({ mode: 'ferry', distanceKm: 3 });
+    expect(quote.source_id).toBe(ferryRow?.source_id);
+    expect(quote.effective_from).toBe(ferryRow?.effective_from);
   });
 });

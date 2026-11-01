@@ -61,11 +61,12 @@ fares:
     class: "premium"
     multiplier: 1.15
 
-  # Pasig River Ferry is free; the row keeps the MMDA source id so its quote
-  # carries the right provenance instead of inheriting ltfrb-fares. MMDA
-  # publishes no fare-effectivity date, so the quote inherits this matrix's
-  # effective_from (2026-09-28) as the date these terms were last checked.
+  # Pasig River Ferry is free; the row overrides source_id, effective_from and
+  # source_url because MMDA, not LTFRB, publishes its terms. 2026-11-01 is the
+  # date those free-ride terms were last verified, not the LTFRB matrix date.
   - mode: "ferry"
     class: "pasig-river"
     fare: 0
     source_id: "mmda-ferry"
+    effective_from: "2026-11-01"
+    source_url: "https://mmda.gov.ph"
