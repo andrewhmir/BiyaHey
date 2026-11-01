@@ -1,5 +1,11 @@
-import type { SearchGroup, SearchResponse, SearchResultDto } from '@biyahey/shared';
+import type {
+  PlanResponse,
+  SearchGroup,
+  SearchResponse,
+  SearchResultDto,
+} from '@biyahey/shared';
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
+import planCubaoAyalaRaw from '../fixtures/plan-cubao-ayala.json?raw';
 
 // MSW fixtures for `GET /search` (R40/R50). Bodies mirror the BFF's real
 // contract: grouped DTOs from `@biyahey/shared`, `distanceM` in whole metres,
@@ -156,4 +162,49 @@ export const searchSlowHandler = http.get('*/search', async () => {
   return HttpResponse.json(ayalaSearchResponse);
 });
 
-export const handlers: HttpHandler[] = [searchSuccessHandler];
+// --- `POST /plan` fixtures and handlers (Task 5) ---------------------------
+
+/**
+ * The Cubao → Ayala plan fixture (three fare-forward options sorted by ETA).
+ *
+ * Stored as checked-in JSON and imported with Vite's `?raw` suffix so the test
+ * shares the exact contract shape the BFF promises (`PlanResponse`, including
+ * `fare.effective_from` and per-itinerary `sources[]`) without enabling
+ * `resolveJsonModule` in the app's TypeScript project.
+ */
+export const planCubaoAyalaResponse: PlanResponse = JSON.parse(
+  planCubaoAyalaRaw,
+) as PlanResponse;
+
+/** Default `POST /plan` handler: the three-option Cubao → Ayala plan. */
+export const planSuccessHandler = http.post('*/plan', () =>
+  HttpResponse.json(planCubaoAyalaResponse),
+);
+
+/** 200 with zero itineraries: the honest "Walang ruta" state (R41). */
+export const planEmptyHandler = http.post('*/plan', () =>
+  HttpResponse.json({
+    v: 1,
+    itineraries: [],
+    sources: planCubaoAyalaResponse.sources,
+  } satisfies PlanResponse),
+);
+
+/** A 500 in the BFF's documented error envelope. */
+export const planErrorHandler = http.post('*/plan', () =>
+  HttpResponse.json(
+    { error: { code: 'INTERNAL_ERROR', message: 'Unexpected server error' } },
+    { status: 500 },
+  ),
+);
+
+/** The transport failed before a response arrived (offline simulation). */
+export const planNetworkErrorHandler = http.post('*/plan', () => HttpResponse.error());
+
+/** A response that never arrives, for the delayed-skeleton assertion. */
+export const planPendingHandler = http.post('*/plan', async () => {
+  await delay('infinite');
+  return HttpResponse.json(planCubaoAyalaResponse);
+});
+
+export const handlers: HttpHandler[] = [searchSuccessHandler, planSuccessHandler];
