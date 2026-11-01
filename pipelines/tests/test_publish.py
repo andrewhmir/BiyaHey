@@ -38,8 +38,11 @@ from pipeline.publish import (
     DEFAULT_ALIASES,
     FEED_END,
     FEED_START,
+    UNSUPPORTED_RAIL_ROUTE_IDS,
+    exclude_unsupported_routes,
     merge_curated_routes,
     run_stage_publish,
+    unsupported_route_reason,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -189,12 +192,58 @@ def test_build_report_counts_curated_and_osm_coverage(published):
 
     assert report["osm_routes_total"] == 5
     assert report["oms_routes_total"] == report["osm_routes_total"]  # brief's spelling
-    assert report["osm_routes_skipped"] == 1  # bus-b2: dangling way only
+    # bus-b2 (dangling shape) and the non-PRFS fixture ferry are the two
+    # relations the feed does not carry; the ferry is excluded by policy before
+    # the builder sees it (final-review item 7).
+    assert report["osm_routes_skipped"] == 2
     assert report["oms_routes_skipped"] == report["osm_routes_skipped"]
+    assert report["excluded_routes_total"] == 1
+    assert report["excluded_routes"] == [
+        {
+            "route_id": "ferry-pasig",
+            "reason": "unsupported ferry: not the free MMDA Pasig River Ferry (PRFS)",
+        }
+    ]
 
     assert report["blocked_datasets_checked"] is True
     assert report["feed"]["start_date"] == FEED_START.isoformat()
     assert report["feed"]["end_date"] == FEED_END.isoformat()
+
+
+def test_mode_gate_excludes_unsupported_rail_and_ferry_families():
+    """Final-review item 7: only priceable rail/ferry families reach the feed."""
+    for route_id in ("rail-ss", "rail-mnc", "rail-mrt9"):
+        assert unsupported_route_reason(route_id) is not None, route_id
+    assert "rail-ss" in UNSUPPORTED_RAIL_ROUTE_IDS
+    for route_id in ("ferry-manilacoron", "ferry-maniladavaocitygeneralsantosiloilomanila"):
+        assert "not the free MMDA" in (unsupported_route_reason(route_id) or ""), route_id
+
+    # Priceable families stay untouched.
+    for route_id in (
+        "rail-1",
+        "rail-2",
+        "rail-3",
+        "rail-mrt3",
+        "bus-b1",
+        "jeep-t101",
+        "uv-c20",
+        "ferry-prfsguadelupeescolta",
+    ):
+        assert unsupported_route_reason(route_id) is None, route_id
+
+    prices = [
+        RouteDef(route_id="bus-b1", route_type=3, name="B1"),
+        RouteDef(route_id="rail-ss", route_type=2, name="PNR"),
+        RouteDef(route_id="ferry-prfsescoltapinagbuhatan", route_type=4, name="PRFS"),
+        RouteDef(route_id="ferry-manilacoron", route_type=4, name="Manila-Coron"),
+    ]
+    kept, excluded = exclude_unsupported_routes(prices)
+    assert [route.route_id for route in kept] == [
+        "bus-b1",
+        "ferry-prfsescoltapinagbuhatan",
+    ]
+    assert [entry["route_id"] for entry in excluded] == ["rail-ss", "ferry-manilacoron"]
+    assert all(entry["reason"] for entry in excluded)
 
 
 def test_curated_routes_are_lowercased_and_merged_case_insensitively(published):

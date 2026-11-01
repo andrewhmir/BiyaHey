@@ -37,6 +37,8 @@ Build-report contract
     landmark_aliases            {path, total, used: [...], invalid: [...]}
     osm_routes_total            n
     osm_routes_skipped          n
+    excluded_routes_total       n
+    excluded_routes             [{route_id, reason}]
     blocked_datasets_checked    true
 
 plus per-route records (``curated_routes``) that preserve each inventory row's
@@ -116,9 +118,12 @@ __all__ = [
     "DEFAULT_SOURCES",
     "FEED_END",
     "FEED_START",
+    "UNSUPPORTED_RAIL_ROUTE_IDS",
+    "exclude_unsupported_routes",
     "merge_curated_routes",
     "normalise_curated_route",
     "run_stage_publish",
+    "unsupported_route_reason",
 ]
 
 #: Service window of the generated feed. Pinned to the 2026-11 v1 data vintage
@@ -142,6 +147,55 @@ USED_SOURCE_IDS: Tuple[str, ...] = (
     "ltfrb-fares",
     "mmda-ferry",
 )
+
+#: Rail lines present in the OSM extract that v1 has no fare mode for.
+#: ``rail-ss``/``rail-mnc`` are PNR services (no published v1 fare table) and
+#: ``rail-mrt9`` is the proposed Metro Manila Subway; the BFF would have to drop
+#: every itinerary that touched them, so the publish stage keeps them out of the
+#: feed and reports the exclusion instead of shipping unpriceable options.
+UNSUPPORTED_RAIL_ROUTE_IDS = frozenset({"rail-ss", "rail-mnc", "rail-mrt9"})
+
+
+def unsupported_route_reason(route_id: str) -> Optional[str]:
+    """Return why ``route_id`` is excluded from the v1 feed, or ``None``.
+
+    The mode gate mirrors the BFF adapter: only rail lines with a fare mode
+    (``rail-1/2/3``) and only the MMDA Pasig River Ferry (``ferry-prfs…``) are
+    priceable. Long-distance ferries (``ferry-manilacoron``,
+    ``ferry-maniladavao…``) are real services but have no v1 fare source, and
+    pricing them as the free PRFS ferry would be false.
+    """
+    normalized = route_id.strip().lower()
+    if normalized in UNSUPPORTED_RAIL_ROUTE_IDS:
+        return "unsupported rail line: no v1 fare mode (PNR or proposed MRT-9)"
+    if normalized.startswith("ferry-") and not normalized.startswith("ferry-prfs"):
+        return "unsupported ferry: not the free MMDA Pasig River Ferry (PRFS)"
+    return None
+
+
+def exclude_unsupported_routes(
+    routes: Sequence[RouteDef],
+) -> Tuple[List[RouteDef], List[Dict[str, str]]]:
+    """Split OSM routes into (publishable, excluded) with one reason per exclusion.
+
+    Excluding before :func:`pipeline.gtfs.build_feed` means an unpriceable
+    itinerary can never reach MOTIS, and the build report names exactly what was
+    left out (final-review item 7). The order of the kept routes is preserved.
+    The excluded list is deduplicated by route id: OSM often maps one service to
+    several relations (``rail-mnc`` appears twice in the NCR extract), and the
+    policy exclusion applies to the id, not to each relation row.
+    """
+    kept: List[RouteDef] = []
+    excluded: List[Dict[str, str]] = []
+    excluded_ids: set = set()
+    for route in routes:
+        reason = unsupported_route_reason(route.route_id)
+        if reason is None:
+            kept.append(route)
+        elif route.route_id not in excluded_ids:
+            excluded_ids.add(route.route_id)
+            excluded.append({"route_id": route.route_id, "reason": reason})
+    return kept, excluded
 
 
 def normalise_curated_route(route: RouteDef) -> RouteDef:
@@ -281,7 +335,12 @@ def run_stage_publish(
     )
     inventory = load_inventory(inventory_path)
     resolved_landmarks = resolve_landmarks(inventory, stop_lookup, alias_lookup)
-    osm_routes = list(iter_route_relations(pbf))
+    # Final-review item 7 / ruling-adjacent mode gate: keep route families v1
+    # cannot price out of the feed, and report each exclusion. The BFF also
+    # guards this at response time (defence in depth), but shipping the routes
+    # would silently turn their corridors into dropped-itinerary holes.
+    all_osm_routes = list(iter_route_relations(pbf))
+    osm_routes, excluded_routes = exclude_unsupported_routes(all_osm_routes)
 
     # R29 says OSM wins a collision "because measured geometry beats a
     # transcription". An OSM relation the GTFS builder cannot write has no
@@ -421,8 +480,8 @@ def run_stage_publish(
         if normalised in used_names
     ]
 
-    osm_total = len(osm_routes)
-    osm_skipped = len({route.route_id for route in osm_routes} - written_route_ids)
+    osm_total = len(all_osm_routes)
+    osm_skipped = len({route.route_id for route in all_osm_routes} - written_route_ids)
 
     report_path = out_dir / "build-report.json"
     report: Dict[str, Any] = {
@@ -455,6 +514,10 @@ def run_stage_publish(
         "oms_routes_total": osm_total,  # literal spelling of the Task 8 brief
         "osm_routes_skipped": osm_skipped,
         "oms_routes_skipped": osm_skipped,  # literal spelling of the Task 8 brief
+        # Final-review item 7: name every route family kept out of the feed so a
+        # missing corridor is a documented data gap, not a silent absence.
+        "excluded_routes_total": len(excluded_routes),
+        "excluded_routes": excluded_routes,
         "blocked_datasets_checked": True,
         "datasets_used": [dataset["id"] for dataset in manifest["datasets"]],
         "attributions": manifest["attributions"],
