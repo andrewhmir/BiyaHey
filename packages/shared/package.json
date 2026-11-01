@@ -1,0 +1,23 @@
+{
+  "name": "@biyahey/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared domain types and route-planner utilities for BiyaHey!",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ../.."
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
