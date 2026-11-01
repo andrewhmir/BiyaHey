@@ -94,11 +94,11 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 | `npm run ci` | lint + typecheck + **138 tests (134 passed, 4 `integration`-tagged skipped)** + 6 data files validated + `check:fares` fresh (18–20 s) |
 | `check:fares` | `ltfrb-puv-2026-09-28 effective 2026-09-28 — fresh on 2026-11-01 (threshold 183 days)` |
 | hermeticity | the live golden suites stay out of `ci` through Vitest's `integration` tag; the harness also strips `API_URL`/`MOTIS_URL` from the child env |
-| `docker compose up -d --wait routing api` | both services healthy in **1.9 s** (warm; cold re-import after republish designed for the 600 s healthcheck) |
+| `docker compose up -d --wait routing api` | both services healthy in **1.4–1.9 s** (warm; cold re-import after republish designed for the 600 s healthcheck) |
 | `npm run smoke:routing` | `ok: 10 geocode hits, 10 transit itineraries` |
 | licence gate | `ok (4 datasets, ODbL-1.0 notice present, CC BY-SA 2.0 inventory attribution present in artifact, no blocked dataset)` |
 | coverage | **12/16 = 75.0 %**; missing T109, T112, T115, T420 |
-| golden suite | 10/10 trips within contract; p95 plan **185 ms**; p95 search **30 ms**; every corridor ≤ 5 itineraries (the spec §9 cap) |
+| golden suite | 10/10 trips within contract; p95 plan **185–208 ms** and p95 search **30–39 ms** across two runs; every corridor ≤ 5 itineraries (the spec §9 cap) |
 | plausibility guard | **62 impossible itineraries dropped** across the ten golden corridors (6 Cubao→Ayala, 6 Cubao→Manila, 4 Cubao→Pasig, 12 Pasay→Taguig, 15 Fairview→Manila, 15 Las Piñas→Makati, 4 Cubao→Divisoria); every returned itinerary passed the guard |
 | `/sources` | 10 registry rows served |
 | gtfs-validator | **not executed locally** — the pinned CLI jar is downloaded and verified, but this host's JVM fails to load the validator's classpath resources (zero GTFS tables, every file `unknown_file`, on our feed **and** on the canonical GTFS sample feed). CI job added; recorded as a known gap (§8). |
@@ -108,8 +108,8 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1 | `docker compose up` serves the full stack in < 20 min | **PARTIAL** | `docker compose up -d --wait routing api` brought **routing + api** healthy in 1.9 s warm (23.8 s after a republish; the healthcheck still allows 600 s for slower machines); smoke 10/10. The api service is on `:8787` with `/health`, `/search`, `/plan`, `/sources`, `/fares/*` and the `:5173` CORS allowlist (§9). The web service does not exist yet (Plan 2), so the three-service clause cannot be fully measured. |
-| 2 | Grouped search, p95 ≤ 1.5 s | **PASS** | p95 **30 ms** over Cubao/Ayala/Novaliches/Fairview/Alabang/Divisoria; every response carried `stops`, `landmarks`, `routes`, `saved` groups and `partial: false`; a `near` probe returns `distanceM` on every row. The harness requires the golden suite exit code 0 **and** at least one recorded sample (`searchP95Ms > 0`), so a failed search test cannot read as PASS. |
-| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips returned 4–5 itineraries (spec §9 cap: ≥ 3 and ≤ 5) at the pinned 2026-11-02T08:00+08:00 departure; p95 **185 ms** (limit 1 500 ms). The BFF plausibility guard dropped 62 impossible options and the suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
+| 2 | Grouped search, p95 ≤ 1.5 s | **PASS** | p95 **30–39 ms** across two runs over Cubao/Ayala/Novaliches/Fairview/Alabang/Divisoria; every response carried `stops`, `landmarks`, `routes`, `saved` groups and `partial: false`; a `near` probe returns `distanceM` on every row. The harness requires the golden suite exit code 0 **and** at least one recorded sample (`searchP95Ms > 0`), so a failed search test cannot read as PASS. |
+| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips returned 4–5 itineraries (spec §9 cap: ≥ 3 and ≤ 5) at the pinned 2026-11-02T08:00+08:00 departure; p95 **185–208 ms** across two runs (limit 1 500 ms). The BFF plausibility guard dropped 62 impossible options and the suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
 | 4 | Fare engine ≥ 25 golden fare cases | **PASS** | 45 test cases in `packages/shared/src/fares.test.ts`, green under `npm run ci`: 2026-09-28 PUV matrix, 2026-03-23 LRT-2/MRT-3 50 % discount, LRT-1 exclusion, free-ride overrides, guards. The same criterion now also requires the pipeline pytest suite (146 passed), so a pytest failure fails criterion 4 and the process exit. |
 | 5 | Every itinerary `sources[]`; About-data lists every dataset; fares show `effective_from` | **PARTIAL** | Every golden itinerary was asserted to carry a non-empty `sources[]` and a dated `fare.effective_from`; `/sources` serves **10** datasets, and the API-side contract is covered by tests. The About-data *screen* is Plan 2 (there is no web app). |
 | 6 | PWA installable; offline saved trips + fare matrix | **DEFERRED** | Plan 2 (ruling R38). Not measured, not claimed. |
@@ -143,7 +143,10 @@ after ranking/dedupe, so a corridor that produced 10–12 options before now sho
 | Las Piñas to Makati | 4 (3) | bus, walk | 69.95 | 1 | 15 | 119 |
 | Cubao to Divisoria | 4 (3) | bus, walk | 51.92 | 1 | 4 | 87 |
 
-Counts, modes and fares were identical across repeated probes; only latency moved.
+Counts, modes and fares were identical across repeated probes; only latency moved. A
+second acceptance run measured p95 **208 ms** plan / **39 ms** search with the same
+counts, modes, fares and drop numbers (the per-trip `Plan ms` column is from the first
+run and moves by ±20 %).
 
 ### 4.1 Plausibility guard (R10 data defect)
 
