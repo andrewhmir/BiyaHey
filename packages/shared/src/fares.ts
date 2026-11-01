@@ -4,9 +4,25 @@ import type { FareMode, FareQuote, LegFareInput } from './types.js';
 const STALE_AFTER_DAYS = 183;
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Days after `effective_from` at which a fare row is considered stale
+ * (spec §8.3: CI warns past six months). Exported so the `check:fares` CI
+ * script and its agreement test use the same boundary as the engine.
+ */
+export const FARE_STALE_AFTER_DAYS = STALE_AFTER_DAYS;
+
 const PUV_EFFECTIVE_FROM = '2026-09-28'; // LTFRB PUV matrix (spec §8.3)
 const RAIL_DISCOUNT_EFFECTIVE_FROM = '2026-03-23'; // LRT-2/MRT-3 50% discount
 const LRT1_EFFECTIVE_FROM = '2025-04-02'; // LRT-1 formula (LRMC)
+
+/**
+ * Effectivity date of the PUV fare matrix that `/fares/status` reports.
+ *
+ * The rail and ferry rows carry their own dates (see `FARE_RULES`); this is
+ * the LTFRB matrix date the spec's "CI warns when `effective_from` is > 6
+ * months old" rule polices.
+ */
+export const FARE_MATRIX_EFFECTIVE_FROM = PUV_EFFECTIVE_FROM;
 
 const PUV_SOURCE_ID: SourceId = 'ltfrb-fares';
 const RAIL_SOURCE_ID: SourceId = 'rail-fares';
@@ -40,7 +56,12 @@ interface RailBandRule extends BaseFareRule {
   maxFare: number;
   lengthKm: number;
   discount: number;
-  /** LRT-2's band is a placeholder until Task 11 transcribes the operator table. */
+  /**
+   * LRT-2-only flag: the band is provisional because no authoritative LRTA
+   * per-station table could be transcribed (ruling R47). It is surfaced as
+   * `confidence: 'estimated'` plus a "provisional band" fare line and is never
+   * described as official.
+   */
   provisional: boolean;
 }
 
@@ -169,8 +190,11 @@ const FARE_RULES: Record<FareMode, FareRule> = {
     maxFare: 28,
     lengthKm: 13.6,
     discount: 0.5,
-    // Provisional band: `data/fares/rail-tables.yaml` carries
-    // `needs_verification: true` until Task 11 transcribes the operator table.
+    // Provisional band (ruling R47, spec §8.3): no authoritative LRTA
+    // per-station table could be transcribed from a primary source, so
+    // `data/fares/rail-tables.yaml` keeps `needs_verification: true` and this
+    // rule stays `confidence: 'estimated'` with a "provisional band" line.
+    // Never describe it as official.
     provisional: true,
     effectiveFrom: RAIL_DISCOUNT_EFFECTIVE_FROM,
     sourceId: RAIL_SOURCE_ID,

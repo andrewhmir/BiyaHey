@@ -57,6 +57,14 @@ export interface LegDto {
    * response size without being used.
    */
   distanceM: number;
+  /**
+   * True for a walk leg that is a transfer between two transit legs (spec §9's
+   * `informal_transfer` leg type). The PWA labels it as a transfer and applies
+   * the presentation buffer; ordinary access/egress walks and lone walk-only
+   * trips leave the field absent rather than `false`, so older payloads and
+   * walk-only responses stay valid.
+   */
+  informalTransfer?: boolean;
   /** Dataset ids this leg drew on (network plus fare source). */
   sourceIds: SourceId[];
 }
@@ -124,6 +132,12 @@ export interface SearchResultDto {
   /** City/municipality (admin level 6) when the geocoder reports one. */
   locality: string | null;
   /**
+   * Great-circle distance from the caller's `near` point, in whole metres
+   * (spec §10 requires a distance on search results). Omitted when `/search`
+   * was called without `near`.
+   */
+  distanceM?: number;
+  /**
    * `osm`: MOTIS geocodes the OSM-derived GTFS stops and OSM places. The
    * provenance registry also lists Photon, but this endpoint never calls it.
    */
@@ -151,4 +165,42 @@ export interface SearchResponse {
    */
   partial: boolean;
   groups: SearchGroup;
+}
+
+/**
+ * Response body for `GET /fares/status` (spec §8.3's staleness rule).
+ *
+ * The PWA's About-data/fare footer can show whether the matrix is older than
+ * six months without loading the YAML or reimplementing the date rule.
+ */
+export interface FareStatusDto {
+  /** ISO `YYYY-MM-DD` effectivity date of the LTFRB PUV fare matrix. */
+  effective_from: string;
+  /** True when `effective_from` is more than `stale_after_days` before the check. */
+  stale: boolean;
+  /** The 183-day threshold the engine and CI use. */
+  stale_after_days: number;
+  /** ISO `YYYY-MM-DD` date the check was made against. */
+  checked_on: string;
+}
+
+/**
+ * Join already-loaded provenance rows into the attribution line the UI shows.
+ *
+ * This is the browser-safe counterpart of `attributionFor` in
+ * `@biyahey/shared/provenance`: that helper loads the registry from disk with
+ * `node:fs`, which a PWA bundle cannot carry. Here the caller passes the
+ * `sources[]` array the API returned, so the PWA renders exactly the registry
+ * order and wording the server sent — no duplicate attribution table, no Node
+ * built-ins.
+ *
+ * Rows are joined with ` · ` in the order given (the API returns canonical
+ * registry order), and blank attributions are skipped so a malformed row cannot
+ * leave a stray separator.
+ */
+export function joinAttributions(sources: readonly DataSource[]): string {
+  return sources
+    .map((source) => source.attribution.trim())
+    .filter((attribution) => attribution.length > 0)
+    .join(' · ');
 }

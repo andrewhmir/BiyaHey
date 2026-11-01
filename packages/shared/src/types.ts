@@ -40,6 +40,19 @@ export interface FareQuote {
   breakdown: { label: string; amount: number }[];
 }
 
+/**
+ * `POST /fares/quote` response: a {@link FareQuote} plus the fare-matrix
+ * staleness verdict the About-data and fare UI needs (spec §8.3).
+ *
+ * `stale` is computed from the quote's own `effective_from`, using the same
+ * 183-day rule as {@link isFareStale}; the optional `today` request field makes
+ * the check deterministic in tests.
+ */
+export interface FareQuoteResponse extends FareQuote {
+  /** True when `effective_from` is more than 183 days before the checked date. */
+  stale: boolean;
+}
+
 /** Input for one fareable leg of a journey. */
 export interface LegFareInput {
   mode: FareMode;
