@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BiyaHey! PUV fare matrix",
+  "description": "Shape of data/fares/fares-2026-09-28.yaml (spec §8.3). Rows inherit the matrix header unless they override source_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["matrix_id", "effective_from", "source_id", "source_url", "currency", "fares"],
+  "properties": {
+    "matrix_id": { "type": "string", "minLength": 1 },
+    "effective_from": { "$ref": "#/definitions/date" },
+    "source_id": { "$ref": "#/definitions/sourceId" },
+    "source_url": { "type": "string", "pattern": "^https?://" },
+    "currency": { "const": "PHP" },
+    "fares": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/fare" }
+    }
+  },
+  "definitions": {
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "sourceId": { "enum": ["ltfrb-fares", "mmda-ferry", "rail-fares"] },
+    "fare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "class"],
+      "properties": {
+        "mode": {
+          "enum": ["jeepney", "city-bus", "provincial-bus", "uv-express", "p2p", "ferry"]
+        },
+        "class": {
+          "enum": ["traditional", "modern", "ordinary", "aircon", "premium", "pasig-river"]
+        },
+        "base_fare": { "type": "number", "minimum": 0 },
+        "base_km": { "type": "number", "minimum": 0 },
+        "per_km": { "type": "number", "exclusiveMinimum": 0 },
+        "multiplier": { "type": "number", "exclusiveMinimum": 0 },
+        "fare": { "type": "number", "minimum": 0 },
+        "source_id": { "$ref": "#/definitions/sourceId" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "mode": { "enum": ["jeepney", "city-bus", "provincial-bus"] } },
+            "required": ["mode"]
+          },
+          "then": { "required": ["base_fare", "base_km", "per_km"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "uv-express" } }, "required": ["mode"] },
+          "then": { "required": ["per_km"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "p2p" } }, "required": ["mode"] },
+          "then": { "required": ["multiplier"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "ferry" } }, "required": ["mode"] },
+          "then": { "required": ["fare", "source_id"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "jeepney" } }, "required": ["mode"] },
+          "then": { "properties": { "class": { "enum": ["traditional", "modern"] } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "city-bus" } }, "required": ["mode"] },
+          "then": { "properties": { "class": { "enum": ["ordinary", "aircon"] } } }
+        },
+        {
+          "if": {
+            "properties": { "mode": { "const": "provincial-bus" } },
+            "required": ["mode"]
+          },
+          "then": { "properties": { "class": { "const": "ordinary" } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "uv-express" } }, "required": ["mode"] },
+          "then": { "properties": { "class": { "enum": ["traditional", "modern"] } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "p2p" } }, "required": ["mode"] },
+          "then": { "properties": { "class": { "const": "premium" } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "ferry" } }, "required": ["mode"] },
+          "then": { "properties": { "class": { "const": "pasig-river" } } }
+        }
+      ]
+    }
+  }
+}

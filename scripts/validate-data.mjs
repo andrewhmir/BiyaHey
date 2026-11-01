@@ -2,10 +2,11 @@
  * Validates every YAML/JSON data file under `data/` against the JSON Schema
  * found in the matching `data/<area>/schema/` directory.
  *
- * Convention:
- *  - `data/<area>/schema/<name>.schema.json` covers the data files under
- *    `data/<area>/` whose name is `<name>.yaml|yml|json` or starts with
- *    `<name>-` (e.g. `fares.schema.json` covers `fares-2026-09-28.yaml`).
+ * Convention (ruling R24 — filename stem first):
+ *  - `data/<area>/schema/<name>.schema.json` claims `data/<area>/<name>.yaml`
+ *    first (e.g. `rail-tables.schema.json` covers `rail-tables.yaml`).
+ *  - It then claims files whose stem starts with `<name>-`
+ *    (e.g. `fares.schema.json` covers `fares-2026-09-28.yaml`).
  *  - When an area has a single schema, that schema is also the fallback for
  *    any other data file in the area.
  *  - A data file with no schema is an error, and finding no data files at all
@@ -101,6 +102,25 @@ for (const schema of schemas) {
   schemasByArea.set(schema.area, areaSchemas);
 }
 
+/**
+ * Match a data file to an area schema by filename stem first (ruling R24):
+ * `rail-tables.yaml` -> `rail-tables.schema.json`, then a `<stem>-` prefix
+ * (`fares-2026-09-28.yaml` -> `fares.schema.json`), then the area's only
+ * schema. Returns `undefined` when an area has several schemas and none match.
+ */
+function schemaForName(name, areaSchemas) {
+  const stem = name.replace(DATA_FILE_PATTERN, '');
+  const exact = areaSchemas.find((candidate) => candidate.stem === stem);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const prefixed = areaSchemas.find((candidate) => stem.startsWith(`${candidate.stem}-`));
+  if (prefixed !== undefined) {
+    return prefixed;
+  }
+  return areaSchemas.length === 1 ? areaSchemas[0] : undefined;
+}
+
 const assignments = [];
 for (const file of dataFiles) {
   const area = [...schemasByArea.keys()]
@@ -110,12 +130,7 @@ for (const file of dataFiles) {
     fail(`no schema directory found for ${displayPath(file)}`);
     continue;
   }
-  const areaSchemas = schemasByArea.get(area);
-  const name = basename(file);
-  const schema =
-    areaSchemas.find(
-      (candidate) => name.startsWith(`${candidate.stem}.`) || name.startsWith(`${candidate.stem}-`),
-    ) ?? (areaSchemas.length === 1 ? areaSchemas[0] : undefined);
+  const schema = schemaForName(basename(file), schemasByArea.get(area));
   if (schema === undefined || !validators.has(schema.file)) {
     fail(`no valid schema found for ${displayPath(file)}`);
     continue;

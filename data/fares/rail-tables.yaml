@@ -1,0 +1,52 @@
+# BiyaHey! hand-curated rail fare tables (spec §8.3, ruling R4).
+#
+# LRT-1 publishes a boarding + per-kilometre formula and is excluded from the
+# 2026-03-23 discount. MRT-3 and LRT-2 publish a min-max band that is prorated
+# by distance along the line:
+#
+#   published = round(min + (max - min) * distanceKm / lengthKm)   # whole pesos
+#   charged   = published * discount
+#
+# LRT-2's band is provisional (secondary-sourced) and carries
+# `needs_verification: true` until Task 11 transcribes the operator table;
+# `packages/shared/src/fares.ts` surfaces that as `confidence: 'estimated'` and
+# a "provisional band" fare line.
+#
+# Validated by schema/rail-tables.schema.json via `npm run validate:data`.
+source_id: "rail-fares"
+source_url: "https://www.lrta.gov.ph/tickets-and-fares/"
+currency: "PHP"
+
+lines:
+  - id: "lrt1"
+    name: "LRT-1"
+    operator: "LRMC"
+    fare_model: "formula"
+    boarding: 16.25
+    per_km: 1.47
+    effective_from: "2025-04-02"
+    confidence: "official"
+
+  - id: "mrt3"
+    name: "MRT-3"
+    operator: "DOTr–MRT3"
+    fare_model: "band"
+    min: 13
+    max: 28
+    length_km: 16.9
+    discount: 0.5
+    effective_from: "2026-03-23"
+    confidence: "estimated"
+
+  - id: "lrt2"
+    name: "LRT-2"
+    operator: "LRTA"
+    fare_model: "band"
+    min: 13
+    max: 28
+    length_km: 13.6
+    discount: 0.5
+    effective_from: "2026-03-23"
+    confidence: "estimated"
+    needs_verification: true
+    notes: "Provisional band pending Task 11 transcription of the LRTA operator fare table; do not ship as verified."
