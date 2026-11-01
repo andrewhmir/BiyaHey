@@ -128,50 +128,51 @@ function SkeletonCards() {
   );
 }
 
-export interface RouteOptionsScreenProps {
-  origin: PlanPlaceInput;
-  destination: PlanPlaceInput;
-  /** Display label for the origin (e.g. "Kasalukuyang lokasyon"). */
+/** Shared header/status/card content, rendered full-page or inside the sheet. */
+interface RouteOptionsContentProps {
+  plan: PlanOutcome;
+  filter: RouteFilter;
+  onFilterChange: (filter: RouteFilter) => void;
+  /** Effective selected itinerary id (ranked lead unless one was tapped). */
+  selectedId: string | null;
+  onSelect: (id: string) => void;
   originLabel?: string;
   destinationLabel?: string;
   onBack?: () => void;
+  /** `true` inside the `/plan` bottom sheet: the sheet owns page scaffolding. */
+  embedded?: boolean;
 }
 
-/**
- * Fare-forward route options (spec §11 screen 3).
- *
- * The screen is prop-driven so its tests need neither a router nor geolocation:
- * `/plan` wiring lives in `routes.tsx`. It renders only what the API returned
- * (R45), keeps the fare and its effectivity date on every card, and re-ranks the
- * same array locally when a filter chip is pressed.
- */
-export function RouteOptionsScreen({
-  origin,
-  destination,
+function RouteOptionsContent({
+  plan,
+  filter,
+  onFilterChange,
+  selectedId,
+  onSelect,
   originLabel,
   destinationLabel,
   onBack,
-}: RouteOptionsScreenProps) {
-  const plan = usePlan(origin, destination);
-  const [filter, setFilter] = useState<RouteFilter>('recommended');
-  const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
+  embedded = false,
+}: RouteOptionsContentProps) {
   const showSkeletons = useDelayedFlag(plan.status === 'loading', SKELETON_DELAY_MS);
 
   const ranked = useMemo(
     () => rankItineraries(plan.itineraries, filter),
     [plan.itineraries, filter],
   );
-  const selectedId =
-    explicitSelection !== null && ranked.some((itinerary) => itinerary.id === explicitSelection)
-      ? explicitSelection
-      : (ranked[0]?.id ?? null);
 
   const placeLine = [originLabel, destinationLabel].filter(Boolean).join(' → ');
   const count = plan.itineraries.length;
 
   return (
-    <main className="min-h-dvh bg-surface text-on-surface">
-      <header className="border-b border-outline-variant bg-surface-container-lowest px-4 pb-3 pt-3">
+    <>
+      <header
+        className={
+          embedded
+            ? 'border-b border-outline-variant pb-3'
+            : 'border-b border-outline-variant bg-surface-container-lowest px-4 pb-3 pt-3'
+        }
+      >
         <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
           {onBack !== undefined ? (
             <button
@@ -194,7 +195,11 @@ export function RouteOptionsScreen({
 
       <div
         aria-busy={plan.status === 'loading'}
-        className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-4"
+        className={
+          embedded
+            ? 'flex flex-col gap-4 pb-4'
+            : 'mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-4'
+        }
       >
         <p role="status" aria-live="polite" className="text-sm text-on-surface-variant">
           {statusMessage(plan, count)}
@@ -229,7 +234,7 @@ export function RouteOptionsScreen({
             <FilterChips
               options={FILTER_OPTIONS}
               value={filter}
-              onChange={setFilter}
+              onChange={onFilterChange}
               label="Ayusin ang mga ruta"
             />
             <ul aria-label="Mga ruta" className="flex flex-col gap-3">
@@ -239,7 +244,7 @@ export function RouteOptionsScreen({
                     itinerary={itinerary}
                     sources={plan.sources}
                     selected={itinerary.id === selectedId}
-                    onSelect={setExplicitSelection}
+                    onSelect={onSelect}
                     badge={badgeFor(filter, index)}
                   />
                 </li>
@@ -248,6 +253,87 @@ export function RouteOptionsScreen({
           </>
         ) : null}
       </div>
+    </>
+  );
+}
+
+export interface RouteOptionsLabels {
+  /** Display label for the origin (e.g. "Kasalukuyang lokasyon"). */
+  originLabel?: string;
+  destinationLabel?: string;
+  onBack?: () => void;
+}
+
+/** Standalone screen: fetches its own plan (tests mount this without a map). */
+export interface SelfLoadingRouteOptionsProps extends RouteOptionsLabels {
+  origin: PlanPlaceInput;
+  destination: PlanPlaceInput;
+}
+
+/**
+ * Controlled screen: the `/plan` route layer owns the plan, the filter and the
+ * selected id (R58), so the same selection drives the map polylines.
+ */
+export interface ControlledRouteOptionsProps extends RouteOptionsLabels {
+  plan: PlanOutcome;
+  filter: RouteFilter;
+  onFilterChange: (filter: RouteFilter) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}
+
+export type RouteOptionsScreenProps =
+  | SelfLoadingRouteOptionsProps
+  | ControlledRouteOptionsProps;
+
+/**
+ * Fare-forward route options (spec §11 screen 3).
+ *
+ * Its own plan state keeps the screen prop-driven and testable without a router
+ * or map; `/plan` passes a controlled plan/selection so a card tap and the
+ * highlighted polyline are the same state (R58). The screen renders only what
+ * the API returned (R45), keeps the fare and its effectivity date on every card,
+ * and re-ranks the same array locally when a filter chip is pressed.
+ */
+export function RouteOptionsScreen(props: RouteOptionsScreenProps) {
+  if ('plan' in props) {
+    return <RouteOptionsContent {...props} embedded />;
+  }
+  return <SelfLoadingRouteOptionsScreen {...props} />;
+}
+
+function SelfLoadingRouteOptionsScreen({
+  origin,
+  destination,
+  originLabel,
+  destinationLabel,
+  onBack,
+}: SelfLoadingRouteOptionsProps) {
+  const plan = usePlan(origin, destination);
+  const [filter, setFilter] = useState<RouteFilter>('recommended');
+  const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
+
+  const ranked = useMemo(
+    () => rankItineraries(plan.itineraries, filter),
+    [plan.itineraries, filter],
+  );
+  const selectedId =
+    explicitSelection !== null && ranked.some((itinerary) => itinerary.id === explicitSelection)
+      ? explicitSelection
+      : (ranked[0]?.id ?? null);
+
+  return (
+    <main className="min-h-dvh bg-surface text-on-surface">
+      <RouteOptionsContent
+        plan={plan}
+        filter={filter}
+        onFilterChange={setFilter}
+        selectedId={selectedId}
+        onSelect={setExplicitSelection}
+        originLabel={originLabel}
+        destinationLabel={destinationLabel}
+        onBack={onBack}
+      />
     </main>
   );
 }

@@ -52,6 +52,7 @@ export function ModeChips({ modes }: ModeChipsProps) {
   return (
     <span
       data-testid="mode-chips"
+      role="group"
       aria-label="Mga mode ng sakay"
       className="flex flex-wrap items-center gap-1.5"
     >

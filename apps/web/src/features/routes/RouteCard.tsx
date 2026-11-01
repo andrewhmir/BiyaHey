@@ -47,18 +47,33 @@ export function walkLabel(distanceM: number): string {
 }
 
 /**
+ * The matrix label for the mandatory fare provenance line, derived strictly
+ * from `FareQuote.source_id` (R57). `null` means the quote is a mixed-source
+ * sum — or a walk-only trip that bought no ticket — so it must never claim the
+ * LTFRB matrix: the response carries no such attribution. An id outside the
+ * known fare sources falls back to the generic wording rather than inventing a
+ * publisher the API did not send (R45).
+ */
+export function fareMatrixLabel(fare: FareQuote): string {
+  if (fare.source_id === 'ltfrb-fares') {
+    return 'LTFRB matrix';
+  }
+  if (fare.source_id === 'rail-fares') {
+    return 'rail fare matrix';
+  }
+  if (fare.source_id === null) {
+    return fare.breakdown.length === 0 ? 'no fare' : 'mixed fare sources';
+  }
+  return 'fare matrix';
+}
+
+/**
  * The mandatory fare provenance line: every displayed fare carries the
  * `effective_from` date the API returned, labelled with the matrix that priced
  * it. The web app never computes or guesses the date (R45).
  */
 export function fareEffectiveLine(fare: FareQuote): string {
-  let matrix = 'fare matrix';
-  if (fare.source_id === 'rail-fares') {
-    matrix = 'rail fare matrix';
-  } else if (fare.source_id === 'ltfrb-fares' || fare.source_id === null) {
-    matrix = 'LTFRB matrix';
-  }
-  return `Fares: ${matrix} effective ${fare.effective_from}`;
+  return `Fares: ${fareMatrixLabel(fare)} effective ${fare.effective_from}`;
 }
 
 function arrivalLabel(endTime: string): string | null {
@@ -138,8 +153,21 @@ export function RouteCard({
       </span>
 
       <span className="flex flex-col gap-0.5 rounded-card border border-fare-border bg-fare-bg px-3 py-2 text-on-fare-bg">
-        <span data-testid="fare-amount" className="text-xl font-semibold leading-7">
-          ₱{formatFare(itinerary.fare.amount)}
+        <span className="flex flex-wrap items-center gap-2">
+          <span data-testid="fare-amount" className="text-xl font-semibold leading-7">
+            ₱{formatFare(itinerary.fare.amount)}
+          </span>
+          {/* An estimated quote (rail band, free-ride override) is never
+              presented as an official matrix fare. Task 6 owns the full
+              fare breakdown; the card only flags the confidence. */}
+          {itinerary.fare.confidence === 'estimated' ? (
+            <span
+              data-testid="fare-estimate"
+              className="rounded-pill border border-fare-border px-1.5 py-0.5 text-[11px] font-medium leading-4"
+            >
+              Estimate
+            </span>
+          ) : null}
         </span>
         <span data-testid="fare-date" className="text-xs leading-4">
           {fareEffectiveLine(itinerary.fare)}

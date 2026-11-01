@@ -164,6 +164,169 @@ export const searchSlowHandler = http.get('*/search', async () => {
 
 // --- `POST /plan` fixtures and handlers (Task 5) ---------------------------
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A fixture drift must fail here, not later when a screen reads the field. */
+function fixtureError(path: string, expected: string): never {
+  throw new Error(
+    `plan-cubao-ayala.json is not a valid PlanResponse: ${path} must be ${expected}`,
+  );
+}
+
+function expectRecord(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fixtureError(path, 'an object');
+  }
+  return value as Record<string, unknown>;
+}
+
+function expectArray(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) fixtureError(path, 'an array');
+  return value;
+}
+
+function expectString(value: unknown, path: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    fixtureError(path, 'a non-empty string');
+  }
+  return value;
+}
+
+function expectNumber(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    fixtureError(path, 'a finite number');
+  }
+  return value;
+}
+
+function assertPlace(value: unknown, path: string): void {
+  const place = expectRecord(value, path);
+  expectString(place.name, `${path}.name`);
+  expectNumber(place.lat, `${path}.lat`);
+  expectNumber(place.lon, `${path}.lon`);
+}
+
+function assertFare(value: unknown, path: string): void {
+  const fare = expectRecord(value, path);
+  const amount = expectNumber(fare.amount, `${path}.amount`);
+  if (fare.currency !== 'PHP') fixtureError(`${path}.currency`, '"PHP"');
+  if (fare.confidence !== 'official' && fare.confidence !== 'estimated') {
+    fixtureError(`${path}.confidence`, '"official" or "estimated"');
+  }
+  if (typeof fare.effective_from !== 'string' || !ISO_DATE_PATTERN.test(fare.effective_from)) {
+    fixtureError(`${path}.effective_from`, 'an ISO YYYY-MM-DD date');
+  }
+  if (fare.source_id !== null && typeof fare.source_id !== 'string') {
+    fixtureError(`${path}.source_id`, 'a source id string or null');
+  }
+  let breakdownSum = 0;
+  for (const [index, line] of expectArray(fare.breakdown, `${path}.breakdown`).entries()) {
+    const entry = expectRecord(line, `${path}.breakdown[${index}]`);
+    expectString(entry.label, `${path}.breakdown[${index}].label`);
+    breakdownSum += expectNumber(entry.amount, `${path}.breakdown[${index}].amount`);
+  }
+  // The engine rounds each line to centavos, so the total must match too (R60).
+  if (Math.abs(Math.round(breakdownSum * 100) / 100 - amount) > 0.001) {
+    fixtureError(`${path}.breakdown`, 'a sum equal to fare.amount');
+  }
+}
+
+function assertLeg(value: unknown, path: string): void {
+  const leg = expectRecord(value, path);
+  expectString(leg.mode, `${path}.mode`);
+  assertPlace(leg.from, `${path}.from`);
+  assertPlace(leg.to, `${path}.to`);
+  expectString(leg.startTime, `${path}.startTime`);
+  expectString(leg.endTime, `${path}.endTime`);
+  expectNumber(leg.durationMin, `${path}.durationMin`);
+  expectNumber(leg.distanceM, `${path}.distanceM`);
+  for (const [index, id] of expectArray(leg.sourceIds, `${path}.sourceIds`).entries()) {
+    expectString(id, `${path}.sourceIds[${index}]`);
+  }
+}
+
+function assertItinerary(value: unknown, path: string): void {
+  const itinerary = expectRecord(value, path);
+  expectString(itinerary.id, `${path}.id`);
+  expectNumber(itinerary.durationMin, `${path}.durationMin`);
+  expectString(itinerary.startTime, `${path}.startTime`);
+  expectString(itinerary.endTime, `${path}.endTime`);
+  expectNumber(itinerary.transfers, `${path}.transfers`);
+  expectNumber(itinerary.walkDistanceM, `${path}.walkDistanceM`);
+  for (const [index, mode] of expectArray(itinerary.modes, `${path}.modes`).entries()) {
+    expectString(mode, `${path}.modes[${index}]`);
+  }
+  assertFare(itinerary.fare, `${path}.fare`);
+  for (const [index, id] of expectArray(itinerary.sources, `${path}.sources`).entries()) {
+    expectString(id, `${path}.sources[${index}]`);
+  }
+  for (const [index, leg] of expectArray(itinerary.legs, `${path}.legs`).entries()) {
+    assertLeg(leg, `${path}.legs[${index}]`);
+  }
+}
+
+function assertSource(value: unknown, path: string): void {
+  const source = expectRecord(value, path);
+  for (const field of [
+    'id',
+    'name',
+    'publisher',
+    'url',
+    'licence_spdx',
+    'licence_url',
+    'coverage',
+    'last_checked',
+    'attribution',
+  ] as const) {
+    expectString(source[field], `${path}.${field}`);
+  }
+  for (const [index, entry] of expectArray(source.used_for, `${path}.used_for`).entries()) {
+    expectString(entry, `${path}.used_for[${index}]`);
+  }
+}
+
+/**
+ * Parse the checked-in JSON fixture through a small runtime shape guard.
+ *
+ * The plan response is contract-validated against the fields the UI reads, so a
+ * renamed/mistyped fixture field throws at import time instead of passing until
+ * some later test reads it. The JSON file stays the checked-in source of truth.
+ */
+export function parsePlanFixture(raw: string): PlanResponse {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`plan-cubao-ayala.json is not valid JSON: ${String(error)}`);
+  }
+
+  const response = expectRecord(parsed, 'response');
+  if (response.v !== 1) fixtureError('response.v', '1');
+
+  const sourceRows = expectArray(response.sources, 'response.sources').map((source, index) => {
+    assertSource(source, `response.sources[${index}]`);
+    return source as { id: string };
+  });
+  const knownSourceIds = new Set(sourceRows.map((source) => source.id));
+
+  for (const [index, itinerary] of expectArray(
+    response.itineraries,
+    'response.itineraries',
+  ).entries()) {
+    assertItinerary(itinerary, `response.itineraries[${index}]`);
+    for (const sourceId of (itinerary as { sources: string[] }).sources) {
+      if (!knownSourceIds.has(sourceId)) {
+        fixtureError(
+          `response.itineraries[${index}].sources`,
+          `only ids present in response.sources (missing "${sourceId}")`,
+        );
+      }
+    }
+  }
+
+  return parsed as unknown as PlanResponse;
+}
+
 /**
  * The Cubao → Ayala plan fixture (three fare-forward options sorted by ETA).
  *
@@ -172,9 +335,7 @@ export const searchSlowHandler = http.get('*/search', async () => {
  * `fare.effective_from` and per-itinerary `sources[]`) without enabling
  * `resolveJsonModule` in the app's TypeScript project.
  */
-export const planCubaoAyalaResponse: PlanResponse = JSON.parse(
-  planCubaoAyalaRaw,
-) as PlanResponse;
+export const planCubaoAyalaResponse: PlanResponse = parsePlanFixture(planCubaoAyalaRaw);
 
 /** Default `POST /plan` handler: the three-option Cubao → Ayala plan. */
 export const planSuccessHandler = http.post('*/plan', () =>

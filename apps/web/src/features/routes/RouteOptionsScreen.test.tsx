@@ -1,12 +1,13 @@
 import type { PlanResponse } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { AppRoutes } from '../../routes';
+import { mapInstances } from '../../test/mocks/maplibre';
 import {
   planCubaoAyalaResponse,
   planEmptyHandler,
@@ -69,13 +70,21 @@ describe('RouteOptionsScreen', () => {
 
     // ETA is largest; the fare is a first-class field with its source line.
     expect(cards[0]).toHaveTextContent('31 min');
-    expect(cards[0]).toHaveTextContent('₱20');
+    expect(cards[0]).toHaveTextContent('₱26.40');
+    // Arrival is rendered from the API's `endTime` in Philippine time.
+    expect(cards[0]).toHaveTextContent('Dating 8:31 AM');
     // The plan's mandated copy is "Fares: ...", so the label assertion matches
     // the plural (the plan snippet's `/fare:/i` would not match its own copy).
     expect(cards[0]).toHaveTextContent(/fares:/i);
     expect(cards[0]).toHaveTextContent(/direct/i);
     expect(cards[0]).toHaveTextContent('Lakad');
     expect(cards[0]).toHaveTextContent('Jeepney');
+
+    // The 2-transfer option uses the Taglish transfer wording; the long walk
+    // switches to kilometres; every card has a labelled mode-chip group.
+    expect(screen.getByText('2 sakay')).toBeInTheDocument();
+    expect(screen.getByText('1.3 km lakad')).toBeInTheDocument();
+    expect(screen.getAllByRole('group', { name: 'Mga mode ng sakay' })).toHaveLength(3);
 
     // Every displayed fare carries its effectivity date.
     const fareDates = screen.getAllByTestId('fare-date');
@@ -91,6 +100,9 @@ describe('RouteOptionsScreen', () => {
     expect(chips[0]).toHaveTextContent('Fares per LTFRB fare matrix effective 28 September 2026');
     expect(chips[0]).toHaveTextContent('Data sources');
     expect(chips[1]).toHaveTextContent('Route inventory derived from OpenStreetMap Wiki');
+    // Card 2's third source id is `ltfrb-fares`; the two-source cap must hide it
+    // (its fare line lives in a different node, so this proves the chip itself).
+    expect(chips[1]).not.toHaveTextContent('Fares per LTFRB fare matrix');
 
     // One badge for the recommended lead card.
     expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
@@ -112,7 +124,7 @@ describe('RouteOptionsScreen', () => {
     const initialFares = screen
       .getAllByTestId('fare-amount')
       .map((node) => node.textContent);
-    expect(initialFares).toEqual(['₱20', '₱15', '₱12']);
+    expect(initialFares).toEqual(['₱26.40', '₱41.17', '₱40.61']);
 
     await user.click(screen.getByRole('button', { name: 'Cheapest' }));
 
@@ -120,7 +132,7 @@ describe('RouteOptionsScreen', () => {
       .getAllByTestId('fare-amount')
       .map((node) => Number(node.textContent!.replace('₱', '')));
     expect(fares).toEqual([...fares].sort((a, b) => a - b));
-    expect(fares).toEqual([12, 15, 20]);
+    expect(fares).toEqual([26.4, 40.61, 41.17]);
     expect(screen.getByRole('button', { name: 'Cheapest' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -255,6 +267,13 @@ describe('/plan route wiring', () => {
   it('plans from an explicit from pair without reading the device location', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
+    let captured: unknown;
+    server.use(
+      http.post('*/plan', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json(planCubaoAyalaResponse);
+      }),
+    );
 
     renderPlanRoute(
       '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao',
@@ -263,9 +282,79 @@ describe('/plan route wiring', () => {
     expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
     expect(screen.getByText('Cubao → Ayala')).toBeInTheDocument();
     expect(getCurrentPosition).not.toHaveBeenCalled();
+    // The URL's `from` is the request origin and `dest` the destination —
+    // never swapped.
+    expect(captured).toEqual({
+      origin: { lat: 14.619, lon: 121.053 },
+      destination: { lat: 14.554, lon: 121.024 },
+    });
   });
 
-  it('shows an honest origin state instead of inventing one when location is unavailable', async () => {
+  it('hosts the options in the map + sheet container and highlights the tapped polyline', async () => {
+    const getCurrentPosition = vi.fn();
+    vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
+    const user = userEvent.setup();
+
+    renderPlanRoute(
+      '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao',
+    );
+
+    const cards = await screen.findAllByTestId('route-card');
+    // The route layer owns the one `POST /plan`; the controlled screen must not
+    // fetch a second copy of the same plan.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const sheet = screen.getByTestId('sheet');
+    expect(sheet).toHaveAttribute('data-detent', 'half');
+    expect(within(sheet).getByRole('heading', { name: 'Mga ruta' })).toBeInTheDocument();
+    expect(within(sheet).getAllByTestId('route-card')).toHaveLength(3);
+
+    const map = mapInstances[0]!;
+    act(() => {
+      map.emit('load');
+    });
+
+    // Every returned itinerary is drawn (R53 straight-leg geometry).
+    await waitFor(() => expect(map.addSource).toHaveBeenCalledTimes(3));
+    for (const id of ['plan-cubao-ayala-1', 'plan-cubao-ayala-2', 'plan-cubao-ayala-3']) {
+      expect(map.getSource(`route-${id}`)).toBeDefined();
+    }
+
+    // The lead card's itinerary is the emphasised line (6 px, others 4 px).
+    await waitFor(() =>
+      expect(map.setPaintProperty).toHaveBeenCalledWith(
+        'route-plan-cubao-ayala-1',
+        'line-width',
+        6,
+      ),
+    );
+    expect(map.setPaintProperty).toHaveBeenCalledWith('route-plan-cubao-ayala-2', 'line-width', 4);
+    expect(map.setPaintProperty).toHaveBeenCalledWith('route-plan-cubao-ayala-3', 'line-width', 4);
+
+    // Tapping a card moves the emphasis to that itinerary's line.
+    await user.click(cards[2]);
+    await waitFor(() =>
+      expect(map.setPaintProperty).toHaveBeenCalledWith(
+        'route-plan-cubao-ayala-3',
+        'line-width',
+        6,
+      ),
+    );
+    await waitFor(() =>
+      expect(map.setPaintProperty).toHaveBeenCalledWith(
+        'route-plan-cubao-ayala-1',
+        'line-width',
+        4,
+      ),
+    );
+
+    // The plan response's provenance rows reach the map credit's ⓘ detail.
+    await user.click(screen.getByRole('button', { name: 'Data sources' }));
+    expect(screen.getByRole('dialog', { name: 'Data sources' })).toHaveTextContent(
+      'LTFRB fare matrix (transcribed)',
+    );
+  });
+
+  it('shows an honest origin state and offers search instead of a dead-end retry when location is unsupported', async () => {
     vi.stubGlobal('navigator', { ...window.navigator, geolocation: undefined });
 
     renderPlanRoute('/plan?dest=14.554,121.024&name=Ayala');
@@ -273,8 +362,39 @@ describe('/plan route wiring', () => {
     expect(
       await screen.findByRole('heading', { name: /walang location/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /subukan ulit/i })).toBeInTheDocument();
+    // Retrying a browser that cannot report location would be a no-op.
+    expect(screen.queryByRole('button', { name: /subukan ulit/i })).not.toBeInTheDocument();
     // No invented default origin means no plan request is made at all.
     expect(fetchSpy).not.toHaveBeenCalled();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /bumalik sa search/i }));
+
+    expect(await screen.findByRole('search')).toBeInTheDocument();
+  });
+
+  it('rejects a malformed destination without planning or inventing a place', async () => {
+    renderPlanRoute('/plan?dest=nope');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Walang destinasyon' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Maghanap ng lugar' })).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns to search instead of leaving the app when /plan is the first history entry', async () => {
+    // A PWA deep link has no in-app history to go back to (idx 0 / absent).
+    window.history.replaceState(null, '');
+    const user = userEvent.setup();
+
+    renderPlanRoute(
+      '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao',
+    );
+    await screen.findAllByTestId('route-card');
+
+    await user.click(screen.getByRole('button', { name: 'Bumalik' }));
+
+    expect(await screen.findByRole('search')).toBeInTheDocument();
   });
 });

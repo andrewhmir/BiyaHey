@@ -1,7 +1,17 @@
 import type { PlanPlaceInput } from '@biyahey/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
-import { RouteOptionsScreen } from './features/routes/RouteOptionsScreen';
+import { AppShell } from './components/layout/AppShell';
+import { MapSlot } from './components/layout/MapSlot';
+import { MapCanvas } from './components/map/MapCanvas';
+import { RoutePolylines } from './components/map/RoutePolylines';
+import { BottomSheet, type SheetMapPadding } from './components/sheet/BottomSheet';
+import {
+  RouteOptionsScreen,
+  rankItineraries,
+  type RouteFilter,
+} from './features/routes/RouteOptionsScreen';
+import { usePlan } from './features/routes/usePlan';
 import { SearchScreen } from './features/search/SearchScreen';
 import { HomePage } from './pages/home';
 
@@ -23,6 +33,98 @@ function PlaceholderScreen({ title }: { title: string }) {
 function HomeRoute() {
   const navigate = useNavigate();
   return <HomePage onSearchClick={() => navigate('/search')} />;
+}
+
+const PLAN_SHEET_DETENTS = [96, 'half', 'expanded'] as const;
+
+/**
+ * Back follows the app's own history when there is one. A PWA deep link into
+ * `/plan` is the first history entry, so `navigate(-1)` would leave the app;
+ * that case falls back to search instead (Minor 10).
+ */
+function useBackToSearch(): () => void {
+  const navigate = useNavigate();
+  return useCallback(() => {
+    const state: unknown = window.history.state;
+    const idx =
+      typeof state === 'object' && state !== null
+        ? (state as { idx?: unknown }).idx
+        : undefined;
+    if (typeof idx === 'number' && idx > 0) {
+      navigate(-1);
+    } else {
+      navigate('/search');
+    }
+  }, [navigate]);
+}
+
+interface PlanViewProps {
+  origin: PlanPlaceInput;
+  destination: PlanPlaceInput;
+  originLabel?: string;
+  destinationLabel?: string;
+  onBack: () => void;
+}
+
+/**
+ * `/plan`'s Option A container (R58): full-bleed map with one polyline per
+ * returned itinerary, and a bottom sheet carrying the route-options list. The
+ * plan, the active filter and the selected itinerary live here so the card
+ * emphasis and the highlighted line are always the same state.
+ */
+function PlanView({ origin, destination, originLabel, destinationLabel, onBack }: PlanViewProps) {
+  const plan = usePlan(origin, destination);
+  const [filter, setFilter] = useState<RouteFilter>('recommended');
+  const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
+  const [mapPadding, setMapPadding] = useState(0);
+
+  const ranked = useMemo(
+    () => rankItineraries(plan.itineraries, filter),
+    [plan.itineraries, filter],
+  );
+  const selectedId =
+    explicitSelection !== null && ranked.some((itinerary) => itinerary.id === explicitSelection)
+      ? explicitSelection
+      : (ranked[0]?.id ?? null);
+
+  const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
+    setMapPadding(padding.bottom);
+  }, []);
+
+  return (
+    <AppShell
+      map={
+        <MapSlot mapPadding={mapPadding}>
+          <MapCanvas sources={plan.sources}>
+            <RoutePolylines
+              itineraries={plan.itineraries}
+              selectedId={selectedId}
+              onSelect={setExplicitSelection}
+            />
+          </MapCanvas>
+        </MapSlot>
+      }
+      sheet={
+        <BottomSheet
+          detents={PLAN_SHEET_DETENTS}
+          initial="half"
+          label="Mga ruta"
+          onMapPaddingChange={handleMapPaddingChange}
+        >
+          <RouteOptionsScreen
+            plan={plan}
+            filter={filter}
+            onFilterChange={setFilter}
+            selectedId={selectedId}
+            onSelect={setExplicitSelection}
+            originLabel={originLabel}
+            destinationLabel={destinationLabel}
+            onBack={onBack}
+          />
+        </BottomSheet>
+      }
+    />
+  );
 }
 
 /** Parse a `lat,lon` pair from a query string; `null` when malformed. */
@@ -66,6 +168,9 @@ const ORIGIN_TIMEOUT_MS = 8_000;
  * reuse a fix from it. This hook performs a single `getCurrentPosition` when a
  * `/plan?dest=...` link carries no `from` pair, and reports every failure
  * honestly instead of substituting an invented default origin.
+ *
+ * React 19 StrictMode double-invokes effects in development, so a dev session
+ * can issue two reads; a production build performs exactly one.
  */
 function useDeviceOrigin(attempt: number): OriginState {
   const [state, setState] = useState<OriginState>({ status: 'locating' });
@@ -192,9 +297,11 @@ function PlanNotice({
 function LocatedPlanRoute({
   destination,
   destinationLabel,
+  onBack,
 }: {
   destination: PlanPlaceInput;
   destinationLabel?: string;
+  onBack: () => void;
 }) {
   const navigate = useNavigate();
   const [attempt, setAttempt] = useState(0);
@@ -220,6 +327,17 @@ function LocatedPlanRoute({
 
   if (origin.status === 'missing') {
     const copy = ORIGIN_FAILURE_COPY[origin.reason];
+    // A browser with no geolocation cannot succeed on a retry, so offer the
+    // honest way forward instead of a button that re-runs the same dead end.
+    if (origin.reason === 'unsupported') {
+      return (
+        <PlanNotice
+          title={copy.title}
+          message={copy.message}
+          primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+        />
+      );
+    }
     return (
       <PlanNotice
         title={copy.title}
@@ -231,12 +349,12 @@ function LocatedPlanRoute({
   }
 
   return (
-    <RouteOptionsScreen
+    <PlanView
       origin={origin.point}
       destination={destination}
       originLabel="Kasalukuyang lokasyon"
       destinationLabel={destinationLabel}
-      onBack={() => navigate(-1)}
+      onBack={onBack}
     />
   );
 }
@@ -252,6 +370,7 @@ function LocatedPlanRoute({
  */
 function PlanRoute() {
   const navigate = useNavigate();
+  const goBack = useBackToSearch();
   const [params] = useSearchParams();
   const destinationParam = params.get('dest');
   const originParam = params.get('from');
@@ -282,18 +401,22 @@ function PlanRoute() {
 
   if (fixedOrigin !== null) {
     return (
-      <RouteOptionsScreen
+      <PlanView
         origin={fixedOrigin}
         destination={destination}
         originLabel={originName}
         destinationLabel={destinationLabel}
-        onBack={() => navigate(-1)}
+        onBack={goBack}
       />
     );
   }
 
   return (
-    <LocatedPlanRoute destination={destination} destinationLabel={destinationLabel} />
+    <LocatedPlanRoute
+      destination={destination}
+      destinationLabel={destinationLabel}
+      onBack={goBack}
+    />
   );
 }
 
