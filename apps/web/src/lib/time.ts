@@ -21,3 +21,26 @@ export function formatClockTime(iso: string | undefined): string | null {
   }
   return CLOCK_FORMATTER.format(time);
 }
+
+/**
+ * `1 Sep 2026` in Philippine time, or `null` for a missing/invalid timestamp.
+ * Used by the saved/recent list's "Last updated" line and the saved-snapshot
+ * banner; always Asia/Manila so a device timezone cannot shift the date.
+ */
+const LONG_DATE_FORMATTER = new Intl.DateTimeFormat('en-PH', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'Asia/Manila',
+});
+
+export function formatLongDate(iso: string | undefined): string | null {
+  if (iso === undefined) {
+    return null;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return LONG_DATE_FORMATTER.format(date);
+}

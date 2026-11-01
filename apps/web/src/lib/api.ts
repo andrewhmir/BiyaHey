@@ -1,4 +1,10 @@
-import type { DataSource, PlanRequest, PlanResponse, SearchResponse } from '@biyahey/shared';
+import type {
+  DataSource,
+  FareStatusDto,
+  PlanRequest,
+  PlanResponse,
+  SearchResponse,
+} from '@biyahey/shared';
 
 /**
  * Base URL of the Plan 1 BFF (R40).
@@ -246,4 +252,43 @@ export async function fetchSources(options: CallOptions = {}): Promise<DataSourc
     throw new ApiError('invalid_response', 'Hindi mabasa ang listahan ng data sources.');
   }
   return payload as DataSource[];
+}
+
+/**
+ * Runtime guard for `GET /fares/status` (Task 8).
+ *
+ * The saved screen only needs `effective_from` (to compare against a saved
+ * quote's own `effective_from`); it never recomputes a fare (R45). The other
+ * fields are validated too so a drifted response surfaces as an honest
+ * "matrix unknown" state instead of `undefined` leaking into a comparison.
+ */
+function isFareStatusDto(value: unknown): value is FareStatusDto {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const status = value as Partial<FareStatusDto>;
+  return (
+    typeof status.effective_from === 'string' &&
+    status.effective_from.length > 0 &&
+    typeof status.stale === 'boolean' &&
+    typeof status.stale_after_days === 'number' &&
+    Number.isFinite(status.stale_after_days) &&
+    typeof status.checked_on === 'string'
+  );
+}
+
+/**
+ * `GET /fares/status` — the current fare matrix's effectivity date.
+ *
+ * Used by the saved-trips staleness check: a saved quote whose
+ * `effective_from` differs from this date was priced against an older matrix.
+ * No fare is calculated here, and an unreadable response is an error rather
+ * than a fresh claim.
+ */
+export async function fetchFareStatus(options: CallOptions = {}): Promise<FareStatusDto> {
+  const payload = await request<unknown>('/fares/status', { signal: options.signal });
+  if (!isFareStatusDto(payload)) {
+    throw new ApiError('invalid_response', 'Hindi mabasa ang fare matrix status.');
+  }
+  return payload;
 }

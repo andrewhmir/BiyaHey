@@ -17,7 +17,7 @@ import { server } from '../../test/msw/server';
 import { FareBreakdown } from './FareBreakdown';
 import { StopsList } from './StopsList';
 import { TripDetailScreen } from './TripDetailScreen';
-import { SAVED_TRIPS_KEY, readSavedTrips } from './savedTrips';
+import { SAVED_TRIPS_KEY, readSavedTrips } from '../../lib/savedTripsStore';
 
 // R52: jsdom has no canvas, so axe's colour-contrast rule is noise here.
 const AXE_OPTIONS = { rules: { 'color-contrast': { enabled: false } } };

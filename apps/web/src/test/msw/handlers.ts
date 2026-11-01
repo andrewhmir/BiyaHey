@@ -1,5 +1,6 @@
 import type {
   DataSource,
+  FareStatusDto,
   PlanResponse,
   SearchGroup,
   SearchResponse,
@@ -427,6 +428,44 @@ export const planSuccessHandler = http.post('*/plan', () =>
   HttpResponse.json(planCubaoAyalaResponse),
 );
 
+// --- `GET /fares/status` (Task 8) ------------------------------------------
+
+/**
+ * The BFF's current fare matrix (spec §8.3: LTFRB PUV matrix effective
+ * 2026-09-28). The saved screen compares a saved quote's own
+ * `effective_from` with this date; it never recomputes a fare (R45).
+ */
+export const fareStatusResponse: FareStatusDto = {
+  effective_from: '2026-09-28',
+  stale: false,
+  stale_after_days: 183,
+  checked_on: '2026-11-02',
+};
+
+/** Default `GET /fares/status`: the current matrix. */
+export const fareStatusHandler = http.get('*/fares/status', () =>
+  HttpResponse.json(fareStatusResponse),
+);
+
+/** A 500 in the BFF's documented error envelope. */
+export const fareStatusErrorHandler = http.get('*/fares/status', () =>
+  HttpResponse.json(
+    { error: { code: 'INTERNAL_ERROR', message: 'Unexpected server error' } },
+    { status: 500 },
+  ),
+);
+
+/** The transport failed before a response arrived (offline simulation). */
+export const fareStatusNetworkErrorHandler = http.get('*/fares/status', () =>
+  HttpResponse.error(),
+);
+
+/** A response that never arrives, for the silent-network assertion. */
+export const fareStatusPendingHandler = http.get('*/fares/status', async () => {
+  await delay('infinite');
+  return HttpResponse.json(fareStatusResponse);
+});
+
 /** 200 with zero itineraries: the honest "Walang ruta" state (R41). */
 export const planEmptyHandler = http.post('*/plan', () =>
   HttpResponse.json({
@@ -457,4 +496,5 @@ export const handlers: HttpHandler[] = [
   searchSuccessHandler,
   planSuccessHandler,
   sourcesSuccessHandler,
+  fareStatusHandler,
 ];

@@ -2,10 +2,10 @@ import type { DataSource, ItineraryDto } from '@biyahey/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { formatFare } from '../routes/RouteCard';
-import { formatClockTime } from '../../lib/time';
+import { formatClockTime, formatLongDate } from '../../lib/time';
+import { isTripSaved, saveTrip } from '../../lib/savedTripsStore';
 import { FareBreakdown } from './FareBreakdown';
 import { LegTimeline } from './LegTimeline';
-import { isTripSaved, saveTrip } from './savedTrips';
 
 const NO_SOURCES: readonly DataSource[] = [];
 
@@ -20,6 +20,13 @@ export interface TripDetailScreenProps {
   onStartTrip?: () => void;
   /** Optional observer after a successful save; the store write always happens. */
   onSave?: (savedAt: string) => void;
+  /**
+   * When the itinerary came from the saved-trips store rather than a live plan
+   * cache (reload/offline deep link), this is the snapshot's `savedAt`. The
+   * header then labels the ETA as a saved snapshot instead of presenting an old
+   * plan as current (Task 8; R63).
+   */
+  savedSnapshotAt?: string;
   onBack?: () => void;
 }
 
@@ -37,6 +44,7 @@ export function TripDetailScreen({
   sources = NO_SOURCES,
   onStartTrip,
   onSave,
+  savedSnapshotAt,
   onBack,
 }: TripDetailScreenProps) {
   const [saved, setSaved] = useState(() => isTripSaved(itinerary.id));
@@ -90,6 +98,15 @@ export function TripDetailScreen({
                   ₱{formatFare(itinerary.fare.amount)}
                 </span>
               </p>
+              {savedSnapshotAt !== undefined ? (
+                <p
+                  data-testid="saved-snapshot-note"
+                  className="mt-1 break-words text-xs leading-4 text-on-surface-variant"
+                >
+                  Saved route (no live data) · last updated{' '}
+                  {formatLongDate(savedSnapshotAt) ?? savedSnapshotAt}
+                </p>
+              ) : null}
             </div>
           </div>
 

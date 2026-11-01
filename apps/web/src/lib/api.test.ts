@@ -1,11 +1,12 @@
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlanRequest, SearchResponse } from '@biyahey/shared';
+import type { FareStatusDto, PlanRequest, SearchResponse } from '@biyahey/shared';
 import { server } from '../test/msw/server';
 import {
   API_BASE_URL,
   ApiError,
   REQUEST_TIMEOUT_MS,
+  fetchFareStatus,
   planTrip,
   request,
   searchPlaces,
@@ -180,5 +181,34 @@ describe('request abort and timeout', () => {
     await rejection;
 
     gate.resolve();
+  });
+});
+
+describe('fetchFareStatus', () => {
+  const status: FareStatusDto = {
+    effective_from: '2026-09-28',
+    stale: false,
+    stale_after_days: 183,
+    checked_on: '2026-11-02',
+  };
+
+  it('reads the current matrix date from /fares/status', async () => {
+    let path: string | undefined;
+    server.use(
+      http.get('*/fares/status', ({ request: httpRequest }) => {
+        path = new URL(httpRequest.url).pathname;
+        return HttpResponse.json(status);
+      }),
+    );
+
+    await expect(fetchFareStatus()).resolves.toEqual(status);
+    expect(path).toBe('/fares/status');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a drifted body instead of guessing freshness', async () => {
+    server.use(http.get('*/fares/status', () => HttpResponse.json({ effective_from: 42 })));
+
+    await expect(fetchFareStatus()).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });

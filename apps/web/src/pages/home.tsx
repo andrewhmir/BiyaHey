@@ -12,12 +12,14 @@ const HOME_DETENTS = [96, 'half', 'expanded'] as const;
 export interface HomePageProps {
   /** Opens the search screen; the route layer supplies it (Task 4). */
   onSearchClick?: () => void;
+  /** Opens the saved/recent screen; the route layer supplies it (Task 8). */
+  onSavedClick?: () => void;
 }
 
 // The live map sits under the sheet; the sheet owns the layout contract: peek
 // by default, full-bleed map behind it, and a search pill that stays the app's
 // primary call to action.
-export function HomePage({ onSearchClick }: HomePageProps = {}) {
+export function HomePage({ onSearchClick, onSavedClick }: HomePageProps = {}) {
   const [mapPadding, setMapPadding] = useState(0);
   const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
     setMapPadding(padding.bottom);
@@ -41,14 +43,14 @@ export function HomePage({ onSearchClick }: HomePageProps = {}) {
           label="Home"
           onMapPaddingChange={handleMapPaddingChange}
         >
-          <HomeSheetContent onSearchClick={onSearchClick} />
+          <HomeSheetContent onSearchClick={onSearchClick} onSavedClick={onSavedClick} />
         </BottomSheet>
       }
     />
   );
 }
 
-function HomeSheetContent({ onSearchClick }: HomePageProps) {
+function HomeSheetContent({ onSearchClick, onSavedClick }: HomePageProps) {
   return (
     <div className="flex flex-col gap-4 pb-2">
       {/* R54: only the first 48 px of content fits in the 96 px peek (96 px
@@ -72,7 +74,16 @@ function HomeSheetContent({ onSearchClick }: HomePageProps) {
       {/* Task 7's smallest honest "Settings" entry: there is no Settings screen
           in v1, so Home's sheet owns the About-data door. Recorded as a
           proposed ruling in the Task 7 report. */}
-      <div className="border-t border-outline-variant pt-3">
+      <div className="flex flex-col gap-2 border-t border-outline-variant pt-3">
+        {onSavedClick !== undefined ? (
+          <button
+            type="button"
+            onClick={onSavedClick}
+            className="inline-flex min-h-12 items-center gap-1 self-start rounded-pill text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+          >
+            Naka-save at kamakailan
+          </button>
+        ) : null}
         <AboutDataLink className="inline-flex min-h-6 items-center gap-1 text-sm font-medium text-primary">
           About data
           <span aria-hidden="true">ⓘ</span>

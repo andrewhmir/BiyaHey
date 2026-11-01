@@ -13,6 +13,7 @@ import { MapSlot } from './components/layout/MapSlot';
 import { MapCanvas } from './components/map/MapCanvas';
 import { RoutePolylines } from './components/map/RoutePolylines';
 import { BottomSheet, type SheetMapPadding } from './components/sheet/BottomSheet';
+import { SavedScreen } from './features/saved/SavedScreen';
 import { AboutDataScreen } from './features/provenance/AboutDataScreen';
 import {
   RouteOptionsScreen,
@@ -21,20 +22,11 @@ import {
 } from './features/routes/RouteOptionsScreen';
 import { cachedTrip } from './features/routes/planCache';
 import { usePlan } from './features/routes/usePlan';
+import { findSavedTrip, recordRecentTrip } from './lib/savedTripsStore';
 import { SearchScreen } from './features/search/SearchScreen';
 import { TripDetailScreen } from './features/trip/TripDetailScreen';
 import { TripLiveScreen } from './features/trip/TripLiveScreen';
 import { HomePage } from './pages/home';
-
-// Placeholder screens: later tasks replace each one with its feature screen.
-function PlaceholderScreen({ title }: { title: string }) {
-  return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-slate-900">
-      <h1 className="text-xl font-semibold">{title}</h1>
-      <p className="text-sm text-slate-500">Coming soon.</p>
-    </main>
-  );
-}
 
 /**
  * The search pill is the Home screen's primary action. Keeping navigation in
@@ -43,7 +35,12 @@ function PlaceholderScreen({ title }: { title: string }) {
  */
 function HomeRoute() {
   const navigate = useNavigate();
-  return <HomePage onSearchClick={() => navigate('/search')} />;
+  return (
+    <HomePage
+      onSearchClick={() => navigate('/search')}
+      onSavedClick={() => navigate('/saved')}
+    />
+  );
 }
 
 const PLAN_SHEET_DETENTS = [96, 'half', 'expanded'] as const;
@@ -485,16 +482,30 @@ function PlanRoute() {
 }
 
 /**
- * `/trip/:id` — trip detail from the in-memory plan cache (R62).
+ * `/trip/:id` — trip detail from the in-memory plan cache (R62), falling back
+ * to the saved-trips store (Task 8).
  *
- * The plan response is the only source of an itinerary; there is no
- * plan-by-id endpoint. A deep link or reload with no cache therefore shows an
- * honest notice with a way back to search instead of refetching a fake plan.
+ * The plan response is the only source of a fresh itinerary; there is no
+ * plan-by-id endpoint. A reload or offline deep link therefore has no cache, so
+ * the saved snapshot is the honest fallback: it opens the full timeline and
+ * labels the header "Saved route (no live data)" with its snapshot date. When
+ * neither the cache nor the store has the id, the honest "wala nang ruta"
+ * notice stays.
  */
 function TripRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
   const goBack = useBackToSearch();
+  const cached = id === undefined ? undefined : cachedTrip(id);
+  const stored = id === undefined ? undefined : findSavedTrip(id);
+
+  // Opening a fresh plan makes it a recent trip; opening a saved snapshot does
+  // not, so an old fare can never be re-stamped as newly updated.
+  useEffect(() => {
+    if (cached !== undefined) {
+      recordRecentTrip(cached.itinerary, cached.sources);
+    }
+  }, [cached]);
 
   if (id === undefined) {
     return (
@@ -506,8 +517,7 @@ function TripRoute() {
     );
   }
 
-  const cached = cachedTrip(id);
-  if (cached === undefined) {
+  if (cached === undefined && stored === undefined) {
     return (
       <PlanNotice
         title="Wala nang ruta"
@@ -517,12 +527,29 @@ function TripRoute() {
     );
   }
 
+  if (cached !== undefined) {
+    return (
+      <TripDetailScreen
+        itinerary={cached.itinerary}
+        sources={cached.sources}
+        onBack={goBack}
+        onStartTrip={() => navigate(`/trip/${cached.itinerary.id}/live`)}
+      />
+    );
+  }
+
+  // Unreachable per the guard above, but keeps the store branch fully typed.
+  if (stored === undefined) {
+    return null;
+  }
+
   return (
     <TripDetailScreen
-      itinerary={cached.itinerary}
-      sources={cached.sources}
+      itinerary={stored.itinerary}
+      sources={stored.sources}
+      savedSnapshotAt={stored.savedAt}
       onBack={goBack}
-      onStartTrip={() => navigate(`/trip/${cached.itinerary.id}/live`)}
+      onStartTrip={() => navigate(`/trip/${stored.itinerary.id}/live`)}
     />
   );
 }
@@ -535,6 +562,19 @@ function TripLiveRoute() {
     <TripLiveScreen
       itineraryId={id}
       onBack={() => navigate(id === undefined ? '/search' : `/trip/${id}`)}
+    />
+  );
+}
+
+/** `/saved` — saved and recent trips (Task 8). */
+function SavedRoute() {
+  const navigate = useNavigate();
+  const goBack = useBackTo('/');
+  return (
+    <SavedScreen
+      onBack={goBack}
+      onOpenTrip={(id) => navigate(`/trip/${id}`)}
+      onSearch={() => navigate('/search')}
     />
   );
 }
@@ -555,7 +595,7 @@ export function AppRoutes() {
         <Route path="/plan" element={<PlanRoute />} />
         <Route path="/trip/:id/live" element={<TripLiveRoute />} />
         <Route path="/trip/:id" element={<TripRoute />} />
-        <Route path="/saved" element={<PlaceholderScreen title="Saved" />} />
+        <Route path="/saved" element={<SavedRoute />} />
         <Route path="/sources" element={<AboutDataRoute />} />
       </Routes>
     </>
