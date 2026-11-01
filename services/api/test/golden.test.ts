@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { PlanResponse, SearchResponse } from '@biyahey/shared';
+import { implausibleTransitLegs, isPlausibleItinerary } from '../src/routing/map-itinerary.js';
 
 /**
  * Golden NCR acceptance suite (spec §3 criteria 2 and 3; Task 11).
@@ -17,9 +18,15 @@ import type { PlanResponse, SearchResponse } from '@biyahey/shared';
  *   - at least `minItineraries` itineraries (the live count the corridor really
  *     produces, not the brief's illustrative 3);
  *   - every mode in `requiredModes` appears across the returned itineraries;
+ *   - every itinerary passes the BFF plausibility guard (no transit leg whose
+ *     implied speed exceeds `MAX_TRANSIT_SPEED_KMH`; the R10 bad-shape defect);
  *   - every itinerary has a total fare inside `fareBounds`, a non-empty
  *     `sources[]`, and a dated `fare.effective_from` (spec §3 criterion 5);
  *   - total time, transfers and walk distance are present (criterion 3).
+ *
+ * It also records the `x-biyahey-motis-calls` and
+ * `x-biyahey-implausible-dropped` response headers per trip, so the acceptance
+ * report proves the guard and the R37 fan-out actually ran.
  *
  * It also measures p95 plan latency over the ten trips (criterion 3) and p95
  * search latency over six real NCR queries (criterion 2), both against the
@@ -50,6 +57,8 @@ interface TripResult {
   transfers: number[];
   walkDistanceM: number[];
   planMs: number;
+  motisCalls: number | null;
+  implausibleDropped: number | null;
 }
 
 const apiUrl = process.env.API_URL?.replace(/\/+$/, '');
@@ -98,7 +107,9 @@ it('defines exactly ten golden trips', () => {
   expect(suite.trips).toHaveLength(10);
   expect(new Set(suite.trips.map((trip) => trip.name)).size).toBe(10);
   for (const trip of suite.trips) {
-    expect(trip.minItineraries, `${trip.name}: minItineraries`).toBeGreaterThanOrEqual(1);
+    // The acceptance contract is at least three options per corridor; a trip
+    // whose live data cannot meet that must be replaced, never lowered.
+    expect(trip.minItineraries, `${trip.name}: minItineraries`).toBeGreaterThanOrEqual(3);
     expect(trip.requiredModes.length, `${trip.name}: requiredModes`).toBeGreaterThan(0);
     expect(trip.fareBounds.max, `${trip.name}: fareBounds`).toBeGreaterThanOrEqual(trip.fareBounds.min);
   }
@@ -126,6 +137,18 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => 
 
         expect(response.status, `${trip.name}: POST /plan status`).toBe(200);
         const body = (await response.json()) as PlanResponse;
+        const motisCalls = Number(response.headers.get('x-biyahey-motis-calls'));
+        const implausibleDropped = Number(response.headers.get('x-biyahey-implausible-dropped'));
+        expect(Number.isInteger(motisCalls), `${trip.name}: x-biyahey-motis-calls header`).toBe(true);
+        expect(motisCalls, `${trip.name}: fan-out made at least one call`).toBeGreaterThanOrEqual(1);
+        expect(
+          Number.isInteger(implausibleDropped),
+          `${trip.name}: x-biyahey-implausible-dropped header`,
+        ).toBe(true);
+        expect(
+          implausibleDropped,
+          `${trip.name}: implausible-drop count is non-negative`,
+        ).toBeGreaterThanOrEqual(0);
 
         expect(
           body.itineraries.length,
@@ -142,6 +165,10 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => 
 
         for (const itinerary of body.itineraries) {
           const context = `${trip.name} itinerary ${itinerary.id}`;
+          // The guard runs in the BFF; this assertion proves no impossible
+          // geometry was served (and would catch a regression if it stopped).
+          expect(implausibleTransitLegs(itinerary), `${context}: implausible transit legs`).toEqual([]);
+          expect(isPlausibleItinerary(itinerary), `${context}: plausible`).toBe(true);
           expect(itinerary.fare.amount, `${context}: fare >= ${trip.fareBounds.min}`).toBeGreaterThanOrEqual(
             trip.fareBounds.min,
           );
@@ -172,6 +199,8 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => 
             (a, b) => a - b,
           ),
           planMs,
+          motisCalls,
+          implausibleDropped,
         });
       }
 
@@ -182,7 +211,8 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', () => 
             .map(
               (trip) =>
                 `  ${trip.name}: ${trip.itineraries} itineraries, modes ${trip.modes.join('+')}, ` +
-                `fares ${trip.fares.join('/')}, ${trip.planMs} ms`,
+                `fares ${trip.fares.join('/')}, ${trip.motisCalls} MOTIS calls, ` +
+                `${trip.implausibleDropped} implausible dropped, ${trip.planMs} ms`,
             )
             .join('\n'),
       );

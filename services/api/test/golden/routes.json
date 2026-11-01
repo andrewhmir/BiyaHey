@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden NCR trips for phase-1 acceptance (spec §3 criterion 3). Corridors and minima were chosen against the live router on 2026-11-01, re-probed after the alias-aware republish (494-route feed), and every value below is the count/mode/fare the live stack actually returns at the pinned departure; see docs/runbooks/phase1-acceptance.md for the probe evidence, per-trip counts and every R10 data reason. `minItineraries` is never the brief's illustrative 3 where the data cannot meet it. `requiredModes` must appear in the union of the trip's itineraries (the corridor must offer the mode), not in every itinerary. `fareBounds` are the live observed min/max rounded outward; they catch a broken fare engine without pinning exact prices.",
+  "$comment": "Golden NCR trips for phase-1 acceptance (spec §3 criterion 3). Every trip was re-probed on 2026-11-01 against the live 494-route feed WITH the BFF plausibility guard active (MAX_TRANSIT_SPEED_KMH = 120 km/h in services/api/src/routing/map-itinerary.ts), and every count/mode/fare below is what the stack actually returned at the pinned departure. `minItineraries` is 3 for every trip per the criterion and is never lowered. `requiredModes` must appear in the union of the trip's itineraries, not in every itinerary. `fareBounds` are the live observed min/max rounded outward; they catch a broken fare engine without pinning exact prices. Corridors whose options are all built on impossible R10 geometry (e.g. the uv-m01 shape claiming 60 km in 2 minutes) are excluded and documented in docs/runbooks/phase1-acceptance.md with their data reason instead of being admitted by lowering a bound.",
   "departAt": "2026-11-02T08:00:00+08:00",
   "trips": [
     {
@@ -8,35 +8,8 @@
       "destination": { "lat": 14.554, "lon": 121.024 },
       "minItineraries": 3,
       "requiredModes": ["mrt3"],
-      "fareBounds": { "min": 10, "max": 420 },
-      "note": "MRT-3 corridor (Cubao -> Ayala); live run returned 10 itineraries, 4 of them MRT-3."
-    },
-    {
-      "name": "Fairview to Makati",
-      "origin": { "lat": 14.733, "lon": 121.058 },
-      "destination": { "lat": 14.554, "lon": 121.024 },
-      "minItineraries": 3,
-      "requiredModes": ["uv-express"],
-      "fareBounds": { "min": 160, "max": 190 },
-      "note": "Fairview -> UV Express -> MRT-3 -> Makati after the curated UV routes entered the feed; live run returned 10 itineraries. The brief's illustrative jeepney+bus expectation does not hold on this data (no jeepney leg on this corridor)."
-    },
-    {
-      "name": "Novaliches to Ortigas",
-      "origin": { "lat": 14.719, "lon": 121.04 },
-      "destination": { "lat": 14.587, "lon": 121.061 },
-      "minItineraries": 3,
-      "requiredModes": ["bus"],
-      "fareBounds": { "min": 90, "max": 105 },
-      "note": "Camanava/Quirino Highway corridor; live run returned 4 jeepney+bus itineraries at PHP 97.20."
-    },
-    {
-      "name": "Pasig to Manila",
-      "origin": { "lat": 14.576, "lon": 121.085 },
-      "destination": { "lat": 14.599, "lon": 120.984 },
-      "minItineraries": 3,
-      "requiredModes": ["ferry"],
-      "fareBounds": { "min": 0, "max": 0 },
-      "note": "Pasig River Ferry corridor; all 5 live itineraries were walk+ferry. Fare is 0 because the MMDA ferry is free (data/fares/fares-2026-09-28.yaml)."
+      "fareBounds": { "min": 10, "max": 11 },
+      "note": "MRT-3 corridor; live run returned 4 MRT-3 itineraries at PHP 10.50. Six provincial through-bus options (bus-cubaobalayan / bus-59 / bus-61) were dropped by the plausibility guard: their shapes claim 40-70 km in 2-4 minutes."
     },
     {
       "name": "Marikina to Cubao",
@@ -44,44 +17,71 @@
       "destination": { "lat": 14.619, "lon": 121.053 },
       "minItineraries": 3,
       "requiredModes": ["lrt2"],
-      "fareBounds": { "min": 15, "max": 32 },
-      "note": "LRT-2 corridor; live run returned 12 itineraries, 4 with LRT-2."
+      "fareBounds": { "min": 17, "max": 29 },
+      "note": "LRT-2 corridor; live run returned 12 itineraries (17.16 / 23.00 / 28.20), no implausible legs dropped."
+    },
+    {
+      "name": "Cubao to Manila",
+      "origin": { "lat": 14.619, "lon": 121.053 },
+      "destination": { "lat": 14.599, "lon": 120.984 },
+      "minItineraries": 3,
+      "requiredModes": ["lrt2"],
+      "fareBounds": { "min": 24, "max": 27 },
+      "note": "LRT-2 into Manila; live run returned 11 itineraries (24.00 / 25.93 / 26.90); 3 impossible options dropped."
+    },
+    {
+      "name": "Pasay to Monumento",
+      "origin": { "lat": 14.537, "lon": 121.001 },
+      "destination": { "lat": 14.654, "lon": 120.984 },
+      "minItineraries": 3,
+      "requiredModes": ["lrt1"],
+      "fareBounds": { "min": 47, "max": 52 },
+      "note": "LRT-1 corridor; live run returned 8 itineraries (47.16 / 51.22), no implausible legs dropped."
+    },
+    {
+      "name": "Cubao to Pasig",
+      "origin": { "lat": 14.619, "lon": 121.053 },
+      "destination": { "lat": 14.576, "lon": 121.085 },
+      "minItineraries": 3,
+      "requiredModes": ["ferry"],
+      "fareBounds": { "min": 27, "max": 28 },
+      "note": "Pasig River Ferry corridor; live run returned 4 walk+bus+ferry itineraries at PHP 27.44; 4 impossible options dropped."
+    },
+    {
+      "name": "Pasay to Taguig",
+      "origin": { "lat": 14.537, "lon": 121.001 },
+      "destination": { "lat": 14.517, "lon": 121.074 },
+      "minItineraries": 3,
+      "requiredModes": ["ferry", "jeepney"],
+      "fareBounds": { "min": 61, "max": 90 },
+      "note": "Ferry + jeepney corridor; live run returned 12 itineraries (61.29 / 84.52 / 89.37); 12 impossible options dropped."
+    },
+    {
+      "name": "Fairview to Manila",
+      "origin": { "lat": 14.733, "lon": 121.058 },
+      "destination": { "lat": 14.599, "lon": 120.984 },
+      "minItineraries": 3,
+      "requiredModes": ["bus"],
+      "fareBounds": { "min": 61, "max": 80 },
+      "note": "Replaces the brief-era Fairview->Makati corridor, whose every option rode the defective uv-m01 shape (60,837 m in 2 min). Live run returned 10 bus itineraries (61.19 / 79.16); 15 impossible options dropped. The brief's jeepney+bus expectation never held on this data: before the guard the live set was bus + UV Express + MRT-3 + walk, i.e. only jeepney was absent."
+    },
+    {
+      "name": "Novaliches to Cubao",
+      "origin": { "lat": 14.721, "lon": 121.04 },
+      "destination": { "lat": 14.619, "lon": 121.053 },
+      "minItineraries": 3,
+      "requiredModes": ["bus"],
+      "fareBounds": { "min": 104, "max": 105 },
+      "note": "Replaces Novaliches->Ortigas, whose options all rode a 24,581 m jeepney leg in 2 minutes. Live run returned 4 bus itineraries at PHP 104.46, no implausible legs dropped."
     },
     {
       "name": "Las Pinas to Makati",
       "origin": { "lat": 14.48, "lon": 120.982 },
       "destination": { "lat": 14.554, "lon": 121.024 },
       "minItineraries": 3,
-      "requiredModes": ["lrt1", "uv-express"],
-      "fareBounds": { "min": 65, "max": 440 },
-      "note": "South corridor with LRT-1, UV Express and bus options; live run returned 19 itineraries."
-    },
-    {
-      "name": "Quezon Avenue to BGC",
-      "origin": { "lat": 14.642, "lon": 121.039 },
-      "destination": { "lat": 14.554, "lon": 121.049 },
-      "minItineraries": 3,
-      "requiredModes": ["mrt3"],
-      "fareBounds": { "min": 60, "max": 95 },
-      "note": "Quezon Avenue -> MRT-3 -> BGC bus; live run returned 7 itineraries."
-    },
-    {
-      "name": "Bagong Silang to Novaliches",
-      "origin": { "lat": 14.7589, "lon": 121.0483 },
-      "destination": { "lat": 14.721, "lon": 121.04 },
-      "minItineraries": 3,
-      "requiredModes": ["jeepney"],
-      "fareBounds": { "min": 100, "max": 320 },
-      "note": "The strongest jeepney corridor (curated T101's corridor, modelled by OSM share_taxi geometry); live run returned 8 itineraries, all with jeepney."
-    },
-    {
-      "name": "Balintawak to Novaliches",
-      "origin": { "lat": 14.6568, "lon": 121.0043 },
-      "destination": { "lat": 14.721, "lon": 121.04 },
-      "minItineraries": 3,
-      "requiredModes": ["jeepney"],
-      "fareBounds": { "min": 20, "max": 25 },
-      "note": "Curated T165's corridor (Balintawak Cloverleaf -> Novaliches via Quirino Highway); after the aliases entered the feed the live router returns 5 jeepney itineraries at PHP 22.39."
+      "requiredModes": ["bus"],
+      "fareBounds": { "min": 69, "max": 70 },
+      "note": "South corridor; after the guard only the bus options are physically possible, so the required mode is bus (live run: 4 itineraries at PHP 69.95; 15 impossible LRT-1/UV/bus combinations dropped)."
     },
     {
       "name": "Cubao to Divisoria",
@@ -89,8 +89,8 @@
       "destination": { "lat": 14.607, "lon": 120.968 },
       "minItineraries": 3,
       "requiredModes": ["bus"],
-      "fareBounds": { "min": 45, "max": 60 },
-      "note": "Short heavy city corridor used for the R37 keep-alive stress loop as well; live run returned 4 bus itineraries."
+      "fareBounds": { "min": 51, "max": 52 },
+      "note": "Short heavy city bus corridor; live run returned 4 bus itineraries at PHP 51.92, no implausible legs dropped."
     }
   ]
 }
