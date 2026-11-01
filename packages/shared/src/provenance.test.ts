@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest';
+// Bare package specifier on purpose: proves the `./provenance` subpath in
+// packages/shared/package.json resolves for consumers (e.g. Task 4's service),
+// independent of the relative import below.
+import {
+  attributionFor as attributionForFromSubpath,
+  loadProvenance as loadProvenanceFromSubpath,
+} from '@biyahey/shared/provenance';
 import {
   assertKnownSources,
   attributionFor,
@@ -29,5 +36,12 @@ describe('provenance', () => {
   it('validates ids and returns them in registry order', () => {
     expect(assertKnownSources(['crowd-reports', 'osm', 'osm'])).toEqual(['osm', 'crowd-reports']);
     expect(() => assertKnownSources(['made-up'])).toThrow(UnknownSourceError);
+  });
+  it('is importable through the @biyahey/shared/provenance package subpath', () => {
+    const registry = loadProvenanceFromSubpath();
+    expect(registry.size).toBe(10);
+    expect(attributionForFromSubpath(['osm'])).toContain(
+      '© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0',
+    );
   });
 });
