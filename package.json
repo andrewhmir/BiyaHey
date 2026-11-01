@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "smoke:routing": "node scripts/motis-smoke.mjs",
     "ci": "npm run lint && npm run typecheck && npm test && npm run validate:data",
     "validate:data": "node scripts/validate-data.mjs"
   },
