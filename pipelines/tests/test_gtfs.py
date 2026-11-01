@@ -57,6 +57,14 @@ REQUIRED_TABLES = {
 #: pinned Task 10 namespacing examples; ``bus-b1`` pins the bus namespace.
 EXPECTED_ROUTE_IDS = {"rail-mrt3", "ferry-pasig", "bus-b1", "bus-b2"}
 
+#: Spec Appendix A attribution, hardcoded on purpose (``©`` U+00A9, em dash
+#: U+2014). The production constant ``pipeline.gtfs.ODBL_ATTRIBUTION`` must
+#: never be interpolated here: the file is built from that constant, so a typo
+#: or corruption in it could otherwise never fail the licence gate.
+SPEC_APPENDIX_A_ATTRIBUTION = (
+    "© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0"
+)
+
 
 # --------------------------------------------------------------------------
 # helpers
@@ -246,8 +254,19 @@ def test_write_produces_the_required_gtfs_tables_and_the_odbl_notice(tmp_path):
     with zipfile.ZipFile(out) as zf:
         assert REQUIRED_TABLES <= set(zf.namelist())
         licence = zf.read("LICENSE-DATA.txt").decode("utf-8-sig")
+
+        # The hardcoded Appendix A literal must be in the generated file. This
+        # intentionally does not compare the constant with itself.
+        assert SPEC_APPENDIX_A_ATTRIBUTION in licence
+
+        # Independent gate: the file must explicitly say what it is for - that
+        # the feed is published under ODbL 1.0 - regardless of the attribution
+        # constant and of the attribution line above.
+        flattened = " ".join(licence.split())
+        assert "published under the Open Database License (ODbL) 1.0" in flattened
+
+        # Wiring check: the constant is still the one embedded in the notice.
         assert ODBL_ATTRIBUTION in licence
-        assert "ODbL" in licence
 
         routes = _csv_rows(zf, "routes.txt")
         assert {row["route_id"] for row in routes} == {
@@ -278,6 +297,11 @@ def test_write_produces_the_required_gtfs_tables_and_the_odbl_notice(tmp_path):
         assert feed_info[0]["feed_start_date"] == "20261101"
         assert feed_info[0]["feed_end_date"] == "20271031"
         assert feed_info[0]["feed_lang"] == "en"
+
+
+def test_odbl_attribution_constant_matches_the_spec_appendix_a_literal():
+    """A future edit to the constant fails loudly (separate from the file gate)."""
+    assert ODBL_ATTRIBUTION == SPEC_APPENDIX_A_ATTRIBUTION
 
 
 def test_trip_count_in_the_feed_follows_the_headway_formula():
