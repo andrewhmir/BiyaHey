@@ -12,13 +12,15 @@ import { quoteFareForLeg, sumFares } from '@biyahey/shared';
 /**
  * Data the adapter needs beyond the raw MOTIS payload.
  *
- * Both members are empty in the default install: `data/fares/free-ride-routes.yaml`
- * ships with an empty list (no free-ride status has been corroborated yet) and
- * the curated inventory only covers jeep/UV routes.
+ * `freeRideRouteIds` is empty in the default install (no free-ride status has
+ * been corroborated yet) and the curated inventory only covers jeep/UV routes,
+ * so every other route id is OSM-relation-derived.
  */
 export interface MapContext {
   freeRideRouteIds: ReadonlySet<string>;
   curatedLandmarks: ReadonlyMap<string, readonly string[]>;
+  /** Normalized route ids listed in the curated jeep/UV inventory. */
+  curatedRouteIds: ReadonlySet<string>;
 }
 
 interface MappedLeg {
@@ -393,8 +395,12 @@ function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
   }
 
   const sourceIds: SourceId[] = ['osm'];
-  if (mode === 'jeepney' || mode === 'uv-express') {
-    // Only the curated jeep/UV inventory comes from the OSM Wiki page.
+  const curatedRoute =
+    normalizedRouteId !== undefined && context.curatedRouteIds.has(normalizedRouteId);
+  if ((mode === 'jeepney' || mode === 'uv-express') && curatedRoute) {
+    // Only a route listed in the curated OSM Wiki inventory used that dataset.
+    // OSM-relation-derived jeep/UV routes (most of the live feed) must not
+    // claim it, or `sources` would name a dataset the leg never consulted.
     sourceIds.push('osm-wiki-jeepney');
   }
   if (quote !== null && quote.source_id !== null) {

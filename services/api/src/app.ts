@@ -41,6 +41,8 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   registerSourcesRoutes(app, sources);
   registerFaresRoutes(app);
   registerSearchRoutes(app);
-  registerPlanRoutes(app, dataDir);
+  // Pass the same registry `/sources` serves, so plan validation and provenance
+  // rows always describe the active data directory.
+  registerPlanRoutes(app, dataDir, sources);
   return app;
 }

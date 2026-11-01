@@ -131,12 +131,88 @@ function readQuery(value: unknown): string {
   return typeof raw === 'string' ? raw.trim() : '';
 }
 
+/** A `[start, length]` span of one whitespace-delimited token. */
+interface TokenSpan {
+  start: number;
+  length: number;
+}
+
+/** The query's tokens as the spans MOTIS reports in a result's `tokens`. */
+function queryTokenSpans(query: string): TokenSpan[] {
+  const spans: TokenSpan[] = [];
+  const pattern = /\S+/g;
+  for (;;) {
+    const match = pattern.exec(query);
+    if (match === null) {
+      return spans;
+    }
+    spans.push({ start: match.index, length: match[0].length });
+  }
+}
+
+function resultTokenSpans(record: JsonRecord): TokenSpan[] {
+  const spans: TokenSpan[] = [];
+  for (const entry of asArray(record.tokens) ?? []) {
+    const pair = asArray(entry);
+    if (pair === undefined) {
+      continue;
+    }
+    const start = asNumber(pair[0]);
+    const length = asNumber(pair[1]);
+    if (start !== undefined && length !== undefined) {
+      spans.push({ start, length });
+    }
+  }
+  return spans;
+}
+
+/**
+ * Whether at least one result genuinely matched every token of the query.
+ *
+ * The MOTIS geocoder is fuzzy: for an absent place it still returns nearby
+ * candidates and marks the query spans they fuzzily matched in `tokens`, so
+ * token coverage alone is not enough. A genuine match also carries a negative
+ * `score`; the fallback rows returned for a nonsense query score at or above
+ * zero. Live probe on 2026-11-01 (`q=Barangay Walang Ganito 12345`): one row
+ * claims all four query spans at score `+0.25`, while every real query's top
+ * match scored between `-14` and `-44`. Both signals are required so a search
+ * with no genuine hit is never reported as complete.
+ */
+function hasCompleteMatch(raw: unknown, query: string): boolean {
+  const querySpans = queryTokenSpans(query);
+  if (querySpans.length === 0 || !Array.isArray(raw)) {
+    return false;
+  }
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    if (record === undefined) {
+      continue;
+    }
+    const score = asNumber(record.score);
+    if (score === undefined || score >= 0) {
+      continue;
+    }
+    const matched = resultTokenSpans(record);
+    const coversAll = querySpans.every((span) =>
+      matched.some(
+        (candidate) => candidate.start === span.start && candidate.length === span.length,
+      ),
+    );
+    if (coversAll) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * `GET /search?q=` — MOTIS geocode typeahead, grouped for the PWA.
  *
  * Failures are never 5xx: an absent place, a short query, a malformed upstream
  * payload or a downed router all answer 200 with `partial: true`, so the
- * typeahead keeps working and the UI can invite more typing.
+ * typeahead keeps working and the UI can invite more typing. `partial` is also
+ * set when no returned result genuinely matched every query token, so a fuzzy
+ * result set for an unknown place is never presented as a complete answer.
  */
 export function registerSearchRoutes(app: FastifyInstance): void {
   const client = createMotisClient({ fetch: app.motisFetch });
@@ -150,7 +226,8 @@ export function registerSearchRoutes(app: FastifyInstance): void {
       const raw = await client.geocode(query);
       const { groups, dropped } = mapGeocode(raw);
       const total = groups.stops.length + groups.landmarks.length;
-      return { partial: total === 0 || dropped > 0, groups };
+      const complete = hasCompleteMatch(raw, query);
+      return { partial: total === 0 || dropped > 0 || !complete, groups };
     } catch {
       return partialResponse();
     }

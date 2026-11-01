@@ -58,6 +58,22 @@ async function postPlan(
   };
 }
 
+/** Write an isolated provenance registry with one row per id. */
+function writeRegistry(dataDir: string, ids: string[]): void {
+  mkdirSync(join(dataDir, 'provenance'), { recursive: true });
+  writeFileSync(
+    join(dataDir, 'provenance', 'sources.yaml'),
+    [
+      'sources:',
+      ...ids.flatMap((id) => [
+        `  - id: "${id}"`,
+        `    attribution: "Test attribution for ${id}"`,
+      ]),
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('POST /plan', () => {
   it('maps MOTIS itineraries and attaches fares and sources', async () => {
     const app = planApp();
@@ -285,6 +301,89 @@ describe('POST /plan', () => {
     expect(jeep?.sourceIds).toEqual(
       expect.arrayContaining(['osm', 'osm-wiki-jeepney', 'ltfrb-fares']),
     );
+  });
+
+  it('does not claim the wiki inventory for an OSM-derived jeepney route', async () => {
+    const synthetic = structuredClone(planFixture.itineraries[0]);
+    const transit = synthetic.legs.find((leg) => leg.mode === 'SUBWAY');
+    expect(transit).toBeDefined();
+    if (transit !== undefined) {
+      transit.mode = 'BUS';
+      transit.routeId = 'gtfs_jeep-cubaocalumpang';
+      transit.routeShortName = 'CUBAOCALUMAPANG';
+      transit.displayName = 'CUBAOCALUMAPANG';
+    }
+    const app = planApp({ itineraries: [synthetic] });
+    const { statusCode, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    const itinerary = body.itineraries[0];
+    const jeep = itinerary?.legs.find((leg) => leg.mode === 'jeepney');
+    expect(jeep).toBeDefined();
+    // Only a route listed in the curated inventory may claim
+    // `osm-wiki-jeepney`; this live OSM-relation-derived id is not one of them.
+    expect(jeep?.sourceIds).toEqual(['osm', 'ltfrb-fares']);
+    expect(itinerary?.sources).toEqual(['osm', 'ltfrb-fares']);
+    expect(jeep?.landmarkHint).toBeNull();
+  });
+
+  it('validates and serves plan sources from the injected registry', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'biyahey-plan-registry-'));
+    try {
+      writeRegistry(dataDir, ['osm']);
+      const app = buildApp({ dataDir, motisFetch: async () => walkOnlyFixture });
+
+      const sourcesRes = await app.inject({ method: 'GET', url: '/sources' });
+      const registryIds = (sourcesRes.json() as Array<{ id: string }>).map((source) => source.id);
+      expect(registryIds).toEqual(['osm']);
+
+      const { statusCode, body } = await postPlan(app, {
+        origin: CUBAO,
+        destination: { lat: 14.618, lon: 121.054 },
+        departAt: DEPART_AT,
+      });
+
+      expect(statusCode).toBe(200);
+      expect(body.itineraries[0]?.sources).toEqual(['osm']);
+      // The plan's DataSource rows come from the same registry `/sources`
+      // serves, not from the repository's ten-row registry.
+      expect(body.sources.map((source) => source.id)).toEqual(registryIds);
+      expect(body.sources[0]?.attribution).toBe('Test attribution for osm');
+      for (const itinerary of body.itineraries) {
+        for (const sourceId of itinerary.sources) {
+          expect(registryIds).toContain(sourceId);
+        }
+      }
+      await app.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an emitted source id absent from the injected registry with 422', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'biyahey-plan-registry-'));
+    try {
+      // The walk-only itinerary only uses `osm`, which this registry omits.
+      writeRegistry(dataDir, ['psgc']);
+      const app = buildApp({ dataDir, motisFetch: async () => walkOnlyFixture });
+
+      const { statusCode, body } = await postPlan(app, {
+        origin: CUBAO,
+        destination: { lat: 14.618, lon: 121.054 },
+        departAt: DEPART_AT,
+      });
+
+      expect(statusCode).toBe(422);
+      expect(body.error?.code).toBe('UNKNOWN_SOURCE');
+      expect(body.error?.message).toContain('osm');
+      await app.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it('prices a listed free-ride route at zero with estimated confidence', async () => {

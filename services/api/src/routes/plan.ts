@@ -4,6 +4,7 @@ import {
   assertKnownSources,
   provenanceFor,
   type DataSource,
+  type ProvenanceRegistry,
   type SourceId,
 } from '@biyahey/shared/provenance';
 import { applyPreferences, dedupeItineraries, parsePlanRequest } from '../domain/itinerary.js';
@@ -77,8 +78,16 @@ async function collectItineraries(
  *
  * `sources` deliberately never contains `motis`: the routing engine is software,
  * not a data source (R6).
+ *
+ * Source validation and the returned registry rows both use the `registry` that
+ * `/sources` serves, so a plan can never cite a `DataSource` the BFF does not
+ * publish when `BIYAHEY_DATA_DIR` points at an alternate registry.
  */
-export function registerPlanRoutes(app: FastifyInstance, dataDir: string): void {
+export function registerPlanRoutes(
+  app: FastifyInstance,
+  dataDir: string,
+  registry: ProvenanceRegistry,
+): void {
   const client = createMotisClient({ fetch: app.motisFetch });
   const curated = loadCuratedData(dataDir);
 
@@ -89,14 +98,16 @@ export function registerPlanRoutes(app: FastifyInstance, dataDir: string): void 
     const itineraries = applyPreferences(collected, plan.preferences);
 
     for (const itinerary of itineraries) {
-      // Reject an unknown id with 422 through the centralized handler. The
-      // adapter only emits registry ids, so this is a contract check.
-      itinerary.sources = assertKnownSources(itinerary.sources);
+      // Reject an id absent from the active registry with 422 through the
+      // centralized handler. The adapter only emits registry ids, so this is a
+      // contract check.
+      itinerary.sources = assertKnownSources(itinerary.sources, registry);
     }
     const sourceIds: SourceId[] = assertKnownSources(
       itineraries.flatMap((itinerary) => itinerary.sources),
+      registry,
     );
-    const sources: DataSource[] = provenanceFor(sourceIds);
+    const sources: DataSource[] = provenanceFor(sourceIds, registry);
 
     const response: PlanResponse = { v: 1, itineraries, sources };
     return response;

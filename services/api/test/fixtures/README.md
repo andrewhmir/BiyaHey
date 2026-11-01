@@ -13,6 +13,7 @@ hand-edited examples; unit tests run offline against them through the
 | `motis-plan-walk-only.json` | `GET /api/v6/plan?fromPlace=14.619,121.053&toPlace=14.6180,121.0540&time=2026-11-02T08:00:00+08:00` | 2026-11-01 |
 | `motis-geocode-cubao.json` | `GET /api/v1/geocode?text=Cubao` | 2026-11-01 |
 | `motis-geocode-quezon-city.json` | `GET /api/v1/geocode?text=Quezon%20City` | 2026-11-01 |
+| `motis-geocode-nonsense.json` | `GET /api/v1/geocode?text=Barangay%20Walang%20Ganito%2012345` | 2026-11-01 |
 
 Recorded with:
 
@@ -25,6 +26,8 @@ curl.exe -s -o services/api/test/fixtures/motis-geocode-cubao.json `
   'http://localhost:8080/api/v1/geocode?text=Cubao'
 curl.exe -s -o services/api/test/fixtures/motis-geocode-quezon-city.json `
   'http://localhost:8080/api/v1/geocode?text=Quezon%20City'
+curl.exe -s -o services/api/test/fixtures/motis-geocode-nonsense.json `
+  'http://localhost:8080/api/v1/geocode?text=Barangay%20Walang%20Ganito%2012345'
 ```
 
 Notes:
@@ -41,3 +44,8 @@ Notes:
   `/api/openapi.yaml`, `/openapi.json` and `/docs` all return 404). The adapter
   therefore never sends `numItineraries`; it widens the search with extra plan
   calls instead.
+- The geocoder is fuzzy. `Barangay Walang Ganito 12345` returns ten PLACE rows;
+  the first claims all four query spans in `tokens` with a positive `score`
+  (+0.25), while real queries score below −14. `/search` therefore requires both
+  full token coverage and a negative score before reporting `partial: false`,
+  and this fixture pins the absent-place case offline.

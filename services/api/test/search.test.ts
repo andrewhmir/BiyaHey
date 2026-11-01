@@ -13,6 +13,7 @@ function loadFixture<T>(name: string): T {
 
 const cubaoFixture = loadFixture<unknown>('motis-geocode-cubao.json');
 const quezonCityFixture = loadFixture<unknown>('motis-geocode-quezon-city.json');
+const nonsenseFixture = loadFixture<unknown>('motis-geocode-nonsense.json');
 
 async function search(
   app: ReturnType<typeof buildApp>,
@@ -74,6 +75,28 @@ describe('GET /search', () => {
     expect(statusCode).toBe(200);
     expect(body.partial).toBe(true);
     expect(body.groups).toEqual({ stops: [], landmarks: [], routes: [], saved: [] });
+  });
+
+  it('marks a fuzzy result set partial when no result genuinely matches every token', async () => {
+    const app = buildApp({ motisFetch: async () => nonsenseFixture });
+    const { statusCode, body } = await search(app, 'Barangay Walang Ganito 12345');
+
+    expect(statusCode).toBe(200);
+    // The fuzzy geocoder still returns plausible-looking PLACE rows, and the
+    // first one claims all four query spans in `tokens`, but its score is
+    // positive, so the search must not present the answer as complete.
+    expect(body.groups.landmarks.length).toBeGreaterThan(0);
+    expect(body.partial).toBe(true);
+  });
+
+  it('reports a genuine multi-token match as complete', async () => {
+    const app = buildApp({ motisFetch: async () => quezonCityFixture });
+    const { statusCode, body } = await search(app, 'Quezon City');
+
+    expect(statusCode).toBe(200);
+    expect(body.groups.landmarks.length).toBeGreaterThan(0);
+    // "Quezon City" is covered by a negative-score result, so this is complete.
+    expect(body.partial).toBe(false);
   });
 
   it('does not call the router for a query shorter than three characters', async () => {

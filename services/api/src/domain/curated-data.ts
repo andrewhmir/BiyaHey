@@ -9,6 +9,12 @@ export interface CuratedData {
   freeRideRouteIds: ReadonlySet<string>;
   /** Normalized curated route id → its `stop_landmarks` names, in travel order. */
   curatedLandmarks: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Normalized route ids listed in the curated jeep/UV inventory. Only these
+   * routes actually used the OSM Wiki dataset; every other jeep/UV route in the
+   * live feed is OSM-relation-derived.
+   */
+  curatedRouteIds: ReadonlySet<string>;
 }
 
 const FREE_RIDE_FILE = join('fares', 'free-ride-routes.yaml');
@@ -62,11 +68,17 @@ function loadFreeRideRoutes(dataDir: string): Set<string> {
   return routeIds;
 }
 
-function loadCuratedLandmarks(dataDir: string): Map<string, readonly string[]> {
+interface CuratedInventory {
+  landmarks: Map<string, readonly string[]>;
+  routeIds: Set<string>;
+}
+
+function loadCuratedInventory(dataDir: string): CuratedInventory {
   const path = join(dataDir, INVENTORY_FILE);
   const landmarks = new Map<string, readonly string[]>();
+  const routeIds = new Set<string>();
   if (!existsSync(path)) {
-    return landmarks;
+    return { landmarks, routeIds };
   }
   const document = asRecord(readYaml(path));
   const routes = document === undefined ? undefined : asArray(document.routes);
@@ -80,10 +92,7 @@ function loadCuratedLandmarks(dataDir: string): Map<string, readonly string[]> {
     }
     const code = asString(route.code);
     const mode = asString(route.mode);
-    const published = asArray(route.stop_landmarks)?.filter(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    );
-    if (code === undefined || mode === undefined || published === undefined) {
+    if (code === undefined || mode === undefined) {
       continue;
     }
     const prefix = mode === 'jeepney' ? 'jeep' : mode === 'uv-express' ? 'uv' : undefined;
@@ -91,9 +100,15 @@ function loadCuratedLandmarks(dataDir: string): Map<string, readonly string[]> {
       continue;
     }
     const routeId = `${prefix}-${code.toLowerCase()}`;
-    landmarks.set(routeId, published);
+    routeIds.add(routeId);
+    const published = asArray(route.stop_landmarks)?.filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+    if (published !== undefined) {
+      landmarks.set(routeId, published);
+    }
   }
-  return landmarks;
+  return { landmarks, routeIds };
 }
 
 /**
@@ -104,8 +119,10 @@ function loadCuratedLandmarks(dataDir: string): Map<string, readonly string[]> {
  * can see the error, rather than degrading every later plan request.
  */
 export function loadCuratedData(dataDir: string): CuratedData {
+  const inventory = loadCuratedInventory(dataDir);
   return {
     freeRideRouteIds: loadFreeRideRoutes(dataDir),
-    curatedLandmarks: loadCuratedLandmarks(dataDir),
+    curatedLandmarks: inventory.landmarks,
+    curatedRouteIds: inventory.routeIds,
   };
 }

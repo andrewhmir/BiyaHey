@@ -30,6 +30,15 @@ export interface DataSource {
   used_for: string[];
 }
 
+/**
+ * A loaded provenance registry, keyed by source id in canonical registry order.
+ *
+ * Routes that resolve ids for a specific data directory pass their registry in
+ * instead of letting the helpers fall back to the repository's own `data/`, so
+ * validation and served `DataSource` rows cannot disagree.
+ */
+export type ProvenanceRegistry = ReadonlyMap<SourceId, DataSource>;
+
 /** Thrown when a caller refers to a source id that is not in the registry. */
 export class UnknownSourceError extends Error {
   constructor(message: string) {
@@ -114,11 +123,16 @@ export function loadProvenance(dataDir?: string): Map<SourceId, DataSource> {
 }
 
 /**
- * Assert that every id is registered and return the known ids in canonical
- * registry order, deduplicated.
+ * Assert that every id is registered in `registry` and return the known ids in
+ * canonical registry order, deduplicated.
+ *
+ * @param registry registry to validate against; defaults to the repository's
+ *   own registry (see {@link loadProvenance}).
  */
-export function assertKnownSources(ids: string[]): SourceId[] {
-  const registry = loadProvenance();
+export function assertKnownSources(
+  ids: string[],
+  registry: ProvenanceRegistry = loadProvenance(),
+): SourceId[] {
   const unknown = [...new Set(ids.filter((id) => !registry.has(id as SourceId)))];
   if (unknown.length > 0) {
     throw new UnknownSourceError(`Unknown source id(s): ${unknown.join(', ')}`);
@@ -127,15 +141,30 @@ export function assertKnownSources(ids: string[]): SourceId[] {
   return [...registry.keys()].filter((id) => requested.has(id));
 }
 
-/** Return registry entries for `ids` in canonical registry order, deduplicated. */
-export function provenanceFor(ids: SourceId[]): DataSource[] {
-  const registry = loadProvenance();
-  return assertKnownSources(ids).map((id) => registry.get(id)!);
+/**
+ * Return registry entries for `ids` in canonical registry order, deduplicated.
+ *
+ * @param registry registry to read from; defaults to the repository's own
+ *   registry (see {@link loadProvenance}).
+ */
+export function provenanceFor(
+  ids: SourceId[],
+  registry: ProvenanceRegistry = loadProvenance(),
+): DataSource[] {
+  return assertKnownSources(ids, registry).map((id) => registry.get(id)!);
 }
 
-/** Join the attributions for `ids` with ` · `, in canonical registry order. */
-export function attributionFor(ids: SourceId[]): string {
-  return provenanceFor(ids)
+/**
+ * Join the attributions for `ids` with ` · `, in canonical registry order.
+ *
+ * @param registry registry to read from; defaults to the repository's own
+ *   registry (see {@link loadProvenance}).
+ */
+export function attributionFor(
+  ids: SourceId[],
+  registry: ProvenanceRegistry = loadProvenance(),
+): string {
+  return provenanceFor(ids, registry)
     .map((source) => source.attribution)
     .join(' · ');
 }
