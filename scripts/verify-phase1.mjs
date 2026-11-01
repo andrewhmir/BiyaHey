@@ -17,12 +17,15 @@
  *   6. API on a free port, then the golden integration suite over HTTP
  *      (criteria 2, 3 and the API half of 5), with a JSON measurement report
  *
- * Criterion 4 (fare engine ≥25 golden cases) is covered by check 2; the count of
- * fare test cases is measured from the committed suite. Criterion 6 (PWA) is
+ * Criterion 4 (fare engine ≥25 golden cases) is covered by check 2 together with
+ * the pipeline pytest suite from check 1: both results feed the same criterion
+ * and every recorded check is fail-closed at exit time. Criterion 6 (PWA) is
  * Plan 2 by ruling R38 and is reported as deferred, never faked.
  *
- * Exit code: 0 when no check fails (PARTIAL is reported, not hidden), 1 when a
- * check fails.
+ * Exit code: 0 only when no criterion and no recorded check failed (PARTIAL is
+ * reported, not hidden); 1 otherwise. The `results` object is the source of
+ * truth for the recorded checks, so a pytest or golden-suite failure cannot be
+ * reported as PASS just because no criterion read it.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
@@ -195,7 +198,8 @@ async function main() {
     if (!existsSync(path)) {
       console.error(
         `verify-phase1: missing ${label} at ${path}\n` +
-          'Run the data build first (docs/runbooks/data-build.md §3): download, osm, publish, coverage.',
+          'Run the data build first (docs/runbooks/data-build.md §1–§2): download, osm, publish; ' +
+          '§6 lists every generated artifact.',
       );
       process.exitCode = 1;
       return;
@@ -333,7 +337,15 @@ async function main() {
       .join(' · ');
     const planP95 = goldenReport?.planP95Ms;
     const searchP95 = goldenReport?.searchP95Ms;
+    const searchSamples = goldenReport?.searchSamples ?? [];
+    const searchMaxMs = searchSamples.reduce((max, sample) => Math.max(max, sample.ms), 0);
+    const droppedTotal = (goldenReport?.trips ?? []).reduce(
+      (total, trip) => total + (trip.implausibleDropped ?? 0),
+      0,
+    );
     const fareCases = countFareCases();
+    const packageLicense = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).license;
+    const licenceFilePresent = existsSync(join(root, 'LICENSE'));
 
     const criteria = [
       {
@@ -347,21 +359,33 @@ async function main() {
       {
         id: '2',
         title: 'search: grouped results, p95 ≤ 1.5 s',
-        status: goldenReport?.searchP95Ms !== undefined && goldenReport.searchP95Ms <= 1500 ? 'PASS' : 'FAIL',
-        evidence: `p95 ${searchP95} ms over 6 NCR queries; groups stops/landmarks/routes/saved present; partial=false on every query.`,
+        status:
+          golden.code === 0 &&
+          typeof searchP95 === 'number' &&
+          searchP95 > 0 &&
+          searchP95 <= 1500
+            ? 'PASS'
+            : 'FAIL',
+        evidence:
+          `p95 ${searchP95} ms over ${searchSamples.length} NCR queries ` +
+          `(max sample ${searchMaxMs} ms, limit 1500); groups stops/landmarks/routes/saved present; partial=false on every query.`,
       },
       {
         id: '3',
         title: '10 golden trips ≥ 3 itineraries; p95 plan ≤ 1.5 s',
         status:
           golden.code === 0 && planP95 !== undefined && planP95 <= 1500 ? 'PASS' : 'FAIL',
-        evidence: `p95 plan ${planP95} ms; per-trip itinerary counts: ${tripSummary}`,
+        evidence: `p95 plan ${planP95} ms; per-trip itinerary counts: ${tripSummary}; the plausibility guard dropped ${droppedTotal} impossible itineraries and every returned itinerary passed it`,
       },
       {
         id: '4',
-        title: 'fare engine passes ≥ 25 golden fare cases',
-        status: ci.code === 0 && fareCases >= 25 ? 'PASS' : 'FAIL',
-        evidence: `${fareCases} fare-engine test cases in packages/shared/src/fares.test.ts, green under npm run ci (PUV matrix, rail discount, ferry/free-ride, guards)`,
+        title: 'fare engine passes ≥ 25 golden fare cases; pipeline pytest suite green',
+        status: ci.code === 0 && pytest.code === 0 && fareCases >= 25 ? 'PASS' : 'FAIL',
+        evidence:
+          `${fareCases} fare-engine test cases in packages/shared/src/fares.test.ts, green under npm run ci ` +
+          `(PUV matrix, rail discount, ferry/free-ride, guards); pipeline pytest suite ` +
+          `${pytest.code === 0 ? 'green' : `FAILED (exit ${pytest.code})`} in ${(pytest.durationMs / 1000).toFixed(1)} s ` +
+          '(includes the licence-gate tests; pytest is not part of npm run ci)',
       },
       {
         id: '5',
@@ -388,8 +412,16 @@ async function main() {
       {
         id: '8',
         title: 'licence gate: MIT code, ODbL derived database, no unlicensed dataset',
-        status: ci.code === 0 && gate.code === 0 ? 'PASS' : 'FAIL',
-        evidence: 'licence-gate ok on data/build/manifest.json; npm run ci runs validate:data; pytest licence-gate tests green',
+        status:
+          ci.code === 0 && gate.code === 0 && licenceFilePresent && packageLicense === 'MIT'
+            ? 'PASS'
+            : 'FAIL',
+        evidence:
+          `repository code is MIT (LICENSE present: ${licenceFilePresent}; package.json license: ` +
+          `${JSON.stringify(packageLicense)}); licence-gate ok on data/build/manifest.json: ` +
+          '4 datasets, ODbL-1.0 derived database with the notice in the artifact, CC BY-SA 2.0 ' +
+          'inventory attribution, no blocked dataset; npm run ci runs validate:data, and the pytest ' +
+          'licence-gate tests ran in the pipeline-check step (pytest is not part of npm run ci)',
       },
     ];
 
@@ -413,7 +445,18 @@ async function main() {
         `(${criteria.length - failed.length - partial.length - deferred.length} pass, ` +
         `${partial.length} partial, ${deferred.length} deferred, ${failed.length} fail)`,
     );
-    process.exitCode = failed.length > 0 ? 1 : 0;
+    // Fail closed on the recorded checks too: a failed pytest / ci / compose /
+    // smoke / gate / coverage / golden check must produce a non-zero exit even
+    // if a criterion's evidence text did not read that specific result.
+    const recordedFailures = Object.entries(results).filter(
+      ([, result]) => result.status === 'FAIL',
+    );
+    if (recordedFailures.length > 0) {
+      console.log(
+        `recorded checks failed: ${recordedFailures.map(([id]) => id).join(', ')}`,
+      );
+    }
+    process.exitCode = failed.length > 0 || recordedFailures.length > 0 ? 1 : 0;
   } catch (error) {
     console.error(`verify-phase1: ${error instanceof Error ? error.stack : String(error)}`);
     process.exitCode = 1;
