@@ -1,4 +1,5 @@
 import type { DataSource, FareQuote } from '@biyahey/shared';
+import { AboutDataLink } from '../../components/navigation/AboutDataLink';
 import { formatFare } from '../routes/RouteCard';
 
 /**
@@ -123,6 +124,11 @@ export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
           })}
         </p>
       ) : null}
+
+      {/* Task 7: the fare footer is one of the ⓘ entry points into /sources. */}
+      <p className="mt-2 text-xs">
+        <AboutDataLink className="font-medium text-primary">About data ⓘ</AboutDataLink>
+      </p>
     </footer>
   );
 }

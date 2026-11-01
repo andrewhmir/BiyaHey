@@ -1,8 +1,15 @@
-import type { PlanResponse, SearchGroup, SearchResponse, SearchResultDto } from '@biyahey/shared';
+import type {
+  DataSource,
+  PlanResponse,
+  SearchGroup,
+  SearchResponse,
+  SearchResultDto,
+} from '@biyahey/shared';
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
 import planCubaoAyalaRaw from '../fixtures/plan-cubao-ayala.json?raw';
 import planLong15LegsRaw from '../fixtures/plan-long-15-legs.json?raw';
 import planMrt3CubaoAyalaRaw from '../fixtures/plan-mrt3-cubao-ayala.json?raw';
+import sourcesRaw from '../fixtures/sources.json?raw';
 
 // MSW fixtures for `GET /search` (R40/R50). Bodies mirror the BFF's real
 // contract: grouped DTOs from `@biyahey/shared`, `distanceM` in whole metres,
@@ -361,6 +368,60 @@ export const planMrt3CubaoAyalaResponse: PlanResponse = parsePlanFixture(planMrt
 /** Fifteen legs with 60-character stop names: the timeline clipping stress case. */
 export const planLong15LegsResponse: PlanResponse = parsePlanFixture(planLong15LegsRaw);
 
+/**
+ * Parse the checked-in `GET /sources` fixture through the same shape guard the
+ * plan fixtures use. The JSON mirrors `data/provenance/sources.yaml` row for row
+ * (R60); a drifted field throws at import time instead of letting About-data
+ * render `undefined`. The registry has ten rows today, so a fixture that gains
+ * or loses one without a deliberate update fails loudly.
+ */
+export function parseSourcesFixture(raw: string): DataSource[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`sources fixture is not valid JSON: ${String(error)}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('sources fixture must be a JSON array of registry rows');
+  }
+  parsed.forEach((source, index) => assertSource(source, `sources[${index}]`));
+  const rows = parsed as DataSource[];
+  if (rows.length !== 10) {
+    throw new Error(`sources fixture must carry the registry's 10 rows, got ${rows.length}`);
+  }
+  const ids = new Set(rows.map((row) => row.id));
+  if (ids.size !== rows.length) {
+    throw new Error('sources fixture contains duplicate ids');
+  }
+  return rows;
+}
+
+/** The canonical registry rows the BFF serves for `GET /sources` (Task 7). */
+export const sourcesResponse: DataSource[] = parseSourcesFixture(sourcesRaw);
+
+/** Default `GET /sources`: the 10 registry rows in canonical order. */
+export const sourcesSuccessHandler = http.get('*/sources', () =>
+  HttpResponse.json(sourcesResponse),
+);
+
+/** A 500 in the BFF's documented error envelope. */
+export const sourcesErrorHandler = http.get('*/sources', () =>
+  HttpResponse.json(
+    { error: { code: 'INTERNAL_ERROR', message: 'Unexpected server error' } },
+    { status: 500 },
+  ),
+);
+
+/** A response that never arrives, for the loading-state assertion. */
+export const sourcesPendingHandler = http.get('*/sources', async () => {
+  await delay('infinite');
+  return HttpResponse.json(sourcesResponse);
+});
+
+/** The transport failed before a response arrived (offline simulation). */
+export const sourcesNetworkErrorHandler = http.get('*/sources', () => HttpResponse.error());
+
 /** Default `POST /plan` handler: the three-option Cubao → Ayala plan. */
 export const planSuccessHandler = http.post('*/plan', () =>
   HttpResponse.json(planCubaoAyalaResponse),
@@ -392,4 +453,8 @@ export const planPendingHandler = http.post('*/plan', async () => {
   return HttpResponse.json(planCubaoAyalaResponse);
 });
 
-export const handlers: HttpHandler[] = [searchSuccessHandler, planSuccessHandler];
+export const handlers: HttpHandler[] = [
+  searchSuccessHandler,
+  planSuccessHandler,
+  sourcesSuccessHandler,
+];

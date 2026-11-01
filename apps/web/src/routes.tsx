@@ -1,11 +1,19 @@
 import type { PlanPlaceInput } from '@biyahey/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { MapSlot } from './components/layout/MapSlot';
 import { MapCanvas } from './components/map/MapCanvas';
 import { RoutePolylines } from './components/map/RoutePolylines';
 import { BottomSheet, type SheetMapPadding } from './components/sheet/BottomSheet';
+import { AboutDataScreen } from './features/provenance/AboutDataScreen';
 import {
   RouteOptionsScreen,
   rankItineraries,
@@ -43,9 +51,9 @@ const PLAN_SHEET_DETENTS = [96, 'half', 'expanded'] as const;
 /**
  * Back follows the app's own history when there is one. A PWA deep link into
  * `/plan` is the first history entry, so `navigate(-1)` would leave the app;
- * that case falls back to search instead (Minor 10).
+ * that case falls back to `fallback` instead.
  */
-function useBackToSearch(): () => void {
+function useBackTo(fallback: string): () => void {
   const navigate = useNavigate();
   return useCallback(() => {
     const state: unknown = window.history.state;
@@ -54,9 +62,62 @@ function useBackToSearch(): () => void {
     if (typeof idx === 'number' && idx > 0) {
       navigate(-1);
     } else {
-      navigate('/search');
+      navigate(fallback);
     }
-  }, [navigate]);
+  }, [fallback, navigate]);
+}
+
+/** `/plan`'s back goes to search (Minor 10). */
+function useBackToSearch(): () => void {
+  return useBackTo('/search');
+}
+
+const TYPING_TARGET_TAGS: ReadonlySet<string> = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || TYPING_TARGET_TAGS.has(target.tagName);
+}
+
+/**
+ * Global `/` shortcut (Task 7, plan step 3).
+ *
+ * Pressing `/` outside a text field focuses search — the app's primary action —
+ * from any screen. On `/search` itself it focuses the already-mounted field; on
+ * every other route it navigates there (the field autofocuses on mount). It
+ * never fires while the rider is typing or with a modifier held, so the key
+ * stays a literal slash inside inputs.
+ */
+function GlobalSearchShortcut() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key !== '/' ||
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      if (location.pathname === '/search') {
+        document.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+        return;
+      }
+      navigate('/search');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [location.pathname, navigate]);
+
+  return null;
 }
 
 interface PlanViewProps {
@@ -478,16 +539,25 @@ function TripLiveRoute() {
   );
 }
 
+/** `/sources` — About data (Task 7); back to Home on a cold deep link. */
+function AboutDataRoute() {
+  const goBack = useBackTo('/');
+  return <AboutDataScreen onBack={goBack} />;
+}
+
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<HomeRoute />} />
-      <Route path="/search" element={<SearchScreen />} />
-      <Route path="/plan" element={<PlanRoute />} />
-      <Route path="/trip/:id/live" element={<TripLiveRoute />} />
-      <Route path="/trip/:id" element={<TripRoute />} />
-      <Route path="/saved" element={<PlaceholderScreen title="Saved" />} />
-      <Route path="/sources" element={<PlaceholderScreen title="Sources" />} />
-    </Routes>
+    <>
+      <GlobalSearchShortcut />
+      <Routes>
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/search" element={<SearchScreen />} />
+        <Route path="/plan" element={<PlanRoute />} />
+        <Route path="/trip/:id/live" element={<TripLiveRoute />} />
+        <Route path="/trip/:id" element={<TripRoute />} />
+        <Route path="/saved" element={<PlaceholderScreen title="Saved" />} />
+        <Route path="/sources" element={<AboutDataRoute />} />
+      </Routes>
+    </>
   );
 }

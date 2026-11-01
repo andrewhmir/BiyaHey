@@ -1,5 +1,5 @@
 import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
-import { joinAttributions } from '@biyahey/shared';
+import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
 import { ModeChips } from './ModeChips';
 
 /** The single badge a card may show (spec §11 screen 3). */
@@ -85,25 +85,9 @@ function arrivalLabel(endTime: string): string | null {
 }
 
 /**
- * Provenance chip body: the attribution of the first two source ids the
- * itinerary actually used, then the L1 "Data sources" affordance.
+ * Provenance chip body is owned by the shared `ProvenanceChip` (Task 7); the
+ * route card only supplies the itinerary's ids and the response's rows.
  */
-export function provenanceLabel(
-  itinerary: ItineraryDto,
-  sources: readonly DataSource[],
-): string {
-  const requested = itinerary.sources.slice(0, 2);
-  const resolved = requested
-    .map((sourceId) => sources.find((source) => source.id === sourceId))
-    .filter((source): source is DataSource => source !== undefined);
-
-  const attribution = joinAttributions(resolved);
-  const missing = requested.length > resolved.length;
-  const prefix = attribution.length > 0 ? attribution : missing ? 'source unavailable' : '';
-  const missingNote = attribution.length > 0 && missing ? ' · source unavailable' : '';
-  return `${prefix}${missingNote}${prefix.length > 0 ? ' · ' : ''}Data sources`;
-}
-
 export function RouteCard({
   itinerary,
   sources,
@@ -112,77 +96,82 @@ export function RouteCard({
   badge,
 }: RouteCardProps) {
   const arrival = arrivalLabel(itinerary.endTime);
-  const attribution = provenanceLabel(itinerary, sources);
 
   return (
-    <button
-      type="button"
-      data-testid="route-card"
-      data-selected={selected ? 'true' : 'false'}
-      aria-pressed={selected}
-      onClick={() => onSelect(itinerary.id)}
-      className={`flex w-full flex-col gap-3 rounded-card border p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+    <div
+      className={`flex w-full flex-col rounded-card border transition ${
         selected
           ? 'border-primary bg-surface-container-lowest shadow-elevation-2'
           : 'border-outline-variant bg-surface-container shadow-none'
       }`}
     >
-      <span className="flex items-start justify-between gap-2">
-        <span className="flex flex-col">
-          <span className="text-2xl font-bold leading-8 text-on-surface">
-            {itinerary.durationMin} min
+      <button
+        type="button"
+        data-testid="route-card"
+        data-selected={selected ? 'true' : 'false'}
+        aria-pressed={selected}
+        onClick={() => onSelect(itinerary.id)}
+        className="flex w-full flex-col gap-3 rounded-card p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+      >
+        <span className="flex items-start justify-between gap-2">
+          <span className="flex flex-col">
+            <span className="text-2xl font-bold leading-8 text-on-surface">
+              {itinerary.durationMin} min
+            </span>
+            {arrival !== null ? (
+              <span className="text-sm text-on-surface-variant">Dating {arrival}</span>
+            ) : null}
           </span>
-          {arrival !== null ? (
-            <span className="text-sm text-on-surface-variant">Dating {arrival}</span>
-          ) : null}
-        </span>
-        {badge !== undefined ? (
-          <span
-            data-testid="route-badge"
-            className="rounded-pill bg-primary px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-on-primary"
-          >
-            {badge}
-          </span>
-        ) : null}
-      </span>
-
-      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-on-surface-variant">
-        <span>{transfersLabel(itinerary.transfers)}</span>
-        <span aria-hidden="true">·</span>
-        <span>{walkLabel(itinerary.walkDistanceM)}</span>
-      </span>
-
-      <span className="flex flex-col gap-0.5 rounded-card border border-fare-border bg-fare-bg px-3 py-2 text-on-fare-bg">
-        <span className="flex flex-wrap items-center gap-2">
-          <span data-testid="fare-amount" className="text-xl font-semibold leading-7">
-            ₱{formatFare(itinerary.fare.amount)}
-          </span>
-          {/* An estimated quote (rail band, free-ride override) is never
-              presented as an official matrix fare. Task 6 owns the full
-              fare breakdown; the card only flags the confidence. */}
-          {itinerary.fare.confidence === 'estimated' ? (
+          {badge !== undefined ? (
             <span
-              data-testid="fare-estimate"
-              className="rounded-pill border border-fare-border px-1.5 py-0.5 text-[11px] font-medium leading-4"
+              data-testid="route-badge"
+              className="rounded-pill bg-primary px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-on-primary"
             >
-              Estimate
+              {badge}
             </span>
           ) : null}
         </span>
-        <span data-testid="fare-date" className="text-xs leading-4">
-          {fareEffectiveLine(itinerary.fare)}
+
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-on-surface-variant">
+          <span>{transfersLabel(itinerary.transfers)}</span>
+          <span aria-hidden="true">·</span>
+          <span>{walkLabel(itinerary.walkDistanceM)}</span>
         </span>
-      </span>
 
-      <ModeChips modes={itinerary.modes} />
+        <span className="flex flex-col gap-0.5 rounded-card border border-fare-border bg-fare-bg px-3 py-2 text-on-fare-bg">
+          <span className="flex flex-wrap items-center gap-2">
+            <span data-testid="fare-amount" className="text-xl font-semibold leading-7">
+              ₱{formatFare(itinerary.fare.amount)}
+            </span>
+            {/* An estimated quote (rail band, free-ride override) is never
+                presented as an official matrix fare. Task 6 owns the full
+                fare breakdown; the card only flags the confidence. */}
+            {itinerary.fare.confidence === 'estimated' ? (
+              <span
+                data-testid="fare-estimate"
+                className="rounded-pill border border-fare-border px-1.5 py-0.5 text-[11px] font-medium leading-4"
+              >
+                Estimate
+              </span>
+            ) : null}
+          </span>
+          <span data-testid="fare-date" className="text-xs leading-4">
+            {fareEffectiveLine(itinerary.fare)}
+          </span>
+        </span>
 
-      <span
-        data-testid="provenance-chip"
-        className="text-[11px] leading-4 text-on-surface-variant"
-      >
-        {attribution}
-        <span aria-hidden="true"> ⓘ</span>
-      </span>
-    </button>
+        <ModeChips modes={itinerary.modes} />
+      </button>
+
+      {/* Task 7: the chip lives beside the select action, not inside it — a
+          link nested in a button would be invalid and would also select the
+          card when the rider only wanted the provenance detail. */}
+      <div className="px-4 pb-3">
+        <ProvenanceChip
+          sourcesFromItinerary={itinerary.sources}
+          knownSources={sources}
+        />
+      </div>
+    </div>
   );
 }

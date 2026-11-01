@@ -4,6 +4,7 @@ import { AppShell } from '../components/layout/AppShell';
 import { MapSlot } from '../components/layout/MapSlot';
 import { MapCanvas } from '../components/map/MapCanvas';
 import { RoutePolylines } from '../components/map/RoutePolylines';
+import { AboutDataLink } from '../components/navigation/AboutDataLink';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 
 const HOME_DETENTS = [96, 'half', 'expanded'] as const;
@@ -68,6 +69,15 @@ function HomeSheetContent({ onSearchClick }: HomePageProps) {
       <p className="text-sm text-on-surface-variant">
         Hilahin pataas ang sheet para makapag-plano ng ruta.
       </p>
+      {/* Task 7's smallest honest "Settings" entry: there is no Settings screen
+          in v1, so Home's sheet owns the About-data door. Recorded as a
+          proposed ruling in the Task 7 report. */}
+      <div className="border-t border-outline-variant pt-3">
+        <AboutDataLink className="inline-flex min-h-6 items-center gap-1 text-sm font-medium text-primary">
+          About data
+          <span aria-hidden="true">ⓘ</span>
+        </AboutDataLink>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { PlanRequest, PlanResponse, SearchResponse } from '@biyahey/shared';
+import type { DataSource, PlanRequest, PlanResponse, SearchResponse } from '@biyahey/shared';
 
 /**
  * Base URL of the Plan 1 BFF (R40).
@@ -230,4 +230,20 @@ export async function planTrip(
     body: input,
     signal: options.signal,
   });
+}
+
+/**
+ * `GET /sources` — the provenance registry, in the BFF's canonical order
+ * (spec §10, Task 7).
+ *
+ * The rows are rendered as returned: the web app never has its own attribution
+ * or licence table (R45). A response that is not an array is rejected here so
+ * About-data fails with its honest retry state instead of crashing a card.
+ */
+export async function fetchSources(options: CallOptions = {}): Promise<DataSource[]> {
+  const payload = await request<unknown>('/sources', { signal: options.signal });
+  if (!Array.isArray(payload)) {
+    throw new ApiError('invalid_response', 'Hindi mabasa ang listahan ng data sources.');
+  }
+  return payload as DataSource[];
 }

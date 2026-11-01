@@ -1,6 +1,7 @@
 import type { DataSource } from '@biyahey/shared';
 import { Info } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
+import { AboutDataLink } from '../navigation/AboutDataLink';
 import { useMap } from './MapContext';
 
 /**
@@ -127,6 +128,10 @@ export function MapCredit({
           ) : (
             <p>OpenFreeMap tiles, © OpenMapTiles · Data from OpenStreetMap.</p>
           )}
+          {/* Task 7: one tap from the ⓘ detail to the full L2/L3 screen. */}
+          <AboutDataLink className="mt-2 inline-flex min-h-6 items-center text-sm font-medium text-primary">
+            About data
+          </AboutDataLink>
         </div>
       )}
     </div>
