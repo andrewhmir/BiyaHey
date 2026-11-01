@@ -1,0 +1,238 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature "NCR extract" used by pipelines/tests/test_publish.py
+  (Task 8 publish stage). It is NOT downloaded: the publish tests must run
+  offline. Coordinates are synthetic fixture values, not survey data - they are
+  only plausible enough to exercise the landmark resolver, the OSM-first merge
+  (ruling R29) and the GTFS geometry path without a 584 MB download.
+
+  Named stop features the landmark resolver reads (21 nodes + 1 way stop):
+    5001 Bagong Silang           public_transport=stop_position
+    5002 Novaliches              public_transport=stop_position
+    5003 RIZAL AVENUE            highway=bus_stop          (case-fold check)
+    5004 Monumento               public_transport=platform
+    5005 Paco (Obando)           public_transport=stop_position
+    5006 Malabon                 highway=bus_stop
+    5007 Victory Mall Monumento  public_transport=platform
+    5008 Balintawak Cloverleaf   public_transport=stop_position
+    5009 Baclaran Rotonda        public_transport=stop_position
+    5010 Baltao                  highway=bus_stop
+    5011 South Station           railway=station
+    5012 Malinta                 public_transport=stop_position
+    5013 Quezon Memorial Circle  public_transport=stop_position
+    5014 SM Fairview             public_transport=stop_position
+    5015 Commonwealth            highway=bus_stop
+    5016 Molino                  public_transport=stop_position
+    5017 Alabang                 railway=station
+    5018 Cubao                   public_transport=stop_position
+    5019 Baclaran                public_transport=stop_position
+    5020 North Avenue            railway=station
+    5021 Quezon Avenue           railway=station
+    way 6001 "Binan Poblacion"   public_transport=platform, centroid of nodes
+                                 5022/5023 - matches the seed's "Biñan
+                                 Poblacion" after diacritic folding.
+
+  Named ways that are NOT stops (must never become landmarks):
+    6101 "EDSA"            highway=primary  (geometry for bus B1)
+    6102 "MRT-3 track"     railway=subway   (geometry for rail MRT-3)
+    6103 "Susano Road"     highway=primary  (geometry for OSM jeep T101)
+    6104 "Pasig River"     route=ferry      (geometry for ferry Pasig)
+    6002 "Some Road"       highway=primary
+
+  Route relations:
+    7001 route=bus        ref=B1      -> bus-b1
+    7002 route=light_rail ref=MRT-3   -> rail-mrt3
+    7003 route=jeepney    ref=T101    -> jeep-t101  (collides with the curated
+                                        T101 once curated ids are lowercased:
+                                        ruling R29; the OSM route must win)
+    7004 route=ferry      ref=Pasig   -> ferry-pasig (no stop members, so its
+                                        landmark stops are synthesized)
+    7005 route=bus        ref=B2      -> bus-b2, whose only way member (9999) is
+                                        dangling, so the GTFS builder must skip
+                                        it and count the skip (osm_routes_skipped)
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="5001" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7589000" lon="121.0483000">
+    <tag k="name" v="Bagong Silang"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5002" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7285000" lon="121.0330000">
+    <tag k="name" v="Novaliches"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5003" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6094000" lon="120.9824000">
+    <tag k="name" v="RIZAL AVENUE"/>
+    <tag k="highway" v="bus_stop"/>
+  </node>
+  <node id="5004" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6572000" lon="120.9839000">
+    <tag k="name" v="Monumento"/>
+    <tag k="public_transport" v="platform"/>
+  </node>
+  <node id="5005" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6692000" lon="120.9461000">
+    <tag k="name" v="Paco (Obando)"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5006" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6626000" lon="120.9566000">
+    <tag k="name" v="Malabon"/>
+    <tag k="highway" v="bus_stop"/>
+  </node>
+  <node id="5007" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6568000" lon="120.9842000">
+    <tag k="name" v="Victory Mall Monumento"/>
+    <tag k="public_transport" v="platform"/>
+  </node>
+  <node id="5008" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6575000" lon="121.0036000">
+    <tag k="name" v="Balintawak Cloverleaf"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5009" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5354000" lon="120.9952000">
+    <tag k="name" v="Baclaran Rotonda"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5010" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5200000" lon="121.0000000">
+    <tag k="name" v="Baltao"/>
+    <tag k="highway" v="bus_stop"/>
+  </node>
+  <node id="5011" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4435000" lon="121.0345000">
+    <tag k="name" v="South Station"/>
+    <tag k="railway" v="station"/>
+  </node>
+  <node id="5012" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6868000" lon="120.9730000">
+    <tag k="name" v="Malinta"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5013" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6510000" lon="121.0490000">
+    <tag k="name" v="Quezon Memorial Circle"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5014" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7340000" lon="121.0570000">
+    <tag k="name" v="SM Fairview"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5015" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6762000" lon="121.0580000">
+    <tag k="name" v="Commonwealth"/>
+    <tag k="highway" v="bus_stop"/>
+  </node>
+  <node id="5016" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4070000" lon="121.0120000">
+    <tag k="name" v="Molino"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5017" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4300000" lon="121.0400000">
+    <tag k="name" v="Alabang"/>
+    <tag k="railway" v="station"/>
+  </node>
+  <node id="5018" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6150000" lon="121.0150000">
+    <tag k="name" v="Cubao"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5019" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5300000" lon="121.0000000">
+    <tag k="name" v="Baclaran"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5020" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6000000" lon="121.0000000">
+    <tag k="name" v="North Avenue"/>
+    <tag k="railway" v="station"/>
+  </node>
+  <node id="5021" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6050000" lon="121.0050000">
+    <tag k="name" v="Quezon Avenue"/>
+    <tag k="railway" v="station"/>
+  </node>
+
+  <!-- unnamed geometry / platform-way nodes -->
+  <node id="5022" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4410000" lon="121.0300000"/>
+  <node id="5023" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4420000" lon="121.0310000"/>
+  <node id="5024" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5700000" lon="121.0100000"/>
+  <node id="5025" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6500000" lon="121.0300000"/>
+  <node id="5026" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6025000" lon="121.0025000"/>
+  <node id="5027" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7430000" lon="121.0400000"/>
+  <node id="5028" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5650000" lon="121.0450000"/>
+  <node id="5029" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5750000" lon="121.0600000"/>
+
+  <way id="6001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5022"/>
+    <nd ref="5023"/>
+    <tag k="public_transport" v="platform"/>
+    <tag k="name" v="Binan Poblacion"/>
+  </way>
+  <way id="6002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5025"/>
+    <nd ref="5024"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="Some Road"/>
+  </way>
+  <way id="6101" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5018"/>
+    <nd ref="5024"/>
+    <nd ref="5019"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="EDSA"/>
+  </way>
+  <way id="6102" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5020"/>
+    <nd ref="5026"/>
+    <nd ref="5021"/>
+    <tag k="railway" v="subway"/>
+    <tag k="name" v="MRT-3 track"/>
+  </way>
+  <way id="6103" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5001"/>
+    <nd ref="5027"/>
+    <nd ref="5002"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="Susano Road"/>
+  </way>
+  <way id="6104" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5028"/>
+    <nd ref="5029"/>
+    <tag k="route" v="ferry"/>
+    <tag k="name" v="Pasig River"/>
+  </way>
+
+  <relation id="7001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6101" role=""/>
+    <member type="node" ref="5018" role="stop"/>
+    <member type="node" ref="5019" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="B1"/>
+    <tag k="name" v="Cubao - Baclaran"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="7002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6102" role=""/>
+    <member type="node" ref="5020" role="stop"/>
+    <member type="node" ref="5021" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="light_rail"/>
+    <tag k="ref" v="MRT-3"/>
+    <tag k="name" v="MRT Line 3"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="7003" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6103" role=""/>
+    <member type="node" ref="5001" role="stop"/>
+    <member type="node" ref="5002" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="jeepney"/>
+    <tag k="ref" v="T101"/>
+    <tag k="name" v="Bagong Silang - Novaliches via Susano"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="7004" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6104" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+    <tag k="ref" v="Pasig"/>
+    <tag k="name" v="Pasig River Ferry"/>
+    <tag k="from" v="Guadalupe"/>
+    <tag k="to" v="Pasig"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="7005" version="1" timestamp="2026-10-31T21:23:00Z">
+    <!-- DANGLING: way 9999 is not in this extract, so this route has no geometry -->
+    <member type="way" ref="9999" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="B2"/>
+    <tag k="name" v="Unresolved bus route"/>
+  </relation>
+</osm>

@@ -1,0 +1,47 @@
+name: Licence gate
+
+# Polices spec 8.1 / ruling R22 on every change to data or the pipeline:
+#  - no blocked dataset (Sakay/PTAC 2014 GTFS, BusMaps, unlicensed feeds) may be
+#    registered, and
+#  - the published GTFS must never lose its ODbL licence/attribution.
+# Everything after the pip install is offline: the tests use committed fixtures
+# and the gate reads committed files only (data/build is gitignored, so CI must
+# never depend on build artifacts).
+on:
+  push:
+    paths:
+      - 'data/**'
+      - 'pipelines/**'
+      - '.github/workflows/licence-gate.yml'
+  pull_request:
+    paths:
+      - 'data/**'
+      - 'pipelines/**'
+      - '.github/workflows/licence-gate.yml'
+
+jobs:
+  licence-gate:
+    name: Pipeline tests + licence gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipelines
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: pipelines/requirements.txt
+
+      - name: Install pinned pipeline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Pipeline pytest suite (offline fixtures)
+        run: python -m pytest -q
+
+      - name: Licence gate (provenance register)
+        run: python -m pipeline.cli licence-gate

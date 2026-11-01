@@ -5,7 +5,9 @@ Scope (Task 6 of the data spine)
 This module owns the *GTFS core* only: agency, routes, stops, trips, stop
 times, shapes, calendar and feed info, plus the mandatory ODbL notice. Fares
 (Task 8), the provenance manifest (Task 8) and the OSM reader (``osm_routes``)
-are separate modules. The feed deliberately contains no ``fare_*`` tables yet.
+are separate modules: the core build stays fare-free, and the publish stage
+attaches the rendered ``fare_*`` tables through
+:meth:`GtfsFeed.write(extra_tables=...)`.
 
 Trip generation — the pinned arithmetic (ruling R8)
 ---------------------------------------------------
@@ -54,7 +56,7 @@ import zipfile
 from dataclasses import dataclass, field, fields
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Type
 
 Point = Tuple[float, float]
 
@@ -298,12 +300,23 @@ class GtfsFeed:
             for rows in grouped.values()
         ]
 
-    def write(self, path: Path) -> None:
-        """Write the feed as a zip containing the nine required tables.
+    def write(
+        self, path: Path, *, extra_tables: Optional[Mapping[str, str]] = None
+    ) -> None:
+        """Write the feed as a zip containing the required tables.
 
-        The zip is deterministic (fixed entry timestamps, sorted table order),
-        so the same feed always hashes to the same bytes for the Task 8
-        manifest. Text files are UTF-8 with BOM.
+        Args:
+            path: destination zip path (its parent is created).
+            extra_tables: optional ``{filename: csv_text}`` tables to append,
+                e.g. the Task 8 ``fare_attributes.txt`` / ``fare_rules.txt``
+                rendered by :func:`pipeline.fares.build_gtfs_fare_tables`. Names
+                must be plain ``.txt`` filenames and must not overwrite a
+                generated table or ``LICENSE-DATA.txt``.
+
+        The zip is deterministic (fixed entry timestamps, sorted tables), so the
+        same feed always hashes to the same bytes for the Task 8 manifest. Text
+        files are UTF-8 with BOM. The ODbL notice is always written last and
+        always present.
         """
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -318,9 +331,17 @@ class GtfsFeed:
             ("calendar.txt", CalendarRow, self.calendar),
             ("feed_info.txt", FeedInfoRow, self.feed_info),
         ]
+        generated_names = {filename for filename, _, _ in tables} | {"LICENSE-DATA.txt"}
+        extra: List[Tuple[str, str]] = []
+        for filename in sorted(extra_tables or {}):
+            _validate_extra_table_name(filename, generated_names)
+            extra.append((filename, extra_tables[filename]))
+
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for filename, row_type, rows in tables:
                 archive.writestr(_zip_info(filename), _csv_bytes(row_type, rows))
+            for filename, text in extra:
+                archive.writestr(_zip_info(filename), text.encode("utf-8-sig"))
             archive.writestr(
                 _zip_info("LICENSE-DATA.txt"), LICENCE_TEXT.encode("utf-8-sig")
             )
@@ -640,3 +661,20 @@ def _zip_info(filename: str) -> zipfile.ZipInfo:
     info = zipfile.ZipInfo(filename=filename, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     return info
+
+
+def _validate_extra_table_name(filename: str, generated_names: set) -> None:
+    """Reject an extra table name that could escape the zip or shadow a table."""
+    if (
+        not isinstance(filename, str)
+        or not filename
+        or Path(filename).name != filename
+        or not filename.endswith(".txt")
+    ):
+        raise ValueError(
+            f"extra table name must be a plain .txt filename, got {filename!r}"
+        )
+    if filename in generated_names:
+        raise ValueError(
+            f"extra table {filename!r} would overwrite a generated table"
+        )
