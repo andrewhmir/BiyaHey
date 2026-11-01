@@ -1,0 +1,16 @@
+# BiyaHey! free-ride route overrides (spec §8.3, ruling R25).
+#
+# A route id listed here is priced at ₱0 with `confidence: estimated`, because
+# free-ride service contracts (rail-hub jeepneys, EDSA Carousel) are announced
+# and withdrawn administratively and BiyaHey! has not corroborated any of them.
+#
+# EMPTY ON PURPOSE: this list is unverified. Do not add a route until a primary
+# source (an LTFRB/DOTr notice or an operator announcement) is recorded in the
+# row and checked in the commit message. The schema requires both `source_url`
+# and `verified_on`, so an unsourced entry cannot pass `npm run validate:data`.
+#
+# Route ids are the GTFS ids from data/build/gtfs/routes.txt (e.g. `jeep-t101`,
+# `bus-23`), lowercased and without MOTIS's `gtfs_` namespace prefix.
+#
+# Validated by schema/free-ride-routes.schema.json via `npm run validate:data`.
+routes: []
