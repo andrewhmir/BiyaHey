@@ -7,10 +7,13 @@
 #   published = round(min + (max - min) * distanceKm / lengthKm)   # whole pesos
 #   charged   = published * discount
 #
-# LRT-2's band is provisional (secondary-sourced) and carries
-# `needs_verification: true` until Task 11 transcribes the operator table;
-# `packages/shared/src/fares.ts` surfaces that as `confidence: 'estimated'` and
-# a "provisional band" fare line.
+# LRT-2's band is provisional and stays that way (ruling R47): no authoritative
+# LRTA per-station fare table could be transcribed from a primary source during
+# Plan 1, so the min-max band is secondary-sourced and carries
+# `needs_verification: true`. `packages/shared/src/fares.ts` surfaces that as
+# `confidence: 'estimated'` plus a "provisional band" fare line, and the phase-1
+# acceptance runbook records the gap. Do not describe LRT-2 as an official fare,
+# and do not flip this flag without a cited operator table and a test update.
 #
 # Validated by schema/rail-tables.schema.json via `npm run validate:data`.
 source_id: "rail-fares"
@@ -49,4 +52,4 @@ lines:
     effective_from: "2026-03-23"
     confidence: "estimated"
     needs_verification: true
-    notes: "Provisional band pending Task 11 transcription of the LRTA operator fare table; do not ship as verified."
+    notes: "Provisional band (ruling R47): no authoritative LRTA per-station fare table was available to transcribe, so this is secondary-sourced. Surfaced as confidence: estimated with a provisional-band fare line; do not ship or describe as verified/official."

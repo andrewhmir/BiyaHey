@@ -64,9 +64,35 @@ Open-source, community-built commuter route planner for the Philippines, intende
 Plan 1 (current): Tasks 1–11, in order. Plan 2 starts only after Plan 1's phase-1 acceptance passes.
 Plan 2: Tasks 1–11, in order. Later phases (3–6 in the spec) get their own plans after phase 2.
 
+The Plan-1 gate is **PARTIAL only because the remaining criteria are owned by Plan 2**
+(web service, About-data screen, PWA installability) and are reported DEFERRED, not
+failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
+
 ## Current status
 
 - Planning complete: research (3 reports), spec (approved), two implementation plans (committed).
-- Plan 1 (data spine + router, Tasks 1–11): **complete**. Phase-1 acceptance run **2026-11-01**: 5 PASS, 2 PARTIAL (criterion 1's web service and criterion 5's About-data screen are Plan 2), 1 DEFERRED (criterion 6 / PWA, ruling R38), 0 FAIL. Re-run with `npm run verify:phase1`.
-- Evidence: `docs/runbooks/phase1-acceptance.md` (criteria table, golden trip counts, coverage 12/16 = 75.0 %, undici R37 stress proof), `docs/runbooks/data-build.md` (measured build durations, publish, aliases, coverage), task report `.superpowers/sdd/2026-11-01-biyahey-data-spine/task-11-report.md`.
-- Next action: Plan 2 (PWA MVP), Tasks 1–11. Plan 1 leaves the stack runnable: MOTIS has re-imported the published 494-route feed; start the API with `npm run start --workspace @biyahey/api` (port 8787).
+- Plan 1 (data spine + router, Tasks 1–11): **complete and reviewed clean**. Final whole-branch
+  review 2026-11-01: Ready to merge with fixes; no Critical. **Final fix wave applied** (11
+  Important items): CORS for the PWA origin, `api` compose service + root `npm run dev` /
+  `npm run data:build`, plan cap 3–5, browser-safe `joinAttributions`, `/search` `near`
+  distance, `informalTransfer`, unsupported ferry/rail exclusion (feed 494 → 489 routes),
+  LRT-2 R47 known-gap, stale-fare wiring + `check:fares`, repo docs, P2P R48 deferral.
+- Phase-1 acceptance re-run **2026-11-01 (final fix wave)**: 5 PASS, 2 PARTIAL (criterion 1's
+  web service and criterion 5's About-data screen are Plan 2), 1 DEFERRED (criterion 6 /
+  PWA, ruling R38), 0 FAIL. `npm run verify:phase1` exits 0. Re-run with
+  `npm run verify:phase1`.
+- Evidence: `docs/runbooks/phase1-acceptance.md` (criteria table, golden counts capped at 5,
+  coverage 12/16 = 75.0 %, CORS/local-first §9, known gaps §8), `docs/runbooks/data-build.md`
+  (measured durations, mode-gate exclusions, validator attempt), task report
+  `.superpowers/sdd/2026-11-01-biyahey-data-spine/task-11-report.md` (append-only),
+  `.superpowers/sdd/2026-11-01-biyahey-data-spine/final-fix-report.md`.
+- **Known gaps before public beta (recorded, not hidden):** `gtfs-validator` did not run
+  locally (host JVM resource-loading failure; `.github/workflows/data.yml` added, ruling
+  R46); LRT-2 band provisional (R47); **P2P formally deferred** from v1 (R48 — engine code
+  kept, `/plan` never emits it, no machine-readable P2P route fare exists); PNR/non-PRFS
+  ferries excluded from the feed; 62 implausible itineraries dropped across the golden set
+  (R10 feed shapes); coverage 12/16.
+- Next action: **Plan 2 (PWA MVP), Tasks 1–11.** Plan 1 leaves the stack runnable:
+  `npm run dev` brings up `routing` + `api` (MOTIS has imported the published 489-route
+  feed); the PWA will join on `:5173` (already CORS-allowed). Run `npm run data:build`
+  before the first `npm run dev` on a fresh checkout.

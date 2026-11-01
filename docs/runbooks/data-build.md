@@ -25,6 +25,18 @@ The clip is a **one-time local build step**, not a per-request cost: MOTIS impor
 clip and GTFS once per container start and serves the preprocessed graph. Nothing in
 the API or the acceptance path re-scans the 612 MB extract.
 
+**One command from the repository root** (final-review item 2):
+
+```powershell
+npm run data:build                       # download → osm → publish, with the R34 aliases
+npm run data:build -- --skip-download    # reuse the PH extract, re-clip + publish
+npm run data:build -- --publish-only     # reuse the NCR clip, rebuild the feed
+```
+
+`scripts/data-build.mjs` resolves `pipelines/.venv`, prints each stage with absolute
+paths, and always passes `--aliases data/routes/landmark-aliases.yaml`. It never runs
+in tests or CI; the download is an explicit network action.
+
 ---
 
 ## 0. One-time setup — the pipeline virtualenv
@@ -48,8 +60,8 @@ cd pipelines
 ..\pipelines\.venv\Scripts\python.exe -m pytest
 ```
 
-Expected: `145 passed`. Alternatively from the repository root:
-`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `145 passed`).
+Expected: `146 passed`. Alternatively from the repository root:
+`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `146 passed`).
 
 > Tests never download the OSM extract and never call taginfo. The download step below
 > is an explicit, separate action, and the coverage test reads a committed snapshot.
@@ -220,7 +232,7 @@ instance and rewrite the fixture, keeping `_snapshot` truthful about the query d
 pipelines\.venv\Scripts\python.exe -m pytest pipelines
 ```
 
-Expected `145 passed`, offline. Then confirm the artifacts:
+Expected `146 passed`, offline. Then confirm the artifacts:
 
 ```powershell
 Get-ChildItem data\build\osm
@@ -254,27 +266,42 @@ The stage (all offline, reads local files only):
    is how the curated `uv-m01` fills the gap left by an OSM `uv-m01` share_taxi that
    the builder drops for having one stop);
 3. builds the merged feed and attaches the fare tables from `data/fares/`
-   (LTFRB PUV matrix 2026-09-28; LRT-2/MRT-3 50 % discount; LRT-1 excluded; ferry free);
-4. writes `gtfs/gtfs.zip` (deterministic bytes, with the ODbL notice and the CC BY-SA
+   (LTFRB PUV matrix 2026-09-28; LRT-2/MRT-3 50 % discount; LRT-1 excluded; PRFS ferry free);
+4. **excludes route families v1 cannot price** before the feed is built
+   (final-review item 7): `rail-ss`/`rail-mnc` (PNR) and `rail-mrt9` (proposed Metro
+   Manila Subway), plus every ferry that is not the free MMDA PRFS service
+   (`ferry-manilacoron`, `ferry-iloilopuertoprincesa`, `ferry-liminangcongelnido`,
+   `ferry-maniladavaocitygeneralsantosiloilomanila`). The exclusion list is written to
+   `build-report.json` under `excluded_routes` (deduplicated by route id) with a reason
+   per family. The API also drops and counts such a leg at request time
+   (`x-biyahey-unsupported-dropped`) as defence in depth: pricing a non-PRFS ferry as
+   the free Pasig River Ferry would be false;
+5. writes `gtfs/gtfs.zip` (deterministic bytes, with the ODbL notice and the CC BY-SA
    2.0 inventory attribution inside), `manifest.json` (sha256 + datasets + attributions)
    and `build-report.json` (the curated coverage/alias report);
-5. refuses to publish if the provenance registry names a blocked dataset, or if the
+6. refuses to publish if the provenance registry names a blocked dataset, or if the
    manifest/artifact loses the ODbL notice or the CC BY-SA 2.0 inventory attribution
    (spec 8.1/8.2; rulings R22, R32).
 
-Measured on 2026-11-01: **383.9 s (≈ 6 min 24 s)**. Expected console output:
+Measured on 2026-11-01 (final fix wave, after the mode gate): the publish stage remains
+**≈ 6 min** (first measured 383.9 s; the fix-wave republish is the same order of
+magnitude). Expected console output:
 
 ```
-publish: 494 routes, 162032 trips, 4593 stops
+publish: 489 routes, 160392 trips, 4562 stops
 curated: 12/16 modelled, 4 skipped, 4 unresolved landmarks
 coverage: 12/16 curated routes in the feed (75.0%)
 aliases: 8 used, 0 invalid (data\routes\landmark-aliases.yaml)
-fare tables: 6 fares, 471 route rules, 3 unrepresentable
+fare tables: 6 fares, 469 route rules, 3 unrepresentable
 gtfs: data\build\gtfs\gtfs.zip
-manifest: data\build\manifest.json (sha256 6a84737f9c0db1917a60eb8169ccae443b49461ca23f7e8c8778747011b9e869)
+manifest: data\build\manifest.json (sha256 1c8df31ecbcb8b40e4e2f0a0a5267c8e27eba9fd17a3488ac8264fec81c94296)
 report: data\build\build-report.json
 licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices present in artifact)
 ```
+
+The five fewer routes than the pre-gate 494 are the excluded families (7 unique route
+ids; the extract carries duplicate relations for `rail-ss`/`rail-mnc`/`rail-mrt9`). The
+zip sha256 is byte-identical across rebuilds of the same inputs (deterministic).
 
 Artifacts:
 
@@ -292,6 +319,7 @@ coverage: {total, modelled, pct, missing: [{code, reason}]}
 landmark_unresolved: [{route_code, landmark}]
 landmark_aliases: {path, total, used: [...], invalid: [...]}
 osm_routes_total / osm_routes_skipped / blocked_datasets_checked
+excluded_routes_total / excluded_routes: [{route_id, reason}]
 ```
 
 `curated_routes_modelled` counts curated entries that entered the feed themselves;
@@ -307,6 +335,38 @@ docker compose up -d --force-recreate --wait routing
 
 The entrypoint runs `motis import` on every start and re-runs only tasks whose input
 hashes changed (fresh import ≈ 20 s on this machine; the healthcheck allows 600 s).
+
+### 2.1 GTFS validation — stage 04 (ruling R46)
+
+Pinned tool: MobilityData **`gtfs-validator` v8.0.1** CLI jar, 40,256,884 B, sha256
+`19293ddd9b6f954f216d4f12054bd8a3232921751c4484339e339764a91000e2`
+(`https://github.com/MobilityData/gtfs-validator/releases/download/v8.0.1/gtfs-validator-8.0.1-cli.jar`).
+Java 21 is installed on this host; the jar was downloaded to `data/build/tools/`
+(gitignored) and its digest verified.
+
+**Local attempt, 2026-11-01: no valid validation result could be produced.** The
+validator starts but this host's JVM cannot resolve the jar's own classpath resources:
+it registers **zero GTFS tables**, reports every file (`agency.txt`, `routes.txt`, …) as
+`unknown_file`, all counts are 0, and HTML report generation fails with
+`ClassLoader resource "report.html" could not be resolved`. The same failure occurs on
+the canonical GTFS sample feed (`google/transit` `sample-feed-1.zip`), so it is an
+environment/JVM problem, not a verdict on our feed. `gtfs-validator` v5.0.0 fails the
+same way (`NoSuchElementException` when loading the agency table). The JSON it wrote is
+therefore **not** recorded as a pass; see the phase-1 runbook's known-gap entry.
+
+CI job: `.github/workflows/data.yml` (`Data (GTFS validator)`, weekly + manual dispatch)
+builds the published feed on a standard runner with the same pipeline commands, runs the
+same pinned jar, and fails on any error notice **and** on a zero-route parse (so the
+broken-loader failure mode cannot pass vacuously). It uploads the report, build report
+and feed as artifacts. On a host with a working JDK, the local command is:
+
+```powershell
+java -jar data\build\tools\gtfs-validator-8.0.1-cli.jar `
+    -i data\build\gtfs\gtfs.zip -o data\build\validator-report `
+    -c ph -d 2026-11-01 -t 4
+```
+
+The spec's bar is **0 errors** (warnings/infos are reviewed, not silently ignored).
 
 ---
 
