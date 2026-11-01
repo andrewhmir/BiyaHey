@@ -70,7 +70,11 @@ describe('modeFromRouteId', () => {
 });
 
 describe('plausibility guard', () => {
-  function transitItinerary(distanceM: number, durationMin: number, mode: LegMode = 'bus'): ItineraryDto {
+  function transitItinerary(
+    distanceM: number,
+    durationMin: number,
+    mode: LegMode = 'bus',
+  ): ItineraryDto {
     const startTime = '2026-11-02T08:00:00+08:00';
     const endTime = '2026-11-02T09:30:00+08:00';
     return {
@@ -235,9 +239,7 @@ describe('unsupported-mode gate and informal transfers', () => {
   it('reports a non-PRFS ferry itinerary as unsupported', () => {
     const { itineraries, unsupportedKeys } = mapPlanItinerariesDetailed(
       {
-        itineraries: [
-          { startTime: start, legs: [busLeg('gtfs_ferry-manilacoron', 'A', 'B')] },
-        ],
+        itineraries: [{ startTime: start, legs: [busLeg('gtfs_ferry-manilacoron', 'A', 'B')] }],
       },
       emptyContext,
     );
@@ -326,5 +328,192 @@ describe('unsupported-mode gate and informal transfers', () => {
       emptyContext,
     )[0];
     expect(itinerary?.legs[0]?.informalTransfer).toBeUndefined();
+  });
+});
+
+describe('transit stop lists (R61)', () => {
+  const emptyContext = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+  };
+  const start = '2026-11-02T08:00:00Z';
+  const end = '2026-11-02T08:30:00Z';
+
+  function transitLeg(overrides: Record<string, unknown> = {}) {
+    return {
+      mode: 'SUBWAY',
+      routeId: 'gtfs_rail-3',
+      routeShortName: '3',
+      displayName: 'MRT-3',
+      headsign: 'Ayala',
+      from: {
+        name: 'Cubao',
+        stopId: 'gtfs_rail-3:node:board',
+        lat: 14.6194,
+        lon: 121.0531,
+        departure: '2026-11-02T08:02:00Z',
+      },
+      to: {
+        name: 'Ayala',
+        stopId: 'gtfs_rail-3:node:alight',
+        lat: 14.5487,
+        lon: 121.0275,
+        arrival: '2026-11-02T08:28:00Z',
+      },
+      startTime: start,
+      endTime: end,
+      duration: 1_800,
+      distance: 9_260,
+      intermediateStops: [
+        {
+          name: 'Santolan-Annapolis',
+          stopId: 'gtfs_rail-3:node:santolan',
+          lat: 14.6075,
+          lon: 121.0566,
+          arrival: '2026-11-02T08:10:00Z',
+          departure: '2026-11-02T08:10:00Z',
+        },
+        {
+          name: 'Ortigas',
+          stopId: 'gtfs_rail-3:node:ortigas',
+          lat: 14.5873,
+          lon: 121.0565,
+          arrival: '2026-11-02T08:17:00Z',
+          departure: '2026-11-02T08:18:00Z',
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('maps board first, intermediates in order, alight last with times', () => {
+    const itinerary = mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs: [transitLeg()] }] },
+      emptyContext,
+    )[0];
+    const stops = itinerary?.legs[0]?.stops;
+
+    expect(stops?.map((stop) => stop.name)).toEqual([
+      'Cubao',
+      'Santolan-Annapolis',
+      'Ortigas',
+      'Ayala',
+    ]);
+    expect(stops?.[0]).toMatchObject({
+      stopId: 'gtfs_rail-3:node:board',
+      departureTime: '2026-11-02T08:02:00Z',
+    });
+    expect(stops?.[0]?.arrivalTime).toBeUndefined();
+    expect(stops?.[1]).toMatchObject({
+      stopId: 'gtfs_rail-3:node:santolan',
+      arrivalTime: '2026-11-02T08:10:00Z',
+      departureTime: '2026-11-02T08:10:00Z',
+    });
+    expect(stops?.[3]).toMatchObject({
+      name: 'Ayala',
+      stopId: 'gtfs_rail-3:node:alight',
+      arrivalTime: '2026-11-02T08:28:00Z',
+    });
+    expect(stops?.[3]?.departureTime).toBeUndefined();
+  });
+
+  it('deduplicates by stop id and keeps the alight stop pinned last', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              transitLeg({
+                intermediateStops: [
+                  // Same served stop as the board endpoint.
+                  {
+                    name: 'Cubao',
+                    stopId: 'gtfs_rail-3:node:board',
+                    lat: 14.6194,
+                    lon: 121.0531,
+                  },
+                  {
+                    name: 'Ortigas',
+                    stopId: 'gtfs_rail-3:node:ortigas',
+                    lat: 14.5873,
+                    lon: 121.0565,
+                  },
+                  // Same served stop as the alight endpoint: must not displace it.
+                  {
+                    name: 'Ayala',
+                    stopId: 'gtfs_rail-3:node:alight',
+                    lat: 14.5487,
+                    lon: 121.0275,
+                  },
+                ],
+              }),
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    expect(itinerary?.legs[0]?.stops?.map((stop) => stop.name)).toEqual([
+      'Cubao',
+      'Ortigas',
+      'Ayala',
+    ]);
+  });
+
+  it('omits stops on a walk leg', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              {
+                mode: 'WALK',
+                from: { name: 'START', lat: 14.61, lon: 121.05 },
+                to: { name: 'END', lat: 14.62, lon: 121.05 },
+                startTime: start,
+                endTime: end,
+                duration: 600,
+                distance: 300,
+              },
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    expect(itinerary?.legs[0]?.mode).toBe('walk');
+    expect(itinerary?.legs[0]).not.toHaveProperty('stops');
+  });
+
+  it('still maps a response whose legs carry no intermediateStops field', () => {
+    const leg = transitLeg();
+    delete (leg as { intermediateStops?: unknown }).intermediateStops;
+
+    const itinerary = mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs: [leg] }] },
+      emptyContext,
+    )[0];
+
+    expect(itinerary?.legs[0]?.mode).toBe('mrt3');
+    expect(itinerary?.legs[0]).not.toHaveProperty('stops');
+  });
+
+  it('maps the checked-in MOTIS fixture rail stops with the alight stop last', () => {
+    const itinerary = mapPlanItineraries(planFixture, emptyContext).find((candidate) =>
+      candidate.legs.some((leg) => leg.mode === 'mrt3'),
+    );
+    const railLeg = itinerary?.legs.find((leg) => leg.mode === 'mrt3');
+
+    // The live-shaped fixture has 8 intermediate stops; the DTO adds the board
+    // and alight endpoints around them.
+    expect(railLeg?.stops).toHaveLength(10);
+    expect(railLeg?.stops?.at(0)?.name).toBe('Platform 793338664');
+    expect(railLeg?.stops?.at(-1)?.name).toBe('Ayala');
+    expect(railLeg?.stops?.at(-1)?.arrivalTime).toBe('2026-11-02T00:36:00Z');
   });
 });

@@ -14,15 +14,7 @@ export type { DataSource, SourceId } from './provenance.js';
  * no per-route fare, which the p2p fare rule requires.
  */
 export type LegMode =
-  | 'walk'
-  | 'jeepney'
-  | 'bus'
-  | 'mrt3'
-  | 'lrt1'
-  | 'lrt2'
-  | 'ferry'
-  | 'uv-express'
-  | 'p2p';
+  'walk' | 'jeepney' | 'bus' | 'mrt3' | 'lrt1' | 'lrt2' | 'ferry' | 'uv-express' | 'p2p';
 
 /** One endpoint of a leg, as the PWA renders it. */
 export interface LegPlaceDto {
@@ -31,6 +23,31 @@ export interface LegPlaceDto {
   lon: number;
   /** GTFS stop id when the endpoint is a served stop rather than an input pin. */
   stopId?: string;
+}
+
+/**
+ * One stop on a transit leg, in the order the vehicle serves it (R61).
+ *
+ * A leg's `stops` list is board stop first, intermediate stops in travel order,
+ * and alight stop last. The list is deduplicated by `stopId` when present, else
+ * by name and coordinates. Times are copied from the router's `arrival` /
+ * `departure` values: the board stop normally has only `departureTime` and the
+ * alight stop only `arrivalTime`.
+ *
+ * The field is additive: it is absent on walk legs and on payloads whose
+ * router response carried no intermediate stops, so older responses remain
+ * valid and no `v` bump is needed.
+ */
+export interface LegStopDto {
+  name: string;
+  /** GTFS stop id when the router reported a served stop rather than a platform. */
+  stopId?: string;
+  lat: number;
+  lon: number;
+  /** ISO 8601 arrival time; absent on the board stop. */
+  arrivalTime?: string;
+  /** ISO 8601 departure time; absent on the alight stop. */
+  departureTime?: string;
 }
 
 /** One leg of an itinerary. */
@@ -67,6 +84,13 @@ export interface LegDto {
   informalTransfer?: boolean;
   /** Dataset ids this leg drew on (network plus fare source). */
   sourceIds: SourceId[];
+  /**
+   * Served stops for a transit leg (R61): board stop first, intermediate stops
+   * in travel order, alight stop last. Absent on walk legs and when the router
+   * sent no intermediate stops; consumers must treat absence as "no stop list",
+   * not as an empty list.
+   */
+  stops?: LegStopDto[];
 }
 
 /** One journey option returned by `POST /plan`. */

@@ -5,6 +5,7 @@ import type {
   LegDto,
   LegMode,
   LegPlaceDto,
+  LegStopDto,
   SourceId,
 } from '@biyahey/shared';
 import { quoteFareForLeg, sumFares } from '@biyahey/shared';
@@ -272,6 +273,104 @@ function mapPlace(value: unknown): LegPlaceDto | undefined {
   return stopId === undefined ? { name, lat, lon } : { name, lat, lon, stopId };
 }
 
+/** One MOTIS intermediate stop mapped to the served `LegStopDto` shape. */
+function mapStop(value: unknown): LegStopDto | undefined {
+  const record = asRecord(value);
+  if (record === undefined) {
+    return undefined;
+  }
+  const name = asString(record.name);
+  const lat = asNumber(record.lat);
+  const lon = asNumber(record.lon);
+  if (name === undefined || lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const stop: LegStopDto = { name, lat, lon };
+  const stopId = asString(record.stopId);
+  if (stopId !== undefined) {
+    stop.stopId = stopId;
+  }
+  const arrivalTime = asString(record.arrival);
+  if (arrivalTime !== undefined) {
+    stop.arrivalTime = arrivalTime;
+  }
+  const departureTime = asString(record.departure);
+  if (departureTime !== undefined) {
+    stop.departureTime = departureTime;
+  }
+  return stop;
+}
+
+/** Dedupe identity for a served stop: stop id when present, else name + coords. */
+function servedStopKey(stop: LegStopDto): string {
+  return (
+    stop.stopId ?? `${stop.name.trim().toLowerCase()}|${stop.lat.toFixed(5)}|${stop.lon.toFixed(5)}`
+  );
+}
+
+/**
+ * Map MOTIS `leg.intermediateStops` into the served stop list (R61).
+ *
+ * MOTIS includes only the stops between boarding and alighting, so the board
+ * stop (`leg.from`) and alight stop (`leg.to`) are prepended/appended from the
+ * leg's own endpoints. The result is board first, intermediates in travel
+ * order, alight last, deduplicated by stop id (or name + coordinates when the
+ * router sent no id). The alight stop always stays last: a duplicate
+ * intermediate is dropped instead of displacing it.
+ *
+ * Returns `undefined` for a response with no intermediate stops, which keeps
+ * walk-only and older payloads free of the additive `stops` field.
+ */
+function mapTransitStops(
+  record: JsonRecord,
+  from: LegPlaceDto,
+  to: LegPlaceDto,
+  startTime: string,
+  endTime: string,
+): LegStopDto[] | undefined {
+  const rawStops = asArray(record.intermediateStops);
+  if (rawStops === undefined || rawStops.length === 0) {
+    return undefined;
+  }
+  const intermediates = rawStops
+    .map(mapStop)
+    .filter((stop): stop is LegStopDto => stop !== undefined);
+  if (intermediates.length === 0) {
+    // The router sent a list but none of it was a usable stop: do not present
+    // a fabricated two-stop ride as if it were the whole shape.
+    return undefined;
+  }
+
+  const fromRecord = asRecord(record.from);
+  const toRecord = asRecord(record.to);
+  const board: LegStopDto = { name: from.name, lat: from.lat, lon: from.lon };
+  if (from.stopId !== undefined) {
+    board.stopId = from.stopId;
+  }
+  // The leg's own start is the honest fallback when MOTIS omits the stop time.
+  board.departureTime =
+    (fromRecord === undefined ? undefined : asString(fromRecord.departure)) ?? startTime;
+
+  const alight: LegStopDto = { name: to.name, lat: to.lat, lon: to.lon };
+  if (to.stopId !== undefined) {
+    alight.stopId = to.stopId;
+  }
+  alight.arrivalTime = (toRecord === undefined ? undefined : asString(toRecord.arrival)) ?? endTime;
+
+  const alightKey = servedStopKey(alight);
+  const seen = new Set<string>([servedStopKey(board)]);
+  const middle: LegStopDto[] = [];
+  for (const stop of intermediates) {
+    const key = servedStopKey(stop);
+    if (key === alightKey || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    middle.push(stop);
+  }
+  return [board, ...middle, alight];
+}
+
 function modeFromMotisMode(mode: string | undefined): LegMode | undefined {
   switch (mode) {
     case 'BUS':
@@ -456,6 +555,12 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
   }
   if (signageLabel !== undefined) {
     dto.signage = `Look for: ${signageLabel}`;
+  }
+  if (mode !== 'walk') {
+    const stops = mapTransitStops(record, from, to, startTime, endTime);
+    if (stops !== undefined) {
+      dto.stops = stops;
+    }
   }
   return rawDurationSeconds === undefined
     ? { dto, quote }
