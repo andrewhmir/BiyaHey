@@ -5,7 +5,7 @@
       "startServerCommand": "npm run preview --workspace @biyahey/web",
       "startServerReadyPattern": "Local:",
       "startServerReadyTimeout": 30000,
-      "numberOfRuns": 1,
+      "numberOfRuns": 5,
       "settings": {
         "formFactor": "mobile",
         "throttlingMethod": "simulate",
@@ -27,6 +27,7 @@
       }
     },
     "assert": {
+      "aggregationMethod": "median",
       "assertions": {
         "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
         "total-blocking-time": ["error", { "maxNumericValue": 2500 }],
