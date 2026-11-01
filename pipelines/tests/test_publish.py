@@ -31,9 +31,16 @@ import yaml
 
 from pipeline.cli import main
 from pipeline.fares import FARE_ATTRIBUTES_FILENAME, FARE_RULES_FILENAME
-from pipeline.inventory import load_inventory
+from pipeline.gtfs import RouteDef
+from pipeline.inventory import load_inventory, route_id_for
 from pipeline.manifest import BlockedDatasetError
-from pipeline.publish import FEED_END, FEED_START, run_stage_publish
+from pipeline.publish import (
+    DEFAULT_ALIASES,
+    FEED_END,
+    FEED_START,
+    merge_curated_routes,
+    run_stage_publish,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -61,8 +68,17 @@ SPEC_WIKI_ATTRIBUTION = (
 @pytest.fixture(scope="module")
 def published(tmp_path_factory):
     out = tmp_path_factory.mktemp("publish-run")
+    # The live alias file pins OSM feature ids from the real NCR extract, which
+    # the miniature fixture does not contain; alias wiring has its own tests
+    # below, so the fixture build resolves by exact stop name only.
     report = run_stage_publish(
-        PBF, out, INVENTORY, FARES, SOURCES, built_at=BUILT_AT
+        PBF,
+        out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
     )
     return out, report
 
@@ -259,7 +275,7 @@ def test_publish_is_reproducible(published, tmp_path):
     _, first = published
     second_out = tmp_path / "second"
     second = run_stage_publish(
-        PBF, second_out, INVENTORY, FARES, SOURCES, built_at=BUILT_AT
+        PBF, second_out, INVENTORY, FARES, SOURCES, None, built_at=BUILT_AT
     )
 
     first_zip = Path(first["feed"]["path"])
@@ -346,6 +362,154 @@ def test_publish_requires_the_osm_extract(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Task 11: coverage contract and documented landmark aliases (ruling R34)
+# ---------------------------------------------------------------------------
+
+
+def test_merge_curated_routes_does_not_let_an_unwritable_osm_id_shadow_a_curated_route():
+    """R29: OSM wins *because* its geometry is usable; an unwritable id cannot win."""
+    osm = [
+        RouteDef("bus-b2", 3, "dangling OSM route"),
+        RouteDef("jeep-t101", 3, "usable OSM route"),
+    ]
+    curated = [
+        RouteDef("jeep-t101", 3, "curated duplicate"),
+        RouteDef("uv-m01", 3, "curated gap filler"),
+    ]
+
+    merged = merge_curated_routes(osm, curated, {"jeep-t101"})
+
+    assert [route.route_id for route in merged] == [
+        "bus-b2",
+        "jeep-t101",
+        "uv-m01",
+    ]
+
+
+def test_build_report_carries_the_coverage_contract(published):
+    _, report = published
+    inventory = load_inventory(INVENTORY)
+    coverage = report["coverage"]
+
+    assert coverage["total"] == report["curated_routes_total"]
+    assert coverage["pct"] == round(100.0 * coverage["modelled"] / coverage["total"], 1)
+    feed_ids = {route_id.casefold() for route_id in report["feed"]["route_ids"]}
+    expected_missing = [
+        route.code
+        for route in inventory
+        if route_id_for(route).casefold() not in feed_ids
+    ]
+    assert [entry["code"] for entry in coverage["missing"]] == expected_missing
+    # A route OSM already supplies (the R29 duplicate skip) is covered by the
+    # feed even though the curated entry did not enter, so coverage >= curated.
+    assert coverage["modelled"] >= report["curated_routes_modelled"]
+    skipped = {entry["code"] for entry in report["curated_routes_skipped"]}
+    assert {entry["code"] for entry in coverage["missing"]} <= skipped
+    for entry in coverage["missing"]:
+        assert entry["reason"].startswith(("no GTFS route jeep-", "no GTFS route uv-"))
+    # this fixture build resolved by exact stop name only
+    assert report["landmark_aliases"] == {
+        "path": None,
+        "total": 0,
+        "used": [],
+        "invalid": [],
+    }
+
+
+def test_publish_reports_aliases_that_cannot_apply_to_this_extract(published, tmp_path):
+    """A pinned OSM feature absent from the extract is reported, never guessed."""
+    _, baseline = published
+    out = tmp_path / "aliased"
+
+    report = run_stage_publish(
+        PBF, out, INVENTORY, FARES, SOURCES, DEFAULT_ALIASES, built_at=BUILT_AT
+    )
+
+    aliases = report["landmark_aliases"]
+    assert aliases["path"].endswith("landmark-aliases.yaml")
+    assert aliases["total"] > 0
+    assert aliases["used"] == []
+    assert len(aliases["invalid"]) == aliases["total"]
+    # No alias applied, so modelled coverage is exactly the baseline.
+    assert report["curated_routes_modelled"] == baseline["curated_routes_modelled"]
+
+
+def test_publish_applies_a_documented_alias_and_names_the_route(tmp_path):
+    inventory = tmp_path / "inventory.yaml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "routes": [
+                    {
+                        "code": "T9001",
+                        "name": "Fixture alias route",
+                        "mode": "jeepney",
+                        "endpoints": ["Bagong Silang", "Novaliches"],
+                        "via_roads": [],
+                        "stop_landmarks": ["Bagong Silang", "Novaliches Town"],
+                        "headway_peak_min": None,
+                        "headway_offpeak_min": None,
+                        "typical_length_km": None,
+                        "operator": None,
+                        "source_url": "https://wiki.openstreetmap.org/wiki/Metro_Manila/x",
+                        "needs_verification": True,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    aliases = tmp_path / "landmark-aliases.yaml"
+    aliases.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "aliases": [
+                    {
+                        "landmark": "Novaliches Town",
+                        "osm_stop": "node/5002",
+                        "stop_name": "Novaliches",
+                        "source": "gtfs stops.txt 1",
+                        "note": "fixture alias",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_stage_publish(
+        PBF,
+        tmp_path / "out",
+        inventory,
+        FARES,
+        SOURCES,
+        aliases,
+        built_at=BUILT_AT,
+    )
+
+    assert report["curated_routes_modelled"] == 1
+    assert report["coverage"] == {
+        "total": 1,
+        "modelled": 1,
+        "pct": 100.0,
+        "missing": [],
+    }
+    assert report["landmark_unresolved"] == []
+    used = report["landmark_aliases"]["used"]
+    assert used == [
+        {
+            "landmark": "Novaliches Town",
+            "osm_stop": "node/5002",
+            "stop_name": "Novaliches",
+            "source": "gtfs stops.txt 1",
+            "route_codes": ["T9001"],
+        }
+    ]
+    assert report["landmark_aliases"]["invalid"] == []
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -365,6 +529,7 @@ def test_cli_publish_runs_the_stage(tmp_path, capsys):
             str(FARES),
             "--sources",
             str(SOURCES),
+            "--no-aliases",
             "--built-at",
             BUILT_AT,
         ]

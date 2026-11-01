@@ -1,0 +1,105 @@
+# Documented landmark aliases for the curated jeepney / UV Express inventory
+# (ruling R34, Task 11).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The curated inventory names terminals as text and stores no coordinates (Task
+# 7). The publish stage resolves those names against *named stop features* in the
+# OSM extract by exact normalised match only - no fuzzy, substring or
+# nearest-neighbour matching (pipeline/landmarks.py, ruling R30). Twelve of the
+# sixteen curated routes name at least one terminal that the OSM extract does not
+# carry under that name, so those routes never reach the router.
+#
+# WHAT AN ALIAS IS - AND IS NOT
+# -----------------------------
+# An alias is a hand-checked pointer from a curated landmark to a *specific OSM
+# stop feature* (`osm_stop`: `node/<id>` or `way/<id>`) whose name really is
+# `stop_name`. It adds no coordinates and no new places: the coordinate the
+# publish stage uses is that OSM feature's own coordinate, read from the extract.
+# It is not a guess: every entry below was checked against the built feed's
+# `stops.txt` inside `data/build/gtfs/gtfs.zip` (read-only), and `source` records
+# the line the matched stop appears on. `stop_name` is re-checked against the
+# extract at publish time; a renamed or deleted feature makes the alias invalid,
+# which the build report lists rather than silently mis-resolving.
+#
+# HOW TO ADD ONE
+# --------------
+# 1. Find the stop in the *built feed*: `data/build/gtfs/gtfs.zip` `stops.txt`.
+# 2. Confirm the same name exists as a named stop feature in the extract
+#    (`data/build/osm/ncr.osm.pbf`); `osm_stop` is that feature.
+# 3. Record the `stops.txt` line number in `source`.
+# 4. Re-run `python -m pipeline.cli publish ...` and confirm
+#    `landmark_aliases.used` in `data/build/build-report.json` names it.
+# Never add an alias for a road (a road is not a terminal) and never map a
+# landmark to a same-named place in another city: those invent corridors.
+#
+# Validated by `npm run validate:data` (schema:
+# data/routes/schema/landmark-aliases.schema.json) and by
+# pipeline.landmarks.load_landmark_aliases.
+version: 1
+aliases:
+  - landmark: Novaliches
+    osm_stop: node/7535900399
+    stop_name: Novaliches Plaza Mall
+    source: gtfs stops.txt 698
+    note: >-
+      Novaliches town-centre terminal on Quirino Highway. The feed carries the
+      stop as bus-20:node:7535900399; T101/T165/101 terminate here.
+
+  - landmark: Balintawak Cloverleaf
+    osm_stop: node/5191404470
+    stop_name: Balintawak
+    source: gtfs stops.txt 28
+    note: >-
+      LRT-1 Balintawak station sits at the cloverleaf itself (feed row
+      rail-1:node:5191404470). The cloverleaf's own jeepney station way
+      (osm way/121783517) is not a stop in the built feed, so it cannot be used.
+
+  - landmark: SM Fairview
+    osm_stop: node/1460734524
+    stop_name: SM City Fairview
+    source: gtfs stops.txt 695
+    note: >-
+      The mall's stop, carried by bus-20 (feed row bus-20:node:1460734524);
+      curated 111 and M01 name the mall as their terminal.
+
+  - landmark: Commonwealth
+    osm_stop: node/14047581959
+    stop_name: Commonwealth–Regalado Highway
+    source: gtfs stops.txt 1018
+    note: >-
+      The Commonwealth Avenue / Regalado Highway stop, i.e. where curated 111
+      ("via Regalado Avenue") meets Commonwealth. Feed row
+      bus-7:node:14047581959.
+
+  - landmark: Molino
+    osm_stop: node/12005042518
+    stop_name: Molino Town Center
+    source: gtfs stops.txt 624
+    note: >-
+      Molino town proper stop (feed row bus-32:node:12005042518); curated C20
+      runs Molino - Alabang via Daang Hari.
+
+  - landmark: EDSA/Shaw Boulevard
+    osm_stop: node/11328574094
+    stop_name: Shaw Boulevard
+    source: gtfs stops.txt 8
+    note: >-
+      MRT-3 Shaw Boulevard station at EDSA/Shaw, the UV Express terminal the
+      wiki names (feed row rail-3:node:11328574094); curated C50 ends here.
+
+  - landmark: Malabon
+    osm_stop: node/14021370276
+    stop_name: Malabon Market (Estrella)
+    source: gtfs stops.txt 1836
+    note: >-
+      Estrella market, the Malabon jeepney terminal area (feed row
+      bus-389:node:14021370276); curated T115 starts here.
+
+  - landmark: Zapote Kabila Terminal
+    osm_stop: node/2525328388
+    stop_name: Zapote Kabila
+    source: gtfs stops.txt 903
+    note: >-
+      The Zapote Kabila stop itself (feed rows bus-sz:node:2525328388 and
+      bus-cz:node:2525328388); curated T448 terminates here.

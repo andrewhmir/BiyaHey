@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://biyahey.local/schemas/landmark-aliases.schema.json",
+  "title": "BiyaHey! curated landmark aliases",
+  "description": "Hand-checked pointers from a curated inventory landmark to a specific OSM stop feature whose name is the stop's own name. No coordinates live here: publish reads them from the OSM extract, and `source` records the built feed's stops.txt line that proves the stop exists in the artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "aliases"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "aliases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["landmark", "osm_stop", "stop_name", "source"],
+        "properties": {
+          "landmark": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The inventory's stop_landmarks string, verbatim."
+          },
+          "osm_stop": {
+            "type": "string",
+            "pattern": "^(node|way)/[0-9]+$",
+            "description": "OSM feature id of the named stop feature (node/<id> or way/<id>)."
+          },
+          "stop_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The OSM stop feature's own name; re-checked against the extract at publish time."
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^gtfs stops\\.txt [0-9]+$",
+            "description": "1-based line in data/build/gtfs/gtfs.zip stops.txt where this stop is carried."
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why this stop is the honest anchor for the curated landmark."
+          }
+        }
+      }
+    }
+  }
+}

@@ -18,23 +18,32 @@ Honesty rules pinned here:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from pipeline.inventory import MODE_JEEPNEY, InventoryRoute
 from pipeline.landmarks import (
+    ALIASES_SCHEMA_PATH,
+    LandmarkAlias,
     NamedStop,
+    alias_coordinates,
     ambiguous_stop_names,
     build_stop_lookup,
+    load_landmark_aliases,
     load_named_stops,
     normalise_name,
     resolve_landmarks,
+    stop_feature_lookup,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OSM_ROUTES = FIXTURES / "osm_routes.osm"
 PUBLISH = FIXTURES / "publish_ncr.osm"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ALIASES = REPO_ROOT / "data" / "routes" / "landmark-aliases.yaml"
 
 
 def _inventory_route(stop_landmarks: tuple[str, ...]) -> InventoryRoute:
@@ -177,3 +186,139 @@ def test_resolve_landmarks_does_not_guess_by_proximity():
     resolved = resolve_landmarks([route], lookup)
 
     assert set(resolved) == {"Baclaran"}
+
+
+# ---------------------------------------------------------------------------
+# documented aliases (ruling R34)
+# ---------------------------------------------------------------------------
+
+
+def _alias(landmark, osm_stop, stop_name, source="gtfs stops.txt 1") -> LandmarkAlias:
+    return LandmarkAlias(
+        landmark=landmark,
+        osm_stop=osm_stop,
+        stop_name=stop_name,
+        source=source,
+        note="test alias",
+    )
+
+
+def test_stop_feature_lookup_keys_by_osm_feature():
+    stops = [
+        NamedStop("Alpha", 1.0, 2.0, "node", 1),
+        NamedStop("Beta", 3.0, 4.0, "way", 2),
+    ]
+
+    assert set(stop_feature_lookup(stops)) == {"node/1", "way/2"}
+
+
+def test_alias_coordinates_pins_the_aliased_feature():
+    stops = [
+        NamedStop("Novaliches Plaza Mall", 14.7219514, 121.0403010, "node", 7535900399),
+        NamedStop("Unrelated", 1.0, 1.0, "node", 2),
+    ]
+
+    coordinates, invalid = alias_coordinates(
+        [_alias("Novaliches", "node/7535900399", "Novaliches Plaza Mall")],
+        stop_feature_lookup(stops),
+    )
+
+    assert coordinates == {"Novaliches": (14.7219514, 121.0403010)}
+    assert invalid == []
+
+
+def test_alias_coordinates_reports_missing_and_renamed_features():
+    stops = [NamedStop("Renamed Stop", 3.0, 4.0, "node", 1)]
+
+    coordinates, invalid = alias_coordinates(
+        [
+            _alias("Moved", "node/1", "Old Name"),
+            _alias("Vanished", "node/9", "Whatever"),
+        ],
+        stop_feature_lookup(stops),
+    )
+
+    assert coordinates == {}
+    assert [entry["landmark"] for entry in invalid] == ["Moved", "Vanished"]
+    assert "named 'Renamed Stop'" in invalid[0]["reason"]
+    assert "no named stop feature" in invalid[1]["reason"]
+
+
+def test_resolve_landmarks_uses_a_documented_alias_only_when_the_direct_lookup_misses():
+    lookup = build_stop_lookup(
+        [NamedStop("Novaliches", 14.7285, 121.0330, "node", 5002)]
+    )
+    route = _inventory_route(("Novaliches", "Novaliches Plaza Mall"))
+
+    resolved = resolve_landmarks(
+        [route],
+        lookup,
+        {"Novaliches": (0.0, 0.0), "Novaliches Plaza Mall": (14.72, 121.04)},
+    )
+
+    # The exact OSM name still wins; the alias only fills the miss.
+    assert resolved["Novaliches"] == pytest.approx((14.7285, 121.0330))
+    assert resolved["Novaliches Plaza Mall"] == pytest.approx((14.72, 121.04))
+
+
+def test_load_landmark_aliases_validates_the_schema(tmp_path):
+    bad = tmp_path / "landmark-aliases.yaml"
+    bad.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "aliases": [
+                    {
+                        "landmark": "Novaliches",
+                        "osm_stop": "somewhere",
+                        "stop_name": "Novaliches",
+                        "source": "gtfs stops.txt 1",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="aliases do not match"):
+        load_landmark_aliases(bad)
+
+
+def test_load_landmark_aliases_rejects_duplicate_normalised_landmarks(tmp_path):
+    duplicate = tmp_path / "landmark-aliases.yaml"
+    duplicate.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "aliases": [
+                    {
+                        "landmark": "SM Fairview",
+                        "osm_stop": "node/1",
+                        "stop_name": "SM City Fairview",
+                        "source": "gtfs stops.txt 1",
+                    },
+                    {
+                        "landmark": "SM  FAIRVIEW",
+                        "osm_stop": "node/2",
+                        "stop_name": "SM City Fairview",
+                        "source": "gtfs stops.txt 2",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="normalise to the same key"):
+        load_landmark_aliases(duplicate)
+
+
+def test_committed_alias_file_is_schema_valid_and_cites_feed_lines():
+    aliases = load_landmark_aliases(ALIASES)
+
+    assert aliases, "the committed alias file must not be empty"
+    for alias in aliases:
+        assert re.fullmatch(r"(node|way)/[0-9]+", alias.osm_stop), alias.landmark
+        assert re.fullmatch(r"gtfs stops\.txt [0-9]+", alias.source), alias.landmark
+        assert normalise_name(alias.stop_name), alias.landmark
+    assert ALIASES_SCHEMA_PATH.is_file()

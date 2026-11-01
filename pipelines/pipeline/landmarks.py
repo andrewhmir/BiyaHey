@@ -36,28 +36,59 @@ the build is deterministic; :func:`ambiguous_stop_names` reports the collision
 and the publish report lists the ones that affect the inventory. Choosing the
 first is *labelled*, which is the difference between a documented tie-break and
 a hidden guess.
+
+Documented aliases (ruling R34)
+-------------------------------
+Some curated terminals are named the way the OSM Wiki names them, not the way
+OSM stops are named ("SM Fairview" vs "SM City Fairview"). ``data/routes/
+landmark-aliases.yaml`` records a hand-checked pointer from such a landmark to a
+*specific* OSM stop feature: :func:`load_landmark_aliases` validates the file,
+:func:`alias_coordinates` pins the coordinate to that feature (re-checking the
+name it carries in the extract), and :func:`resolve_landmarks` only consults an
+alias when the direct exact-name lookup misses. An alias therefore adds no
+coordinates and no fuzzy matching - it changes the *name* that is matched, never
+the honesty of the match.
 """
 
 from __future__ import annotations
 
+import json
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 import osmium
+import yaml
+from jsonschema.validators import validator_for
 
 from .inventory import InventoryRoute
 
 __all__ = [
+    "ALIASES_SCHEMA_PATH",
+    "LandmarkAlias",
     "NamedStop",
+    "alias_coordinates",
     "ambiguous_stop_names",
     "build_stop_lookup",
     "is_stop_feature",
+    "load_landmark_aliases",
     "load_named_stops",
     "normalise_name",
     "resolve_landmarks",
+    "stop_feature_lookup",
 ]
+
+#: Schema shipped with the repository for ``data/routes/landmark-aliases.yaml``.
+#: ``npm run validate:data`` validates the same file; publish re-validates so a
+#: hand edit cannot enter a build unvalidated.
+ALIASES_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "routes"
+    / "schema"
+    / "landmark-aliases.schema.json"
+)
 
 #: ``public_transport=*`` values that describe a stop/platform (ptv2 tagging).
 STOP_PUBLIC_TRANSPORT_VALUES = frozenset({"platform", "station", "stop_position"})
@@ -81,6 +112,24 @@ class NamedStop:
     def feature(self) -> str:
         """Stable ``"node/123"`` style identity for reports."""
         return f"{self.osm_type}/{self.osm_id}"
+
+
+@dataclass(frozen=True)
+class LandmarkAlias:
+    """One hand-checked curated-landmark -> OSM-stop pointer (ruling R34).
+
+    ``osm_stop`` is the exact stop feature (``node/123`` or ``way/123``) whose
+    own coordinate is used, and ``stop_name`` is that feature's name in the
+    extract - re-checked at publish time so a renamed or deleted feature is
+    reported instead of silently resolving to the wrong place. ``source`` is the
+    built feed's ``stops.txt`` line that proves the stop is in the artifact.
+    """
+
+    landmark: str
+    osm_stop: str
+    stop_name: str
+    source: str
+    note: str = ""
 
 
 def normalise_name(value: str) -> str:
@@ -188,9 +237,152 @@ def ambiguous_stop_names(
     return ambiguous
 
 
+def stop_feature_lookup(stops: Iterable[NamedStop]) -> Dict[str, NamedStop]:
+    """``"node/123"`` -> the stop feature itself.
+
+    Aliases pin a feature id, not a name, so the coordinate they resolve to is
+    the one belonging to the exact stop a reviewer checked in the feed - never
+    "whichever stop happened to share the name first".
+    """
+    return {stop.feature: stop for stop in stops}
+
+
+def load_landmark_aliases(path: Path) -> List[LandmarkAlias]:
+    """Read and schema-validate ``data/routes/landmark-aliases.yaml``.
+
+    Args:
+        path: the aliases YAML file.
+
+    Returns:
+        The aliases in file order.
+
+    Raises:
+        FileNotFoundError: if ``path`` is not a file.
+        ValueError: if the YAML does not parse, violates
+            :data:`ALIASES_SCHEMA_PATH`, or maps the same normalised landmark
+            twice (which would make resolution order-dependent).
+    """
+    source = Path(path)
+    if not source.is_file():
+        raise FileNotFoundError(f"landmark aliases not found: {source}")
+
+    try:
+        document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{source}: not valid YAML: {exc}") from exc
+
+    _validate_aliases(source, document)
+
+    aliases = [
+        LandmarkAlias(
+            landmark=entry["landmark"],
+            osm_stop=entry["osm_stop"],
+            stop_name=entry["stop_name"],
+            source=entry["source"],
+            note=entry.get("note", ""),
+        )
+        for entry in document["aliases"]
+    ]
+
+    seen: Dict[str, str] = {}
+    for alias in aliases:
+        key = normalise_name(alias.landmark)
+        if key in seen:
+            raise ValueError(
+                f"{source}: landmarks {seen[key]!r} and {alias.landmark!r} "
+                f"normalise to the same key {key!r}; keep exactly one alias"
+            )
+        seen[key] = alias.landmark
+    return aliases
+
+
+def _validate_aliases(source: Path, document: object) -> None:
+    """Validate a parsed aliases document, naming what is wrong."""
+    try:
+        schema = json.loads(ALIASES_SCHEMA_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(
+            f"{source}: cannot read aliases schema {ALIASES_SCHEMA_PATH}: {exc}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{source}: aliases schema {ALIASES_SCHEMA_PATH} is not JSON: {exc}"
+        ) from exc
+
+    validator = validator_for(schema)(schema)
+    errors = sorted(
+        validator.iter_errors(document),
+        key=lambda error: [str(part) for part in error.absolute_path],
+    )
+    if not errors:
+        return
+    details = []
+    for error in errors:
+        location = "/".join(str(part) for part in error.absolute_path)
+        details.append(f"{location or '<document>'}: {error.message}")
+    raise ValueError(
+        f"{source}: aliases do not match {ALIASES_SCHEMA_PATH.name}:\n  "
+        + "\n  ".join(details)
+    )
+
+
+def alias_coordinates(
+    aliases: Iterable[LandmarkAlias],
+    stop_features: Mapping[str, NamedStop],
+) -> Tuple[Dict[str, Tuple[float, float]], List[Dict[str, str]]]:
+    """Coordinates for the aliases whose pinned OSM feature checks out.
+
+    An alias is only usable when its ``osm_stop`` is a named stop feature in the
+    extract *and* that feature's name still normalises to ``stop_name``. A
+    feature that vanished or was renamed is returned as an invalid entry (with a
+    reason) so the publish report can show it instead of silently resolving to a
+    different place.
+
+    Args:
+        aliases: parsed aliases.
+        stop_features: output of :func:`stop_feature_lookup` for the extract
+            being published.
+
+    Returns:
+        ``({landmark: (lat, lon)}, [{landmark, osm_stop, reason}])`` - the
+        usable aliases keyed by the published landmark string, and the invalid
+        ones in file order.
+    """
+    coordinates: Dict[str, Tuple[float, float]] = {}
+    invalid: List[Dict[str, str]] = []
+
+    for alias in aliases:
+        stop = stop_features.get(alias.osm_stop)
+        if stop is None:
+            invalid.append(
+                {
+                    "landmark": alias.landmark,
+                    "osm_stop": alias.osm_stop,
+                    "reason": "no named stop feature with that id in the extract",
+                }
+            )
+            continue
+        if normalise_name(stop.name) != normalise_name(alias.stop_name):
+            invalid.append(
+                {
+                    "landmark": alias.landmark,
+                    "osm_stop": alias.osm_stop,
+                    "reason": (
+                        f"extract feature is named {stop.name!r}, "
+                        f"alias records {alias.stop_name!r}"
+                    ),
+                }
+            )
+            continue
+        coordinates[alias.landmark] = (float(stop.lat), float(stop.lon))
+
+    return coordinates, invalid
+
+
 def resolve_landmarks(
     routes: Iterable[InventoryRoute],
     stop_lookup: Mapping[str, Tuple[float, float]],
+    aliases: Optional[Mapping[str, Tuple[float, float]]] = None,
 ) -> Dict[str, Tuple[float, float]]:
     """Translate inventory landmark names into coordinates for ``to_route_def``.
 
@@ -203,6 +395,11 @@ def resolve_landmarks(
     Args:
         routes: curated inventory routes.
         stop_lookup: output of :func:`build_stop_lookup`.
+        aliases: optional ``{landmark: (lat, lon)}`` from
+            :func:`alias_coordinates`. A direct exact-name match always wins;
+            an alias is only consulted when the direct lookup misses (ruling
+            R34 - aliases change which name is matched, never the matching
+            rule).
 
     Returns:
         ``{landmark: (lat, lon)}`` for every resolved landmark of every route.
@@ -214,6 +411,8 @@ def resolve_landmarks(
             if not key:
                 continue
             coordinate = stop_lookup.get(key)
+            if coordinate is None and aliases is not None:
+                coordinate = aliases.get(landmark)
             if coordinate is not None:
                 resolved[landmark] = coordinate
     return resolved

@@ -9,7 +9,9 @@ nothing normalised the curated route ids against the OSM slugs (ruling R29).
 This stage is that link. It:
 
 1. reads named stop features from the NCR extract and resolves every curated
-   terminal through :mod:`pipeline.landmarks` (no nearest-neighbour guessing);
+   terminal through :mod:`pipeline.landmarks` (no nearest-neighbour guessing),
+   consulting ``data/routes/landmark-aliases.yaml`` (ruling R34) when a curated
+   landmark's exact name is not an OSM stop name;
 2. lowercases curated ids and merges them with the OSM routes case-insensitively
    so ``jeep-T101`` and ``jeep-t101`` can never both enter the feed (R29), with
    OSM winning the collision because measured geometry beats a transcription;
@@ -30,7 +32,9 @@ Build-report contract
     curated_routes_total        16
     curated_routes_modelled     n
     curated_routes_skipped      [{code, reason}]
+    coverage                    {total, modelled, pct, missing: [{code, reason}]}
     landmark_unresolved         [{route_code, landmark}]
+    landmark_aliases            {path, total, used: [...], invalid: [...]}
     osm_routes_total            n
     osm_routes_skipped          n
     blocked_datasets_checked    true
@@ -38,8 +42,14 @@ Build-report contract
 plus per-route records (``curated_routes``) that preserve each inventory row's
 ``source_url`` and ``needs_verification`` flag - ``to_route_def`` drops them, so
 they are read from the :class:`~pipeline.inventory.InventoryRoute` (Task 7
-finding). The brief spells the OSM counters ``oms_*`` (typo); both spellings are
-emitted so neither a literal nor a corrected consumer breaks.
+finding). ``curated_routes_modelled`` counts curated entries that entered the
+feed themselves; ``coverage`` comes from
+:func:`pipeline.coverage.compute_coverage` and counts any inventory row whose
+route id the feed carries, including a route OSM already supplies (the Task 8
+duplicate skip). Coverage can therefore be *higher* than the curated count, and
+the difference is never silent: the skipped record names the duplicate. The brief
+spells the OSM counters ``oms_*`` (typo); both spellings are emitted so neither a
+literal nor a corrected consumer breaks.
 
 Default paths are resolved against the repository root, so the stage runs from
 any working directory; explicit CLI arguments are used as given (relative to the
@@ -52,7 +62,7 @@ import json
 from dataclasses import asdict, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
@@ -62,6 +72,7 @@ from .fares import (
     build_gtfs_fare_tables,
     unrepresentable_fares,
 )
+from .coverage import compute_coverage
 from .gtfs import (
     WIKI_INVENTORY_ATTRIBUTION,
     AgencyInfo,
@@ -77,11 +88,15 @@ from .inventory import (
     to_route_def,
 )
 from .landmarks import (
+    LandmarkAlias,
+    alias_coordinates,
     ambiguous_stop_names,
     build_stop_lookup,
+    load_landmark_aliases,
     load_named_stops,
     normalise_name,
     resolve_landmarks,
+    stop_feature_lookup,
 )
 from .manifest import (
     build_manifest,
@@ -93,6 +108,7 @@ from .manifest import (
 from .osm_routes import iter_route_relations
 
 __all__ = [
+    "DEFAULT_ALIASES",
     "DEFAULT_BUILD_DIR",
     "DEFAULT_FARES",
     "DEFAULT_INVENTORY",
@@ -115,6 +131,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_DIR = REPO_ROOT / "data" / "build"
 DEFAULT_PBF = DEFAULT_BUILD_DIR / "osm" / "ncr.osm.pbf"
 DEFAULT_INVENTORY = REPO_ROOT / "data" / "routes" / "jeepney-inventory.yaml"
+DEFAULT_ALIASES = REPO_ROOT / "data" / "routes" / "landmark-aliases.yaml"
 DEFAULT_FARES = REPO_ROOT / "data" / "fares" / "fares-2026-09-28.yaml"
 DEFAULT_SOURCES = REPO_ROOT / "data" / "provenance" / "sources.yaml"
 
@@ -146,7 +163,9 @@ def normalise_curated_route(route: RouteDef) -> RouteDef:
 
 
 def merge_curated_routes(
-    osm_routes: Sequence[RouteDef], curated_routes: Sequence[RouteDef]
+    osm_routes: Sequence[RouteDef],
+    curated_routes: Sequence[RouteDef],
+    claimed_route_ids: Optional[Iterable[str]] = None,
 ) -> List[RouteDef]:
     """Merge OSM and curated routes with a case-insensitive id comparison (R29).
 
@@ -154,9 +173,21 @@ def merge_curated_routes(
     replace measured geometry, stops or naming. The returned list has route ids
     that are unique case-insensitively, so the GTFS builder cannot admit both
     ``jeep-T101`` and ``jeep-t101``.
+
+    Args:
+        osm_routes: measured routes, in OSM order.
+        curated_routes: curated routes whose terminals resolved.
+        claimed_route_ids: ids the builder actually wrote from OSM (defaults to
+            every OSM route id). Publish passes the written set, because an OSM
+            relation the GTFS builder cannot write - no geometry, fewer than two
+            stops, or a duplicate id it drops - has no measured geometry to win
+            a collision with, and must not shadow a usable curated route.
     """
     merged: List[RouteDef] = list(osm_routes)
-    claimed = {route.route_id.casefold() for route in merged}
+    if claimed_route_ids is None:
+        claimed = {route.route_id.casefold() for route in merged}
+    else:
+        claimed = {route_id.casefold() for route_id in claimed_route_ids}
     for route in curated_routes:
         key = route.route_id.casefold()
         if key in claimed:
@@ -172,6 +203,7 @@ def run_stage_publish(
     inventory_path: Path = DEFAULT_INVENTORY,
     fares_path: Path = DEFAULT_FARES,
     sources_path: Path = DEFAULT_SOURCES,
+    aliases_path: Optional[Path] = DEFAULT_ALIASES,
     *,
     built_at: Optional[str] = None,
     agency: AgencyInfo = AgencyInfo.SYNTHETIC,
@@ -186,6 +218,11 @@ def run_stage_publish(
         inventory_path: curated inventory YAML.
         fares_path: hand-curated fare matrix YAML.
         sources_path: provenance registry YAML.
+        aliases_path: documented landmark aliases YAML (ruling R34), or ``None``
+            to resolve by exact OSM stop name only. Invalid aliases (a feature
+            id absent from the extract or a renamed feature) are reported in
+            ``landmark_aliases.invalid`` and the affected landmark stays
+            unresolved; a malformed file fails the build.
         built_at: ISO-8601 UTC timestamp recorded in the manifest/report;
             defaults to the current UTC time.
         agency: GTFS publisher metadata (the committed synthetic agency).
@@ -195,8 +232,8 @@ def run_stage_publish(
 
     Raises:
         FileNotFoundError: an input file (or the OSM extract) is missing.
-        ValueError: an input is malformed (inventory schema, fare matrix,
-            registry) or the build cannot produce a valid feed.
+        ValueError: an input is malformed (inventory schema, aliases schema,
+            fare matrix, registry) or the build cannot produce a valid feed.
         BlockedDatasetError: the registry names a blocked dataset (spec 8.1).
         LicenceGateError: the ODbL licence/attribution or the CC BY-SA 2.0
             inventory attribution would be lost (spec 8.2; ruling R32).
@@ -206,6 +243,7 @@ def run_stage_publish(
     inventory_path = Path(inventory_path)
     fares_path = Path(fares_path)
     sources_path = Path(sources_path)
+    aliases: Optional[Path] = None if aliases_path is None else Path(aliases_path)
 
     for label, path in (
         ("OSM extract", pbf),
@@ -229,14 +267,31 @@ def run_stage_publish(
         )
     gate_sources(sources)
 
+    # Documented aliases are validated before the expensive extract scans, so a
+    # hand-edited file fails fast (ruling R34).
+    alias_list: List[LandmarkAlias] = (
+        load_landmark_aliases(aliases) if aliases is not None else []
+    )
+
     # Resolve curated terminals against named stop features in the extract.
     named_stops = load_named_stops(pbf)
     stop_lookup = build_stop_lookup(named_stops)
+    alias_lookup, invalid_aliases = alias_coordinates(
+        alias_list, stop_feature_lookup(named_stops)
+    )
     inventory = load_inventory(inventory_path)
-    resolved_landmarks = resolve_landmarks(inventory, stop_lookup)
+    resolved_landmarks = resolve_landmarks(inventory, stop_lookup, alias_lookup)
     osm_routes = list(iter_route_relations(pbf))
 
-    claimed = {route.route_id.casefold() for route in osm_routes}
+    # R29 says OSM wins a collision "because measured geometry beats a
+    # transcription". An OSM relation the GTFS builder cannot write has no
+    # measured geometry to win with, so claim only the ids the builder actually
+    # writes; otherwise a malformed OSM relation (e.g. a share_taxi with one
+    # stop) shadows a usable curated route and the route is reported as a
+    # "duplicate" that no feed row carries.
+    osm_feed = build_feed(osm_routes, agency, FEED_START, FEED_END)
+    written_osm_ids = {route.route_id.casefold() for route in osm_feed.routes}
+    claimed = set(written_osm_ids)
     curated_routes: List[RouteDef] = []
     records: List[Dict[str, Any]] = []
     unresolved: List[Dict[str, str]] = []
@@ -285,7 +340,7 @@ def run_stage_publish(
         claimed.add(key)
         curated_routes.append(route_def)
 
-    merged = merge_curated_routes(osm_routes, curated_routes)
+    merged = merge_curated_routes(osm_routes, curated_routes, written_osm_ids)
     feed = build_feed(merged, agency, FEED_START, FEED_END)
     written_route_ids = {route.route_id for route in feed.routes}
 
@@ -306,7 +361,16 @@ def run_stage_publish(
         for record in records
         if record["status"] == "skipped"
     ]
+    # The coverage module is the Task 11 metric's single implementation. It
+    # counts a route as covered when its id is in the feed at all - which can
+    # exceed `curated_routes_modelled`, because an OSM relation that already
+    # carries the route id (a R29 duplicate skip) models the corridor with real
+    # geometry. The two numbers answer different questions and the report keeps
+    # both: `curated_routes_modelled` = "did this curated entry enter the feed?",
+    # `coverage.modelled` = "does the feed carry a route for this inventory row?".
+    coverage = compute_coverage(inventory, written_route_ids)
     modelled = sum(1 for record in records if record["status"] == "modelled")
+    alias_usage = _alias_usage(alias_list, inventory, stop_lookup, resolved_landmarks)
 
     fares_document = _load_yaml(fares_path, "fare matrix")
     fare_tables = build_gtfs_fare_tables(
@@ -378,7 +442,14 @@ def run_stage_publish(
         "curated_routes_total": len(inventory),
         "curated_routes_modelled": modelled,
         "curated_routes_skipped": skipped,
+        "coverage": coverage,
         "landmark_unresolved": unresolved,
+        "landmark_aliases": {
+            "path": str(aliases) if aliases is not None else None,
+            "total": len(alias_list),
+            "used": alias_usage,
+            "invalid": invalid_aliases,
+        },
         "curated_routes": records,
         "osm_routes_total": osm_total,
         "oms_routes_total": osm_total,  # literal spelling of the Task 8 brief
@@ -401,6 +472,41 @@ def run_stage_publish(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     return report
+
+
+def _alias_usage(
+    aliases: Sequence[LandmarkAlias],
+    inventory: Sequence[InventoryRoute],
+    stop_lookup: Mapping[str, Tuple[float, float]],
+    resolved_landmarks: Mapping[str, Tuple[float, float]],
+) -> List[Dict[str, Any]]:
+    """Aliases that actually changed resolution, with the routes they unlocked.
+
+    A direct exact-name match always wins (see ``resolve_landmarks``), so an
+    alias whose landmark is also an OSM stop name is *not* reported as used -
+    the report names only the aliases that did work, which is what makes the
+    coverage improvement auditable.
+    """
+    used: List[Dict[str, Any]] = []
+    for alias in aliases:
+        if alias.landmark not in resolved_landmarks:
+            continue
+        if normalise_name(alias.landmark) in stop_lookup:
+            continue
+        used.append(
+            {
+                "landmark": alias.landmark,
+                "osm_stop": alias.osm_stop,
+                "stop_name": alias.stop_name,
+                "source": alias.source,
+                "route_codes": [
+                    entry.code
+                    for entry in inventory
+                    if alias.landmark in entry.stop_landmarks
+                ],
+            }
+        )
+    return used
 
 
 # --------------------------------------------------------------------------

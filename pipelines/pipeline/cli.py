@@ -7,10 +7,13 @@ Stages (run from the ``pipelines/`` directory with the venv interpreter):
 * ``osm`` — clip an existing extract to the NCR bbox and write
   ``<out>/osm/ncr.osm.pbf`` plus the schema-validated ``<out>/osm/coverage.json``.
   Offline: it only reads local files.
-* ``publish`` — resolve the curated terminals against the clipped extract, merge
-  OSM + curated routes, build the GTFS feed with fare tables, and write
-  ``<out>/gtfs/gtfs.zip``, ``<out>/manifest.json`` and
-  ``<out>/build-report.json``. Offline.
+* ``publish`` — resolve the curated terminals against the clipped extract (with
+  the documented landmark aliases, ruling R34), merge OSM + curated routes,
+  build the GTFS feed with fare tables, and write ``<out>/gtfs/gtfs.zip``,
+  ``<out>/manifest.json`` and ``<out>/build-report.json``. Offline.
+* ``coverage`` — compare the curated inventory with a built feed and print the
+  coverage percentage plus the missing routes (spec §3 criterion 7, ruling R29's
+  case-insensitive ids). Exits 1 when coverage is below ``--threshold``.
 * ``licence-gate`` — check a built ``manifest.json`` (``--manifest``) together
   with the feed it names, or, with no manifest, the committed provenance
   registry (``--sources``): fails on a blocked dataset, a missing ODbL notice,
@@ -23,6 +26,8 @@ Example (the runbook's sequence)::
     python -m pipeline.cli osm --pbf data/build/philippines-latest.osm.pbf \\
         --out data/build --taginfo tests/fixtures/taginfo_philippines.json
     python -m pipeline.cli publish --pbf data/build/osm/ncr.osm.pbf --out data/build
+    python -m pipeline.cli coverage --inventory data/routes/jeepney-inventory.yaml \\
+        --feed data/build/gtfs/gtfs.zip --threshold 60
     python -m pipeline.cli licence-gate --manifest data/build/manifest.json
 """
 
@@ -31,11 +36,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import zipfile
 from pathlib import Path
 from typing import Sequence
 
 from jsonschema import ValidationError
 
+from .coverage import compute_coverage, read_feed_route_ids
+from .inventory import load_inventory
 from .manifest import (
     BlockedDatasetError,
     LicenceGateError,
@@ -47,6 +55,7 @@ from .manifest import (
 )
 from .osm import CoverageError, download_geofabrik, run_stage_osm
 from .publish import (
+    DEFAULT_ALIASES,
     DEFAULT_BUILD_DIR,
     DEFAULT_FARES,
     DEFAULT_INVENTORY,
@@ -142,9 +151,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="provenance registry YAML (default: %(default)s)",
     )
     publish.add_argument(
+        "--aliases",
+        default=str(DEFAULT_ALIASES),
+        help="documented landmark aliases YAML (default: %(default)s)",
+    )
+    publish.add_argument(
+        "--no-aliases",
+        action="store_true",
+        help="resolve curated landmarks by exact OSM stop name only (ignore --aliases)",
+    )
+    publish.add_argument(
         "--built-at",
         default=None,
         help="ISO-8601 UTC build timestamp (default: now)",
+    )
+
+    coverage = stages.add_parser(
+        "coverage",
+        help="report curated-inventory coverage of a built GTFS feed (offline)",
+        description=(
+            "Compare the curated jeepney/UV inventory with the routes in a built "
+            "gtfs.zip (ids compared case-insensitively, ruling R29), print the "
+            "percentage and the missing list, and exit 1 when coverage is below "
+            "--threshold (spec §3 criterion 7). Exit 2 = missing/invalid input."
+        ),
+    )
+    coverage.add_argument(
+        "--inventory",
+        default=str(DEFAULT_INVENTORY),
+        help="curated jeepney/UV inventory YAML (default: %(default)s)",
+    )
+    coverage.add_argument(
+        "--feed",
+        default=str(DEFAULT_BUILD_DIR / "gtfs" / "gtfs.zip"),
+        help="built GTFS zip to measure (default: %(default)s)",
+    )
+    coverage.add_argument(
+        "--threshold",
+        type=float,
+        default=60.0,
+        help="minimum modelled percentage that passes (default: %(default)s)",
+    )
+    coverage.add_argument(
+        "--json",
+        action="store_true",
+        help="print the coverage report as JSON instead of a summary",
     )
 
     licence = stages.add_parser(
@@ -243,6 +294,7 @@ def _run_licence_gate(args: argparse.Namespace) -> int:
 
 def _run_publish(args: argparse.Namespace) -> int:
     """``publish``: build the merged GTFS feed, manifest and build report."""
+    aliases_path = None if args.no_aliases else Path(args.aliases)
     try:
         report = run_stage_publish(
             Path(args.pbf),
@@ -250,6 +302,7 @@ def _run_publish(args: argparse.Namespace) -> int:
             Path(args.inventory),
             Path(args.fares),
             Path(args.sources),
+            aliases_path,
             built_at=args.built_at,
         )
     except (BlockedDatasetError, LicenceGateError) as exc:
@@ -268,6 +321,16 @@ def _run_publish(args: argparse.Namespace) -> int:
         f"{len(report['curated_routes_skipped'])} skipped, "
         f"{len(report['landmark_unresolved'])} unresolved landmarks"
     )
+    coverage = report["coverage"]
+    print(
+        f"coverage: {coverage['modelled']}/{coverage['total']} curated routes in the "
+        f"feed ({coverage['pct']:.1f}%)"
+    )
+    aliases = report["landmark_aliases"]
+    print(
+        f"aliases: {len(aliases['used'])} used, "
+        f"{len(aliases['invalid'])} invalid ({aliases['path'] or 'disabled'})"
+    )
     fares = report["fare_tables"]
     print(
         f"fare tables: {fares['fare_attributes_rows']} fares, "
@@ -284,6 +347,32 @@ def _run_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_coverage(args: argparse.Namespace) -> int:
+    """``coverage``: curated inventory vs a built feed, with a pass threshold."""
+    try:
+        inventory = load_inventory(Path(args.inventory))
+        feed_ids = read_feed_route_ids(Path(args.feed))
+    except (FileNotFoundError, ValueError, zipfile.BadZipFile, KeyError) as exc:
+        return _fail(exc)
+
+    report = compute_coverage(inventory, feed_ids)
+    passed = report["pct"] >= args.threshold
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0 if passed else 1
+
+    print(
+        f"coverage: {report['modelled']}/{report['total']} curated routes modelled "
+        f"({report['pct']:.1f}%)"
+    )
+    for entry in report["missing"]:
+        print(f"missing: {entry['code']} ({entry['reason']})")
+    print(
+        f"threshold: {args.threshold:.1f}% -> {'PASS' if passed else 'FAIL'}"
+    )
+    return 0 if passed else 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one stage. Returns a process exit code (0 ok, 1 gate failed, 2 bad input)."""
     args = build_parser().parse_args(argv)
@@ -292,6 +381,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_licence_gate(args)
     if args.stage == "publish":
         return _run_publish(args)
+    if args.stage == "coverage":
+        return _run_coverage(args)
     if args.stage == "download":
         destination = download_geofabrik(Path(args.dest))
         print("next: python -m pipeline.cli osm "
