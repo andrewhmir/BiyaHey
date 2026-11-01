@@ -13,6 +13,7 @@
   "dependencies": {
     "@biyahey/shared": "*",
     "fastify": "^5.12.7",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

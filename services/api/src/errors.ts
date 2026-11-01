@@ -22,6 +22,31 @@ export class InvalidModeError extends Error {
   }
 }
 
+/** Thrown when the routing service cannot be reached or times out. */
+export class RouterUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RouterUnavailableError';
+  }
+}
+
+/**
+ * Thrown when MOTIS answered but rejected the request.
+ *
+ * The BFF still reports 502: the client's body was valid for our API, so the
+ * failure is on the routing side, and the upstream status/detail is included in
+ * the message for operators.
+ */
+export class RouterResponseError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'RouterResponseError';
+    this.status = status;
+  }
+}
+
 function sendError(
   reply: FastifyReply,
   statusCode: number,
@@ -47,6 +72,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
     }
     if (error instanceof InvalidBodyError) {
       return sendError(reply, 400, 'INVALID_BODY', error.message);
+    }
+    if (error instanceof RouterUnavailableError) {
+      return sendError(reply, 502, 'ROUTER_UNAVAILABLE', error.message);
+    }
+    if (error instanceof RouterResponseError) {
+      return sendError(reply, 502, 'ROUTER_ERROR', error.message);
     }
     // Fastify's own JSON-schema failures and body-parser failures (400).
     if (error.validation !== undefined || error.statusCode === 400) {

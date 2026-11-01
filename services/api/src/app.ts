@@ -1,8 +1,10 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { loadProvenance } from '@biyahey/shared/provenance';
+import { loadProvenance, resolveDataDir } from '@biyahey/shared/provenance';
 import { registerErrorHandler } from './errors.js';
 import { registerFaresRoutes } from './routes/fares.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerPlanRoutes } from './routes/plan.js';
+import { registerSearchRoutes } from './routes/search.js';
 import { registerSourcesRoutes } from './routes/sources.js';
 
 /** Minimal injectable HTTP transport; Node's `fetch` satisfies it. */
@@ -31,11 +33,14 @@ declare module 'fastify' {
  */
 export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
+  const dataDir = opts.dataDir ?? resolveDataDir();
   const sources = loadProvenance(opts.dataDir);
   app.decorate('motisFetch', opts.motisFetch ?? fetch);
   registerErrorHandler(app);
   registerHealthRoutes(app);
   registerSourcesRoutes(app, sources);
   registerFaresRoutes(app);
+  registerSearchRoutes(app);
+  registerPlanRoutes(app, dataDir);
   return app;
 }
