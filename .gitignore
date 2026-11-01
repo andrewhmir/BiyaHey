@@ -28,6 +28,9 @@ __pycache__/
 playwright-report/
 test-results/
 
+# superpowers scratch (ledgers, briefs, review packages)
+.superpowers/sdd/
+
 # os noise
 .DS_Store
 Thumbs.db
