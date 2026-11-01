@@ -1,0 +1,156 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract used by pipelines/tests/test_gtfs.py.
+
+  It is NOT downloaded: the GTFS builder tests must run offline against a
+  committed fixture. It mirrors the shape of an NCR extract produced by the
+  Task 5 bbox clip, including the accepted limitation that clipping can leave
+  dangling relation members (members whose object is not in the extract).
+
+  Nodes:
+    1001  North Avenue        (14.6000, 121.0000)  MRT-3 stop, on way 2001
+    1002  Quezon Avenue       (14.6050, 121.0050)  MRT-3 stop, ways 2001 + 2002
+    1003  GMA Kamuning        (14.6100, 121.0100)  MRT-3 stop, on way 2002
+    1004  Cubao               (14.6150, 121.0150)  bus stop, on way 2102
+    1005  Baclaran            (14.5300, 121.0000)  bus stop, on way 2102
+    1006  Guadalupe           (14.5650, 121.0450)  ferry pier, on way 2101
+    1007  Pasig               (14.5750, 121.0600)  ferry pier, on way 2101
+    1008  rail geometry only  (14.6025, 121.0025)
+    1009  rail geometry only  (14.6075, 121.0075)
+    1010  bus geometry only   (14.5700, 121.0100)
+
+  Ways:
+    2001  nodes 1001,1008,1002   railway=subway
+    2002  nodes 1002,1009,1003   railway=subway   (shares node 1002 with 2001)
+    2101  nodes 1006,1007        route=ferry
+    2102  nodes 1004,1010,1005   highway=primary
+
+  Relations:
+    3001  route=light_rail, ref=MRT-3   -> rail-mrt3, route_type 1
+          members: way 2001, way 8999 (DANGLING), way 2002,
+                   node 1001/1002/1003 role=stop, node 9999 (DANGLING)
+          The two dangling members must be skipped and counted; the shape must
+          still resolve to five points 1001,1008,1002,1009,1003.
+    3002  route=ferry, ref=Pasig        -> ferry-pasig, route_type 4
+          members: way 2101 only, so its two landmark stops are synthesized
+          from the from/to tags and the shape endpoints.
+    3003  route=bus, ref=B1             -> bus-b1, route_type 3
+          members: way 2102 + nodes 1004/1005 role=stop.
+    3004  route=road, ref=R1            -> ignored: not a public-transport mode.
+    3005  route=bus, ref=B2             -> bus-b2, but its only way member
+          (8998) is dangling, so it has no resolvable geometry and no stops;
+          build_feed must skip it and record the skip instead of crashing.
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="1001" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6000000" lon="121.0000000">
+    <tag k="name" v="North Avenue"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1002" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6050000" lon="121.0050000">
+    <tag k="name" v="Quezon Avenue"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1003" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6100000" lon="121.0100000">
+    <tag k="name" v="GMA Kamuning"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1004" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6150000" lon="121.0150000">
+    <tag k="name" v="Cubao"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1005" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5300000" lon="121.0000000">
+    <tag k="name" v="Baclaran"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1006" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5650000" lon="121.0450000">
+    <tag k="name" v="Guadalupe Ferry Terminal"/>
+  </node>
+  <node id="1007" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5750000" lon="121.0600000">
+    <tag k="name" v="Pasig Ferry Terminal"/>
+  </node>
+  <node id="1008" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6025000" lon="121.0025000"/>
+  <node id="1009" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6075000" lon="121.0075000"/>
+  <node id="1010" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5700000" lon="121.0100000"/>
+
+  <way id="2001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1001"/>
+    <nd ref="1008"/>
+    <nd ref="1002"/>
+    <tag k="railway" v="subway"/>
+    <tag k="name" v="MRT-3 track southbound"/>
+  </way>
+  <way id="2002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1002"/>
+    <nd ref="1009"/>
+    <nd ref="1003"/>
+    <tag k="railway" v="subway"/>
+    <tag k="name" v="MRT-3 track northbound"/>
+  </way>
+  <way id="2101" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1006"/>
+    <nd ref="1007"/>
+    <tag k="route" v="ferry"/>
+    <tag k="name" v="Pasig River"/>
+  </way>
+  <way id="2102" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1004"/>
+    <nd ref="1010"/>
+    <nd ref="1005"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="EDSA"/>
+  </way>
+
+  <relation id="3001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="2001" role=""/>
+    <!-- DANGLING: way 8999 is not in this extract (Task 5 bbox clip limitation) -->
+    <member type="way" ref="8999" role=""/>
+    <member type="way" ref="2002" role=""/>
+    <member type="node" ref="1001" role="stop"/>
+    <member type="node" ref="1002" role="stop"/>
+    <member type="node" ref="1003" role="stop"/>
+    <!-- DANGLING: node 9999 is not in this extract -->
+    <member type="node" ref="9999" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="light_rail"/>
+    <tag k="ref" v="MRT-3"/>
+    <tag k="name" v="MRT Line 3"/>
+    <tag k="from" v="North Avenue"/>
+    <tag k="to" v="GMA Kamuning"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="3002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="2101" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+    <tag k="ref" v="Pasig"/>
+    <tag k="name" v="Pasig River Ferry"/>
+    <tag k="from" v="Guadalupe"/>
+    <tag k="to" v="Pasig"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="3003" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="2102" role=""/>
+    <member type="node" ref="1004" role="stop"/>
+    <member type="node" ref="1005" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="B1"/>
+    <tag k="name" v="Cubao-Baclaran"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+  <relation id="3004" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="2102" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="road"/>
+    <tag k="ref" v="R1"/>
+    <tag k="name" v="Not a transit route"/>
+  </relation>
+  <relation id="3005" version="1" timestamp="2026-10-31T21:23:00Z">
+    <!-- DANGLING: way 8998 is not in this extract, so this route has no geometry -->
+    <member type="way" ref="8998" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="B2"/>
+    <tag k="name" v="Unresolved bus route"/>
+  </relation>
+</osm>
