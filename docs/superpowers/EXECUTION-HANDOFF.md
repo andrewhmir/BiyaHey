@@ -92,7 +92,9 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   kept, `/plan` never emits it, no machine-readable P2P route fare exists); PNR/non-PRFS
   ferries excluded from the feed; 62 implausible itineraries dropped across the golden set
   (R10 feed shapes); coverage 12/16.
-- Next action: **Plan 2 (PWA MVP), Tasks 1–11.** Plan 1 leaves the stack runnable:
-  `npm run dev` brings up `routing` + `api` (MOTIS has imported the published 489-route
-  feed); the PWA will join on `:5173` (already CORS-allowed). Run `npm run data:build`
-  before the first `npm run dev` on a fresh checkout.
+- **Plan 2 (PWA MVP) IN PROGRESS** on branch `feature/pwa-mvp` (created from Plan-1 head
+  `6fc2b99`; not merged/pushed per the goal's no-merge constraint). Ledger:
+  `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/progress.md`; briefs for Tasks 1–11 in the
+  same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
+  imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
+  `npm run data:build` before the first `npm run dev` on a fresh checkout.
