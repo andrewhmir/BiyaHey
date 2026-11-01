@@ -53,7 +53,7 @@ Open-source, community-built commuter route planner for the Philippines, intende
 ## Execution protocol
 
 - Method: **subagent-driven development** (superpowers). Fresh implementer per task, task reviewer after each, final whole-branch review at the end.
-- Ledger: `.superpowers/sdd/data-spine/progress.md` (git-ignored). It is the recovery map: trust it and `git log` over memory after compaction.
+- Ledger: `.superpowers/sdd/2026-11-01-biyahey-data-spine/progress.md` (git-ignored). It is the recovery map: trust it and `git log` over memory after compaction.
 - Per task: record `BASE`, generate the task brief, dispatch a fresh implementer with the brief path (never the whole plan), then review via a review-package diff file.
 - Reviews are task-scoped; only Critical/Important or spec failures enter the fix loop (max 5 rounds).
 - Commit style: Conventional Commits; branch `feature/data-spine`; PRs disclose AI assistance.

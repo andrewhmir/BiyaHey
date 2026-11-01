@@ -256,7 +256,9 @@ Conventions copied from BetterGov: Node 22+, npm 10+, conventional commits, `fea
 
 ## Appendix A — Attribution strings (copy-paste, from research §9)
 
-`© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0` · `Route inventory derived from OpenStreetMap Wiki (CC BY-SA 2.0)` · `Fares per LTFRB fare matrix effective 28 September 2026` · `LRT-2/MRT-3 50% discount effective 23 March 2026` · `LRT-1 fares effective 2 April 2025 (LRMC)` · `Pasig River Ferry — Metropolitan Manila Development Authority (MMDA)` · `Geocoding by Photon (komoot) — data © OpenStreetMap contributors, ODbL` · `© OpenFreeMap © OpenMapTiles · Data from OpenStreetMap` · `Administrative boundaries: Philippine Statistics Authority (PSGC)` · `Community reports — BiyaHey! contributors`
+`© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0` · `Route inventory derived from OpenStreetMap Wiki (CC BY-SA 2.0)` · `Fares per LTFRB fare matrix effective 28 September 2026` · `LRT-2/MRT-3 50% discount effective 23 March 2026` · `LRT-1 fares effective 2 April 2025 (LRMC)` · `Pasig River Ferry — Metropolitan Manila Development Authority (MMDA)` · `Geocoding by Photon (komoot) — data © OpenStreetMap contributors, ODbL` · `© OpenFreeMap © OpenMapTiles · Data from OpenStreetMap` · `Administrative boundaries: Philippine Statistics Authority (PSGC)` · `Community reports — BiyaHey! contributors` · `MOTIS routing engine (MIT) — software, not data`
+
+*(Ratified ruling R21, 2026-11-01: `rail-fares` joins its two strings with ` · `; the `motis` software attribution is added here so the registry and the spec agree.)*
 
 ## Appendix B — Decisions deferred to the implementation plan
 
