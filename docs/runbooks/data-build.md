@@ -400,7 +400,9 @@ Expected: `licence-gate: ok (...)` — no blocked dataset (Sakay/BusMaps are ref
 ODbL 1.0 notice present in the feed's `LICENSE-DATA.txt`, and the CC BY-SA 2.0
 inventory attribution present because wiki-derived routes are shipped. Without
 `--manifest`, the same command gates the committed provenance registry and needs no
-`data/build` artifacts; that is the mode CI uses through the pytest suite.
+`data/build` artifacts; that is the mode the pytest suite exercises. The pytest suite
+is run by `npm run verify:phase1` (its pipeline-check step), **not** by `npm run ci`,
+which runs lint, typecheck, vitest and `validate:data` only.
 
 ---
 
