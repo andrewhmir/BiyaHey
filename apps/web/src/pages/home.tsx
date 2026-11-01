@@ -8,10 +8,15 @@ import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomShe
 
 const HOME_DETENTS = [96, 'half', 'expanded'] as const;
 
+export interface HomePageProps {
+  /** Opens the search screen; the route layer supplies it (Task 4). */
+  onSearchClick?: () => void;
+}
+
 // The live map sits under the sheet; the sheet owns the layout contract: peek
 // by default, full-bleed map behind it, and a search pill that stays the app's
 // primary call to action.
-export function HomePage() {
+export function HomePage({ onSearchClick }: HomePageProps = {}) {
   const [mapPadding, setMapPadding] = useState(0);
   const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
     setMapPadding(padding.bottom);
@@ -35,14 +40,14 @@ export function HomePage() {
           label="Home"
           onMapPaddingChange={handleMapPaddingChange}
         >
-          <HomeSheetContent />
+          <HomeSheetContent onSearchClick={onSearchClick} />
         </BottomSheet>
       }
     />
   );
 }
 
-function HomeSheetContent() {
+function HomeSheetContent({ onSearchClick }: HomePageProps) {
   return (
     <div className="flex flex-col gap-4 pb-2">
       {/* R54: only the first 48 px of content fits in the 96 px peek (96 px
@@ -50,6 +55,7 @@ function HomeSheetContent() {
           eyebrow and title follow it. */}
       <button
         type="button"
+        onClick={onSearchClick}
         className="flex min-h-12 w-full items-center gap-3 rounded-pill border border-outline bg-surface-container-lowest px-6 text-left text-base font-medium text-on-surface shadow-elevation-1 transition hover:shadow-elevation-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:shadow-none"
       >
         <Search aria-hidden="true" className="size-5 shrink-0 text-on-surface-variant" />

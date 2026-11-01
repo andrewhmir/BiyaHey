@@ -1,4 +1,5 @@
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useNavigate } from 'react-router-dom';
+import { SearchScreen } from './features/search/SearchScreen';
 import { HomePage } from './pages/home';
 
 // Placeholder screens: later tasks replace each one with its feature screen.
@@ -11,11 +12,21 @@ function PlaceholderScreen({ title }: { title: string }) {
   );
 }
 
+/**
+ * The search pill is the Home screen's primary action. Keeping navigation in
+ * the route layer lets `HomePage` stay renderable in isolation (its map test
+ * mounts it without a router) while the real app wires `/` → `/search`.
+ */
+function HomeRoute() {
+  const navigate = useNavigate();
+  return <HomePage onSearchClick={() => navigate('/search')} />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/search" element={<PlaceholderScreen title="Search" />} />
+      <Route path="/" element={<HomeRoute />} />
+      <Route path="/search" element={<SearchScreen />} />
       <Route path="/plan" element={<PlaceholderScreen title="Plan" />} />
       <Route path="/trip/:id" element={<PlaceholderScreen title="Trip" />} />
       <Route path="/saved" element={<PlaceholderScreen title="Saved" />} />
