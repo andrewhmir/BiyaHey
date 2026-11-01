@@ -98,12 +98,18 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
   imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
   `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-02):** Tasks 1–4 **complete and reviewed clean** — Task 1
+- **Plan 2 progress (2026-11-02):** Tasks 1–5 **complete and reviewed clean** — Task 1
   scaffold; Task 2 tokens/shell/sheet (`b2baea3`); Task 3 map (`afbd7a1`); Task 4 typed API
-  client + debounced grouped search (`9942b4b`, fix round `693c5e4`, scoped re-review
-  APPROVED — no open findings). Task 5 (route options screen) is in flight on base `693c5e4`.
-  Next per plan: 6 trip detail, 7 provenance, 8 saved/offline, 9 Taglish/a11y, 10 perf/E2E,
-  11 acceptance. Ledger has all rulings (R39–R55) and Task 5's pending R56.
+  client + debounced grouped search (`9942b4b`, fix round `693c5e4`); Task 5 route options
+  over the map (`673df80`, fix round `0cd528b`, scoped re-review APPROVED — no open findings;
+  89 web tests). **Task 6 (trip detail) is in flight.** Next per plan: 7 provenance, 8
+  saved/offline, 9 Taglish/a11y, 10 perf/E2E, 11 acceptance. Ledger has all rulings
+  (R39–R63).
+- **Plan-2 contract addendum (R61, 2026-11-02):** MOTIS `leg.intermediateStops` is present
+  (verified live: 8 stops on MRT-3 Cubao→Buendia) but the shared `LegDto` exposed no stops,
+  so the trip-detail stop list (spec §11 screen 4) was impossible. Task 6 adds an **optional**
+  `LegDto.stops` mapped by the BFF — additive and backward compatible, applied on
+  `feature/pwa-mvp` only; the Plan-1 branch and its recorded acceptance are unchanged.
 - **Durable-state hazard (fixed 2026-11-02):** both SDD `progress.md` ledgers had been
   appended with cp1252-encoded em/en dashes (bytes `0x97`/`0x96` inside UTF-8 files), which
   made them unreadable to UTF-8 readers. Both were byte-repaired (lone cp1252 bytes re-encoded
