@@ -67,4 +67,6 @@ Plan 2: Tasks 1–11, in order. Later phases (3–6 in the spec) get their own p
 ## Current status
 
 - Planning complete: research (3 reports), spec (approved), two implementation plans (committed).
-- Implementation: **not started**. Next action: Task 1 of Plan 1 on `feature/data-spine`.
+- Plan 1 (data spine + router, Tasks 1–11): **complete**. Phase-1 acceptance run **2026-11-01**: 5 PASS, 2 PARTIAL (criterion 1's web service and criterion 5's About-data screen are Plan 2), 1 DEFERRED (criterion 6 / PWA, ruling R38), 0 FAIL. Re-run with `npm run verify:phase1`.
+- Evidence: `docs/runbooks/phase1-acceptance.md` (criteria table, golden trip counts, coverage 12/16 = 75.0 %, undici R37 stress proof), `docs/runbooks/data-build.md` (measured build durations, publish, aliases, coverage), task report `.superpowers/sdd/2026-11-01-biyahey-data-spine/task-11-report.md`.
+- Next action: Plan 2 (PWA MVP), Tasks 1–11. Plan 1 leaves the stack runnable: MOTIS has re-imported the published 494-route feed; start the API with `npm run start --workspace @biyahey/api` (port 8787).

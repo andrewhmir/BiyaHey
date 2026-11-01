@@ -9,9 +9,21 @@ recorded below.
 the plan's "Python 3.12" is aspirational; this machine and the future data CI job run
 3.10.11). All paths are relative to the repository root unless stated otherwise.
 
-**Ownership:** this runbook grows one section per pipeline task. Task 5 documents the
-OSM stage; GTFS, fares, manifest and the phase-1 acceptance run are added in later
-tasks.
+**Ownership:** every pipeline stage is documented here: OSM clip (§1), GTFS publish
+and fares (§2), landmark aliases (§3), coverage (§4), licence gate (§5). The
+phase-1 acceptance run lives in [`phase1-acceptance.md`](phase1-acceptance.md).
+
+**Measured durations (real NCR build, 2026-11-01; ruling R33):**
+
+| Stage | Measured | Note |
+|---|---|---|
+| Download (612,430,134 B) | **12 m 07 s** | network-bound; Geofabrik link |
+| NCR clip → `osm/ncr.osm.pbf` | **4,290 s ≈ 71.5 min** | Python-level (pyosmium) streaming scan |
+| Publish → `gtfs/gtfs.zip` + manifest + report | **383.9 s ≈ 6 min 24 s** | includes the alias-aware landmark scan and the GTFS build |
+
+The clip is a **one-time local build step**, not a per-request cost: MOTIS imports the
+clip and GTFS once per container start and serves the preprocessed graph. Nothing in
+the API or the acceptance path re-scans the 612 MB extract.
 
 ---
 
@@ -36,8 +48,8 @@ cd pipelines
 ..\pipelines\.venv\Scripts\python.exe -m pytest
 ```
 
-Expected: `18 passed`. Alternatively from the repository root:
-`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `18 passed`).
+Expected: `145 passed`. Alternatively from the repository root:
+`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `145 passed`).
 
 > Tests never download the OSM extract and never call taginfo. The download step below
 > is an explicit, separate action, and the coverage test reads a committed snapshot.
@@ -72,9 +84,10 @@ $env:PYTHONPATH = "pipelines"
 pipelines\.venv\Scripts\python.exe -m pipeline.cli download --dest data\build\philippines-latest.osm.pbf
 ```
 
-Expected: prints the URL, the pinned snapshot date and the written byte count
-(~584 MB, so allow a few minutes on a slow link). The file goes to `data/build/`,
-which is gitignored.
+Expected: prints the URL, the pinned snapshot date and the written byte count. The
+2026-11-01 build took **12 m 07 s** for **612,430,134 B** (~584 MiB) — it is a large
+download, not "a few minutes" on a typical link. The file goes to `data/build/`, which
+is gitignored.
 
 > Not part of any test or `npm run ci`: CI must stay green without network access.
 > If the download 404s, the Geofabrik path moved — update `GEOFABRIK_PH_URL` in
@@ -94,7 +107,7 @@ Outputs:
 
 | Artifact | Contents |
 |---|---|
-| `data/build/osm/ncr.osm.pbf` | Metro Manila clip, complete ways, source header preserved (ODbL) |
+| `data/build/osm/ncr.osm.pbf` | Metro Manila clip, complete ways, source header preserved (ODbL); 69,735,980 B |
 | `data/build/osm/coverage.json` | schema-validated coverage report (`pipelines/pipeline/schema.py`) |
 
 Expected console output:
@@ -104,6 +117,10 @@ route_relations: 2851  by_mode: {'bus': 1425, 'ferry': 1243, 'share_taxi': 76, '
 ptv2_share: 0.9948  data_until: 2026-10-31T21:22:57Z (synthesized taginfo snapshot - NOT a live query)
 coverage report: data\build\osm\coverage.json
 ```
+
+Measured clip time: **4,290 s (≈ 71.5 min)** for the 612 MB input on this machine. That
+is a Python-level streaming scan (`pyosmium.FileProcessor` + `SimpleWriter`), run once
+per data build — not a per-request cost and not part of `npm run ci`.
 
 A missing or invalid input — absent `--pbf`/`--taginfo`, malformed taginfo JSON, a snapshot
 that does not match the expected shape or the coverage schema — returns exit code `2` with a
@@ -149,12 +166,11 @@ osmium extract --bbox 120.90,14.35,121.15,14.80 -o data\build\osm\ncr.osm.pbf da
 **Known limitations (accepted for v1):** relation members outside the bbox stay as
 dangling references (a partial extract), and boundary-crossing ways keep all their
 nodes. A route crossing the NCR border therefore keeps only its in-bbox geometry; v1
-routes are inside the bbox and the curated jeepney inventory (Task 7) supplies what
-OSM lacks. Expect a few minutes of Python-level scanning for the 584 MB file, a peak
-resident memory of roughly **1–3 GB** (the extractor holds the in-bbox node-id sets in
-memory), and free disk space for both the 584 MB download and the clip. If the machine
-is tight on RAM, raise the bbox precision later or split the clip per LGU — do not
-lower the bbox, it is researched (ruling R5).
+routes are inside the bbox and the curated jeepney inventory (§2/§3) supplies what OSM
+lacks. Measured peak resident memory is roughly **1–3 GB** (the extractor holds the
+in-bbox node-id sets in memory); leave free disk space for both the 612 MB download and
+the clip. If the machine is tight on RAM, raise the bbox precision later or split the
+clip per LGU — do not lower the bbox, it is researched (ruling R5).
 
 ### 1.4 Block/filter decision
 
@@ -177,7 +193,10 @@ Source for now: `pipelines/tests/fixtures/taginfo_philippines.json`, a **synthes
 snapshot** that mirrors the researched taginfo figures (2,851 route relations; bus
 1,425; `share_taxi` 76; ferry 1,243; PTv2 99.5%; `data_until` 2026-10-31T21:22:57Z).
 It is labelled in-file (`_snapshot`) and its `coverage_source` string is copied into
-`coverage.json`. It is **not** a live query.
+`coverage.json`. It is **not** a live query. The OSM-stage counters are exact; the
+taginfo figures that describe OSM *as a whole* are a snapshot of research, and a live
+refresh needs three taginfo API calls (below). The phase-1 acceptance runbook repeats
+this honesty note because the same caveat applies to any coverage claim built on it.
 
 | Field | Kind | Value |
 |---|---|---|
@@ -201,7 +220,7 @@ instance and rewrite the fixture, keeping `_snapshot` truthful about the query d
 pipelines\.venv\Scripts\python.exe -m pytest pipelines
 ```
 
-Expected `18 passed`, offline. Then confirm the artifacts:
+Expected `145 passed`, offline. Then confirm the artifacts:
 
 ```powershell
 Get-ChildItem data\build\osm
@@ -210,18 +229,196 @@ pipelines\.venv\Scripts\python.exe -c "import json;d=json.load(open(r'data/build
 
 ---
 
-## 2. Generated artifacts (so far)
+## 2. Publish — GTFS feed, fares, manifest, build report (stage 02)
+
+```powershell
+$env:PYTHONPATH = "pipelines"
+pipelines\.venv\Scripts\python.exe -m pipeline.cli publish `
+    --pbf data\build\osm\ncr.osm.pbf `
+    --out data\build `
+    --inventory data\routes\jeepney-inventory.yaml `
+    --fares data\fares\fares-2026-09-28.yaml `
+    --sources data\provenance\sources.yaml `
+    --aliases data\routes\landmark-aliases.yaml
+```
+
+The stage (all offline, reads local files only):
+
+1. reads named stop features from the NCR extract and resolves every curated
+   terminal by exact normalised name, consulting the documented aliases (§3) when the
+   exact name is not an OSM stop name;
+2. lowercases curated ids and merges them with the OSM routes case-insensitively
+   (R29). OSM wins a collision **only when the GTFS builder actually writes that OSM
+   route**: an OSM relation with no usable geometry or fewer than two stops has no
+   measured geometry to win with, so it must not shadow a usable curated route (this
+   is how the curated `uv-m01` fills the gap left by an OSM `uv-m01` share_taxi that
+   the builder drops for having one stop);
+3. builds the merged feed and attaches the fare tables from `data/fares/`
+   (LTFRB PUV matrix 2026-09-28; LRT-2/MRT-3 50 % discount; LRT-1 excluded; ferry free);
+4. writes `gtfs/gtfs.zip` (deterministic bytes, with the ODbL notice and the CC BY-SA
+   2.0 inventory attribution inside), `manifest.json` (sha256 + datasets + attributions)
+   and `build-report.json` (the curated coverage/alias report);
+5. refuses to publish if the provenance registry names a blocked dataset, or if the
+   manifest/artifact loses the ODbL notice or the CC BY-SA 2.0 inventory attribution
+   (spec 8.1/8.2; rulings R22, R32).
+
+Measured on 2026-11-01: **383.9 s (≈ 6 min 24 s)**. Expected console output:
+
+```
+publish: 494 routes, 162032 trips, 4593 stops
+curated: 12/16 modelled, 4 skipped, 4 unresolved landmarks
+coverage: 12/16 curated routes in the feed (75.0%)
+aliases: 8 used, 0 invalid (data\routes\landmark-aliases.yaml)
+fare tables: 6 fares, 471 route rules, 3 unrepresentable
+gtfs: data\build\gtfs\gtfs.zip
+manifest: data\build\manifest.json (sha256 6a84737f9c0db1917a60eb8169ccae443b49461ca23f7e8c8778747011b9e869)
+report: data\build\build-report.json
+licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices present in artifact)
+```
+
+Artifacts:
+
+| Path | Contents | Commit? |
+|---|---|---|
+| `data/build/gtfs/gtfs.zip` | merged GTFS feed + fare tables + `LICENSE-DATA.txt` | **never** (gitignored) |
+| `data/build/manifest.json` | sha256, dataset register rows, attributions | **never** |
+| `data/build/build-report.json` | per-route records, skipped reasons, unresolved landmarks, alias usage, `coverage` block | **never** |
+
+`build-report.json` carries, among others:
+
+```
+curated_routes_total / curated_routes_modelled / curated_routes_skipped
+coverage: {total, modelled, pct, missing: [{code, reason}]}
+landmark_unresolved: [{route_code, landmark}]
+landmark_aliases: {path, total, used: [...], invalid: [...]}
+osm_routes_total / osm_routes_skipped / blocked_datasets_checked
+```
+
+`curated_routes_modelled` counts curated entries that entered the feed themselves;
+`coverage.modelled` counts inventory rows whose route id the feed carries (case-insensitive,
+R29) — equal in the current build, but the distinction is kept because an OSM-written
+duplicate can cover a row the curated layer had to skip.
+
+If the published feed changes, MOTIS must re-import before it serves it:
+
+```powershell
+docker compose up -d --force-recreate --wait routing
+```
+
+The entrypoint runs `motis import` on every start and re-runs only tasks whose input
+hashes changed (fresh import ≈ 20 s on this machine; the healthcheck allows 600 s).
+
+---
+
+## 3. Landmark aliases (ruling R34)
+
+`data/routes/landmark-aliases.yaml` — schema `data/routes/schema/landmark-aliases.schema.json`,
+validated by `npm run validate:data` and again by `pipeline.landmarks.load_landmark_aliases`
+at publish time.
+
+An alias is a hand-checked pointer from a curated landmark string to a **specific OSM
+stop feature** (`node/<id>` or `way/<id>`) whose name is `stop_name`. It adds no
+coordinates: publish reads that feature's own coordinate from the extract and
+re-checks that the feature's name still normalises to `stop_name` (a renamed or
+deleted feature appears under `landmark_aliases.invalid`, never silently resolved to
+another place). `source` records the `stops.txt` line in the built feed that proves the
+stop is in the artifact.
+
+Rules: never alias a road (a road is not a terminal), and never alias a landmark to a
+same-named place in another city — those invent corridors.
+
+The 2026-11-01 build uses eight aliases (all valid, all used):
+
+| Curated landmark | OSM stop (feature) | Routes unlocked |
+|---|---|---|
+| Novaliches | Novaliches Plaza Mall (`node/7535900399`) | T101, T109*, T165, 101 |
+| Balintawak Cloverleaf | Balintawak (`node/5191404470`) | T165 |
+| SM Fairview | SM City Fairview (`node/1460734524`) | 111, M01 |
+| Commonwealth | Commonwealth–Regalado Highway (`node/14047581959`) | 111 |
+| Molino | Molino Town Center (`node/12005042518`) | C20 |
+| EDSA/Shaw Boulevard | Shaw Boulevard (`node/11328574094`) | C50 |
+| Malabon | Malabon Market (Estrella) (`node/14021370276`) | T115* |
+| Zapote Kabila Terminal | Zapote Kabila (`node/2525328388`) | T448 |
+
+\* the route still has a second unresolved landmark, so it remains skipped.
+
+**Still unresolved after aliases, with the data reason (R10) — these are not lowered
+bars, they are places the feed does not carry:**
+
+| Landmark | Route(s) | Why no alias |
+|---|---|---|
+| Rizal Avenue | T109 | The wiki names a **road**, not a terminal. The feed's "Rizal Avenue Extension" stops are spread along several kilometres of it; picking one would invent a terminal. |
+| Paco (Obando) | T112 | Paco is a barangay of Obando, Bulacan. The extract has no named stop there; the only "Paco" stops in the feed are Manila's Paco district ~10.6 km south. Aliasing would fabricate a cross-Manila corridor. |
+| Victory Mall Monumento | T115 | The wiki names a mall; no OSM stop carries that name. The nearest named stops are the Monumento transport terminals, which are different places, so no alias is recorded. |
+| Biñan Poblacion | T420 | Biñan city centre lies **south of the NCR bbox** (`min_lat` 14.35, R5), so the clip has no Biñan stops at all. Widening coverage is a bbox/coverage decision, not an alias. |
+
+Result: **12 of the 16 curated routes are modelled (75.0 %)** — up from 4/16 (25.0 %)
+before aliases. The metric itself is unchanged (spec §3 criterion 7).
+
+---
+
+## 4. Coverage report (spec §3 criterion 7)
+
+```powershell
+$env:PYTHONPATH = "pipelines"
+pipelines\.venv\Scripts\python.exe -m pipeline.cli coverage `
+    --inventory data\routes\jeepney-inventory.yaml `
+    --feed data\build\gtfs\gtfs.zip `
+    --threshold 60
+```
+
+Expected output:
+
+```
+coverage: 12/16 curated routes modelled (75.0%)
+missing: T109 (no GTFS route jeep-t109)
+missing: T112 (no GTFS route jeep-t112)
+missing: T115 (no GTFS route jeep-t115)
+missing: T420 (no GTFS route jeep-t420)
+threshold: 60.0% -> PASS
+```
+
+- **Case-insensitive (R29):** the inventory keeps the published case (`jeep-T109`);
+  the feed carries the lowercased id (`jeep-t109`). The report names the lowercased id
+  to look for in `routes.txt`.
+- **Source of truth:** the built `gtfs.zip`'s `routes.txt`, not the build report — the
+  number acceptance measures is the artifact the router reads.
+- `--json` prints `{total, modelled, pct, missing}` for scripts; exit code 1 means
+  below threshold, 2 means missing/invalid input.
+- `compute_coverage` lives in `pipelines/pipeline/coverage.py`; the publish report's
+  `coverage` block calls the same function.
+
+---
+
+## 5. Licence gate
+
+```powershell
+pipelines\.venv\Scripts\python.exe -m pipeline.cli licence-gate --manifest data\build\manifest.json
+```
+
+Expected: `licence-gate: ok (...)` — no blocked dataset (Sakay/BusMaps are refused),
+ODbL 1.0 notice present in the feed's `LICENSE-DATA.txt`, and the CC BY-SA 2.0
+inventory attribution present because wiki-derived routes are shipped. Without
+`--manifest`, the same command gates the committed provenance registry and needs no
+`data/build` artifacts; that is the mode CI uses through the pytest suite.
+
+---
+
+## 6. Generated artifacts (complete)
 
 | Path | Producer | Commit? | Licence |
 |---|---|---|---|
 | `data/build/philippines-latest.osm.pbf` | `pipeline.cli download` | **never** (gitignored) | ODbL 1.0 |
 | `data/build/osm/ncr.osm.pbf` | `pipeline.cli osm` | **never** (gitignored) | ODbL 1.0 |
 | `data/build/osm/coverage.json` | `pipeline.cli osm` | **never** (gitignored) | — (report; derived from ODbL + taginfo stats) |
+| `data/build/gtfs/gtfs.zip` | `pipeline.cli publish` | **never** (gitignored) | ODbL 1.0 derived database + CC BY-SA 2.0 inventory attribution inside |
+| `data/build/manifest.json` | `pipeline.cli publish` | **never** (gitignored) | — (provenance record) |
+| `data/build/build-report.json` | `pipeline.cli publish` | **never** (gitignored) | — (build report) |
 
 `data/build/` is ignored explicitly in `.gitignore`. `*.osm.pbf` is ignored too, as a
-second line of defence. Never `git add -f` an extract.
+second line of defence. Never `git add -f` an extract or a feed.
 
-## 3. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -231,3 +428,8 @@ second line of defence. Never `git add -f` an extract.
 | `coverage.json` reports `ptv2_share: 0.9948` | Expected — it is derived from 1930/1940, not quoted from the note |
 | Extract is much smaller than expected | Check the bbox and that the input is the Philippines extract, not a small regional one |
 | `osmium: command not found` | Expected on this machine — see §1.3 |
+| `error: landmark aliases not found` (exit 2) | `--aliases` points at a missing file; omit `--no-aliases` / pass the committed path |
+| `error: aliases do not match landmark-aliases.schema.json` | A hand edit broke the alias schema; `npm run validate:data` reports the same problem |
+| `landmark_aliases.invalid` is non-empty | The pinned OSM feature vanished or was renamed in the new extract. Re-check the stop in `stops.txt`/the extract and update `osm_stop` + `source`; the affected landmark stays unresolved meanwhile |
+| Publish is slow (~6 min) | Expected: the landmark resolver scans the 69 MB NCR extract and the GTFS builder writes ~162k trips |
+| `docker compose up -d --wait routing` waits after a republish | The entrypoint is re-importing the changed GTFS; watch `docker compose logs -f routing` |
