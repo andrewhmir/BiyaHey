@@ -1,0 +1,23 @@
+{
+  "name": "@biyahey/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fastify BFF for the BiyaHey! commuter route planner",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "vitest run --root ../.. services/api"
+  },
+  "dependencies": {
+    "@biyahey/shared": "*",
+    "fastify": "^5.12.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.0.0"
+  }
+}

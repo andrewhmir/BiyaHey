@@ -195,6 +195,16 @@ const FARE_RULES: Record<FareMode, FareRule> = {
   },
 };
 
+/**
+ * Every mode the engine can price, in `FARE_RULES` declaration order.
+ *
+ * The API uses this to reject an unknown mode with a 400 before calling the
+ * engine; the engine keeps its own `Object.hasOwn` guard for module consumers.
+ */
+export const FARE_MODES: readonly FareMode[] = Object.freeze(
+  Object.keys(FARE_RULES) as FareMode[],
+);
+
 /** Round to whole centavos, the unit every displayed fare is rendered from. */
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;

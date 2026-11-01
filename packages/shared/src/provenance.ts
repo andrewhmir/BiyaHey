@@ -50,8 +50,10 @@ let cachedSources: DataSource[] | undefined;
  * package directory as cwd. Walking up from the module URL finds `<repo>/data`
  * in both cases, and keeps working if the package is compiled (its `dist/`)
  * or hoisted into `node_modules` inside the same repository.
+ *
+ * Exported so `services/api` can log the directory it will read.
  */
-function defaultDataDir(): string {
+export function resolveDataDir(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (;;) {
     const candidate = join(dir, 'data');
@@ -94,13 +96,13 @@ function readSources(dataDir: string): DataSource[] {
  * Load the provenance registry, keyed by source id, preserving registry order.
  *
  * @param dataDir repository `data/` directory; defaults to the repo's own
- *   `data/` directory resolved from this module (see {@link defaultDataDir}).
+ *   `data/` directory resolved from this module (see {@link resolveDataDir}).
  */
 export function loadProvenance(dataDir?: string): Map<SourceId, DataSource> {
   const sources =
     dataDir === undefined && cachedSources !== undefined
       ? cachedSources
-      : readSources(dataDir ?? defaultDataDir());
+      : readSources(dataDir ?? resolveDataDir());
   if (dataDir === undefined) {
     cachedSources = sources;
   }
