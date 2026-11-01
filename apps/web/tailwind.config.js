@@ -27,6 +27,7 @@ export default {
         tertiary: 'var(--tertiary)',
         'on-tertiary': 'var(--on-tertiary)',
         'tertiary-container': 'var(--tertiary-container)',
+        'on-tertiary-container': 'var(--on-tertiary-container)',
         error: 'var(--error)',
         'on-error': 'var(--on-error)',
         'error-container': 'var(--error-container)',

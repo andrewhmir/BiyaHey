@@ -94,7 +94,11 @@ describe('WCAG 2.2 axe pass over the key screens', () => {
   it('has no violations on Search with grouped results', async () => {
     const { container, user } = renderApp('/search');
     await user.type(screen.getByRole('searchbox'), 'ayala');
-    expect(await screen.findByText('Ayala Triangle Gardens')).toBeInTheDocument();
+    // The result text waits out a 250 ms debounce; give it headroom so the suite
+    // does not flake under CPU contention (m1). Real content then axe.
+    expect(
+      await screen.findByText('Ayala Triangle Gardens', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

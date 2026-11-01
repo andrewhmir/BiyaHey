@@ -72,8 +72,11 @@
   --tertiary: #7a5900;
   --on-tertiary: #ffffff;
   --tertiary-container: #ffdf9e;
-  /* Task 9 contrast-token gap: `on-tertiary-container` was mapped in Tailwind
-     but never defined, so the status/staleness banners inherited body colour.
+  /* Task 9 contrast-token gap: `on-tertiary-container` is consumed by the
+     status/staleness banners (`text-on-tertiary-container`) and must stay
+     mapped in `tailwind.config.js` — it was once defined here without that
+     mapping, so Tailwind emitted no utility and the banners silently inherited
+     body colour. `src/theme/tokens.test.ts` pins the token/colour-map pairing.
      Pinned here (light + dark) as a real 4.5:1+ pair. */
   --on-tertiary-container: #2a1700;
   --error: #ba1a1a;

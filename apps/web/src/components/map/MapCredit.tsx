@@ -20,7 +20,9 @@ import { useMap } from './MapContext';
  *
  * Task 9: the ⓘ toggle is a 48 dp target (M1), the details popover closes with
  * Escape and returns focus to the toggle, and focus moves into the popover while
- * it is open — aligning this lightweight dialog with the L3 licence sheet.
+ * it is open — aligning this lightweight dialog with the L3 licence sheet. The
+ * Escape listener is capture-phase so this dialog wins over the bottom sheet's
+ * document-level Escape (R80).
  */
 
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
@@ -84,11 +86,15 @@ export function MapCredit({
     if (!detailsOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // R80: the innermost open dialog owns Escape. Capture phase + stop the
+      // event so the sheet's document-level Escape listener cannot also
+      // collapse the sheet while this dialog is still on screen.
       event.preventDefault();
+      event.stopPropagation();
       closeDetails();
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
     // `closeDetails` is recreated per render and reads the current state.
   }, [detailsOpen]);
 

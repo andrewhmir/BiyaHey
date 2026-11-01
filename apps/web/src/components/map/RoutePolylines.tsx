@@ -14,8 +14,9 @@ import { useMap, useMapStyleVersion } from './MapContext';
  * leg geometry. `distanceM` and travel times still come from the router.
  *
  * Colour is never the only carrier of meaning: the sheet must pair the line
- * with a text chip built from {@link MODE_LABELS}. {@link MODE_COLORS} is the
- * documented mode palette used for those chips and for the line layer.
+ * with a text chip whose label comes from the translated `mode.*` keys (m5).
+ * {@link MODE_COLORS} is the documented mode palette used for those chips and
+ * for the line layer; {@link KNOWN_MODES} is the single runtime vocabulary.
  */
 
 /** Documented mode palette. Contrast against the light basemap is reviewed. */
@@ -31,18 +32,17 @@ export const MODE_COLORS: Record<LegMode, string> = {
   p2p: '#374151',
 };
 
-/** Taglish labels that must accompany {@link MODE_COLORS} wherever routes are listed. */
-export const MODE_LABELS: Record<LegMode, string> = {
-  walk: 'Lakad',
-  jeepney: 'Jeepney',
-  bus: 'Bus',
-  mrt3: 'MRT-3',
-  lrt1: 'LRT-1',
-  lrt2: 'LRT-2',
-  ferry: 'Ferry',
-  'uv-express': 'UV Express',
-  p2p: 'P2P',
-};
+/**
+ * Mode vocabulary shared by the chips, the timeline and the route palette.
+ * Derived from {@link MODE_COLORS} so there is no second copy of mode names:
+ * rendered labels live only in the `mode.*` keys of `i18n/strings.ts` (m5).
+ */
+export const KNOWN_MODES: ReadonlySet<string> = new Set<string>(Object.keys(MODE_COLORS));
+
+/** Narrow an API mode string to the v1 vocabulary. */
+export function isKnownMode(mode: string): mode is LegMode {
+  return KNOWN_MODES.has(mode);
+}
 
 const DIMMED_OPACITY = 0.6;
 const SELECTED_WIDTH = 6;

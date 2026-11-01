@@ -13,7 +13,7 @@ import {
 import { MapSlot } from '../layout/MapSlot';
 import { MapCanvas, OPENFREEMAP_LIBERTY_STYLE } from './MapCanvas';
 import { MapCredit } from './MapCredit';
-import { MODE_COLORS, RoutePolylines } from './RoutePolylines';
+import { MODE_COLORS, RoutePolylines, isKnownMode } from './RoutePolylines';
 
 vi.mock('maplibre-gl', async () => {
   const { mockMapLibre } = await import('../../test/mocks/maplibre');
@@ -214,6 +214,23 @@ describe('MapCredit', () => {
     expect(screen.getByText(openFreeMapSource.name)).toBeInTheDocument();
   });
 
+  it('closes the details popover with Escape and returns focus to the ⓘ toggle', async () => {
+    const user = userEvent.setup();
+    render(<MapCredit sources={[osmSource]} autoCollapseMs={0} />);
+
+    const toggle = screen.getByRole('button', { name: /pinagmulan ng data/i });
+    await user.click(toggle);
+
+    const dialog = screen.getByRole('dialog', { name: /pinagmulan ng data/i });
+    expect(dialog).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('collapses to the labelled ⓘ control after five seconds and reopens the detail', () => {
     vi.useFakeTimers();
     render(<MapCredit sources={[osmSource]} />);
@@ -241,6 +258,13 @@ describe('MapCredit', () => {
 });
 
 describe('RoutePolylines', () => {
+  it('shares one mode vocabulary with the translated chips (m5)', () => {
+    for (const mode of Object.keys(MODE_COLORS)) {
+      expect(isKnownMode(mode)).toBe(true);
+    }
+    expect(isKnownMode('hovercraft')).toBe(false);
+  });
+
   it('does not add sources or layers before the style has loaded', async () => {
     render(
       <MapCanvas>

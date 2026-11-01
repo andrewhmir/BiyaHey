@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import { MapCredit } from '../map/MapCredit';
 import { BottomSheet, useSheetMapPadding } from './BottomSheet';
 
 const DETENTS = [96, 'half', 'expanded'] as const;
@@ -187,7 +188,12 @@ describe('BottomSheet', () => {
     await user.click(expand());
     expect(sheet).toHaveAttribute('data-detent', 'expanded');
     expect(expand()).toHaveAttribute('aria-expanded', 'true');
-    expect(expand()).toHaveAttribute('aria-disabled', 'true');
+    // m8: the handle is not `aria-disabled` at expanded — ArrowDown and drag
+    // still collapse from it, so announcing "unavailable" contradicted the
+    // operable paths. The click itself is a no-op at the top detent.
+    expect(expand()).not.toHaveAttribute('aria-disabled');
+    await user.keyboard('{ArrowDown}');
+    expect(sheet).toHaveAttribute('data-detent', 'half');
   });
 
   it('collapses expanded -> half -> peek with the separate collapse control', async () => {
@@ -244,6 +250,71 @@ describe('BottomSheet', () => {
     await user.keyboard('{Escape}'); // half -> peek, control unmounts
     expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'peek');
     expect(screen.getByRole('button', { name: /expand sheet/i })).toHaveFocus();
+  });
+
+  it('does not steal focus when Escape collapses from half with focus outside the sheet', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Search</button>
+        <BottomSheet detents={[...DETENTS]} initial="half">
+          <p>content</p>
+        </BottomSheet>
+      </>,
+    );
+
+    const outside = screen.getByRole('button', { name: 'Search' });
+    outside.focus();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'peek');
+    // The collapse control never had focus, so nothing should be re-targeted.
+    expect(outside).toHaveFocus();
+  });
+
+  it('keeps focus on the expand handle when browser back collapses from half to peek', () => {
+    render(
+      <BottomSheet detents={[...DETENTS]} initial="half">
+        <p>content</p>
+      </BottomSheet>,
+    );
+
+    const collapse = screen.getByRole('button', { name: /collapse sheet/i });
+    collapse.focus();
+
+    act(() => {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'peek');
+    expect(screen.getByRole('button', { name: /expand sheet/i })).toHaveFocus();
+  });
+
+  it('lets the map-credit dialog own Escape without collapsing the sheet', async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet detents={[...DETENTS]} initial="half">
+        <MapCredit autoCollapseMs={0} />
+      </BottomSheet>,
+    );
+
+    const sheet = screen.getByTestId('sheet');
+    const toggle = screen.getByRole('button', { name: /pinagmulan ng data/i });
+    await user.click(toggle);
+
+    expect(screen.getByRole('dialog', { name: /pinagmulan ng data/i })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    // R80: the innermost dialog closes; the sheet keeps its half detent.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(sheet).toHaveAttribute('data-detent', 'half');
+    expect(toggle).toHaveFocus();
+
+    // With the dialog gone, the sheet's own Escape handling works again.
+    await user.keyboard('{Escape}');
+    expect(sheet).toHaveAttribute('data-detent', 'peek');
   });
 
   it.each(['peek', 'half', 'expanded'] as const)('has no axe violations at %s', async (initial) => {

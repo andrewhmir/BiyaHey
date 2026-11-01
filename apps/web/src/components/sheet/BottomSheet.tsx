@@ -25,9 +25,11 @@ import { useT } from '../../i18n/useT';
  * Dragging and the accessible controls share the same detent state: activating
  * the drag handle expands one detent until the sheet is fully expanded, the
  * separate collapse control lowers it one detent at every detent above peek,
- * ArrowUp/ArrowDown step through detents, and Escape collapses one detent.
+ * ArrowUp/ArrowDown step through detents, and Escape collapses one detent
+ * (unless an open dialog/popover inside the sheet owns Escape — R80).
  * `aria-expanded` is only true when the sheet is fully expanded, so a screen
- * reader is told that `half` still has more to expand.
+ * reader is told that `half` still has more to expand. Collapsing to peek keeps
+ * focus on the expand handle only when the collapse control itself had focus.
  */
 
 export type SheetDetentName = 'peek' | 'half' | 'expanded';
@@ -155,6 +157,8 @@ export function BottomSheet({
   const historyGuardRef = useRef(false);
   /** Focus target when the collapse control unmounts at peek (focus order). */
   const expandRef = useRef<HTMLButtonElement>(null);
+  /** The collapse control: rendered only above peek, so it can unmount. */
+  const collapseRef = useRef<HTMLButtonElement>(null);
 
   const detentName = names[index] ?? 'peek';
   const detentHeight = resolveHeight(resolvedDetents[index] ?? 'peek', viewportHeight, peekHeight);
@@ -175,12 +179,18 @@ export function BottomSheet({
    * The collapse control only renders above peek, so collapsing to peek
    * unmounts the focused element and the browser drops focus to `<body>`
    * (Task 2 review minor, closed here as part of the Task 9 focus-order pass).
-   * Move focus to the always-rendered expand handle in that case.
+   * Re-target focus to the always-rendered expand handle only when the collapse
+   * control itself had focus: Escape from the map or search pill must not pull
+   * focus into the sheet. Click, Escape and the popstate/browser-back path all
+   * collapse through this helper.
    */
   const collapseOneDetent = () => {
     const next = index - 1;
+    const collapseControl = collapseRef.current;
+    const collapseControlHadFocus =
+      collapseControl !== null && collapseControl.contains(document.activeElement);
     commitDetent(next);
-    if (next === 0) {
+    if (next === 0 && collapseControlHadFocus) {
       expandRef.current?.focus();
     }
   };
@@ -196,17 +206,26 @@ export function BottomSheet({
   }, [mapPadding, onMapPaddingChange]);
 
   // Escape collapses one detent. The listener lives on the document because the
-  // sheet is non-modal: focus may be on the map or the search pill.
+  // sheet is non-modal: focus may be on the map or the search pill. An open
+  // dialog/popover inside the sheet owns Escape (R80), so ignore Escape whose
+  // target is inside one; MapCredit also stops the event in the capture phase.
   useEffect(() => {
     if (index === 0) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('[role="dialog"], [role="alertdialog"]') !== null
+      ) {
+        return;
+      }
       event.preventDefault();
       collapseOneDetent();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // `commitDetent` is recreated per render and reads the current index.
+    // `collapseOneDetent` is recreated per render and reads the current index.
   }, [index]);
 
   // Android back / browser back collapses one detent before the route pops: a
@@ -227,7 +246,9 @@ export function BottomSheet({
     const onPopState = () => {
       if (!historyGuardRef.current) return;
       historyGuardRef.current = false;
-      commitDetent(index - 1);
+      // Same focus contract as the click/Escape path: the collapse control is
+      // about to unmount, so keep focus on the expand handle if it had focus.
+      collapseOneDetent();
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -304,8 +325,10 @@ export function BottomSheet({
       return;
     }
     // The handle only expands; the separate collapse control (and drag/Escape)
-    // lowers the sheet. At expanded there is nothing left to expand, and
-    // `aria-disabled` announces that to assistive technology.
+    // lowers the sheet. At expanded there is nothing left to expand, so this
+    // click is a no-op — but the handle is deliberately not `aria-disabled`:
+    // ArrowDown and dragging still collapse the sheet from the same focus, and
+    // announcing "unavailable" for an operable control is inconsistent (m8).
     if (atExpanded) return;
     commitDetent(index + 1);
   };
@@ -349,7 +372,6 @@ export function BottomSheet({
           type="button"
           aria-label={t('sheet.expand')}
           aria-expanded={atExpanded}
-          aria-disabled={atExpanded || undefined}
           aria-controls={bodyId}
           aria-keyshortcuts="ArrowUp ArrowDown"
           className="group flex h-12 min-w-0 flex-1 touch-none items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
@@ -367,6 +389,7 @@ export function BottomSheet({
         </button>
         {atPeek ? null : (
           <button
+            ref={collapseRef}
             type="button"
             aria-label={t('sheet.collapse')}
             aria-controls={bodyId}

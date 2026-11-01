@@ -1,7 +1,7 @@
 import type { LegDto, LegMode } from '@biyahey/shared';
 import { Bus, CarFront, Footprints, Ship, TrainFront, type LucideIcon } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
-import { MODE_LABELS } from '../../components/map/RoutePolylines';
+import { isKnownMode } from '../../components/map/RoutePolylines';
 import { defaultT } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { formatClockTime } from '../../lib/time';
@@ -34,7 +34,7 @@ export function legDistanceLabel(distanceM: number): string {
 }
 
 function modeLabel(mode: LegMode, t = defaultT): string {
-  return MODE_LABELS[mode] === undefined ? mode : t(`mode.${mode}`);
+  return isKnownMode(mode) ? t(`mode.${mode}`) : mode;
 }
 
 function LandmarkLine({ hint }: { hint: string | null }) {
@@ -173,8 +173,9 @@ export interface LegTimelineProps {
  * `informal_transfer` label. Every instruction carries a landmark line, using
  * the API's hint or the mandated honest fallback.
  *
- * Copy is Taglish via `t()`; `MODE_LABELS` remains the shared mode vocabulary
- * (the map legend uses the same table) and the English fallback translates it.
+ * Copy is Taglish via `t()`; the `mode.*` keys in `i18n/strings.ts` are the
+ * shared mode vocabulary (the map legend uses the same vocabulary) and the
+ * English fallback translates it.
  */
 export function LegTimeline({ legs }: LegTimelineProps) {
   const { t } = useT();

@@ -335,8 +335,14 @@ describe('TripDetailScreen', () => {
     );
 
     // The rail row is one of this itinerary's own sources; the extra fare row
-    // belongs to another returned option and must not be linked.
-    expect(screen.getAllByRole('link', { name: /lrta/i }).length).toBeGreaterThan(0);
+    // belongs to another returned option and must not be linked. Both rail URLs
+    // are rendered (M7), so keep the exact count and hrefs rather than `> 0`.
+    const railLinks = screen.getAllByRole('link', { name: /lrta/i });
+    expect(railLinks).toHaveLength(2);
+    expect(railLinks.map((link) => link.getAttribute('href'))).toEqual([
+      'https://www.lrta.gov.ph/tickets-and-fares/',
+      'https://lrmc.ph',
+    ]);
     expect(screen.queryByRole('link', { name: /unrelated fare table/i })).toBeNull();
   });
 
@@ -370,6 +376,11 @@ describe('/trip/:id route wiring', () => {
     expect(await screen.findByTestId('live-banner')).toHaveTextContent(
       'no live data — expected wait',
     );
+    // m3: the placeholder title must not claim live tracking. Only the mandated
+    // "no live data" sentence may mention live data on this screen.
+    const title = screen.getByRole('heading', { level: 1 });
+    expect(title).toHaveTextContent('Biyahe ngayon');
+    expect(title).not.toHaveTextContent(/live/i);
     expect(screen.getByTestId('live-trip-summary')).toHaveTextContent('31 min');
     // The plan came from the in-memory cache, not the saved-trips store.
     expect(screen.getByTestId('live-trip-summary')).toHaveTextContent(/naka-cache na plano/i);

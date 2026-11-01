@@ -151,7 +151,7 @@ const TL = {
   'trip.bayad': 'Bayad',
 
   // --- Trip live placeholder ---------------------------------------------
-  'trip.liveTitle': 'Live na biyahe',
+  'trip.liveTitle': 'Biyahe ngayon',
   'trip.liveBanner': 'no live data — expected wait',
   'trip.liveBody':
     'Walang real-time na datos para sa rutang ito. Asahan ang paghihintay sa sakayan at sundan ang static na timeline sa detalye ng biyahe.',
@@ -404,7 +404,7 @@ const EN: Record<StringKey, string> = {
   'trip.lipat': 'Transfer',
   'trip.bayad': 'Fare',
 
-  'trip.liveTitle': 'Live trip',
+  'trip.liveTitle': 'Trip status',
   'trip.liveBanner': 'no live data — expected wait',
   'trip.liveBody':
     'No real-time data for this route. Expect a wait at the stop and follow the static timeline in the trip details.',

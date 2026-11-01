@@ -38,13 +38,14 @@ describe('useT', () => {
     expect(document.documentElement.lang).toBe('en');
   });
 
-  it('updates <html lang> when the locale prop changes', () => {
+  it('updates <html lang> and re-renders consumers when the locale prop changes', () => {
     const { rerender } = render(
       <LocaleProvider locale="tl">
         <Probe />
       </LocaleProvider>,
     );
     expect(document.documentElement.lang).toBe('tl');
+    expect(screen.getByTestId('probe')).toHaveTextContent('tl|Pamasahe');
 
     rerender(
       <LocaleProvider locale="en">
@@ -52,6 +53,9 @@ describe('useT', () => {
       </LocaleProvider>,
     );
     expect(document.documentElement.lang).toBe('en');
+    // The provider's whole point: consumers translate on the locale change,
+    // not just the document attribute.
+    expect(screen.getByTestId('probe')).toHaveTextContent('en|Fare');
   });
 
   it('falls back to Taglish outside a provider', () => {

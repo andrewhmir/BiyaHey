@@ -9,14 +9,14 @@ import {
   TrainFront,
   type LucideIcon,
 } from 'lucide-react';
-import { MODE_COLORS, MODE_LABELS } from '../../components/map/RoutePolylines';
+import { MODE_COLORS, isKnownMode } from '../../components/map/RoutePolylines';
 import { useT } from '../../i18n/useT';
 
 /**
  * Mode chips for a route card (spec §11 screen 3).
  *
- * Icons and Taglish labels come from the same palette/label table the map
- * polyline legend uses ({@link MODE_LABELS} / {@link MODE_COLORS}), so colour is
+ * Icons and translated labels come from the same mode vocabulary the map
+ * polyline legend uses ({@link isKnownMode} / {@link MODE_COLORS}), so colour is
  * never the only carrier of meaning: every chip shows its mode name, and rail
  * chips additionally show the line colour next to that name.
  *
@@ -38,10 +38,6 @@ const MODE_ICONS: Record<LegMode, LucideIcon> = {
 
 const RAIL_MODES: ReadonlySet<LegMode> = new Set<LegMode>(['mrt3', 'lrt1', 'lrt2']);
 
-function isLegMode(mode: string): mode is LegMode {
-  return Object.prototype.hasOwnProperty.call(MODE_LABELS, mode);
-}
-
 export interface ModeChipsProps {
   /** Distinct modes in travel order, as the itinerary reports them. */
   modes: readonly string[];
@@ -59,7 +55,7 @@ export function ModeChips({ modes }: ModeChipsProps) {
       className="flex flex-wrap items-center gap-1.5"
     >
       {uniqueModes.map((mode) => {
-        const known = isLegMode(mode);
+        const known = isKnownMode(mode);
         const Icon = known ? MODE_ICONS[mode] : Route;
         const label = known ? t(`mode.${mode}`) : t('routes.unknownMode', { mode });
         return (

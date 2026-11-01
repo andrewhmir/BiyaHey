@@ -188,6 +188,7 @@ describe('RouteOptionsScreen', () => {
 
     // Before the 300 ms threshold the screen announces the search in its live
     // region but shows no skeleton and no spinner.
+    expect(screen.getByRole('status')).toHaveTextContent(/naghahanap ng ruta/i);
     expect(screen.queryByTestId('route-card-skeleton')).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
 
@@ -215,18 +216,26 @@ describe('RouteOptionsScreen', () => {
     expect(screen.queryByTestId('route-card')).not.toBeInTheDocument();
   });
 
-  it('shows an error state with a retry that recovers', async () => {
+  it('shows an error state with a retry that recovers and announces it once', async () => {
     server.use(planErrorHandler);
 
     const { user } = renderRouteOptions();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/hindi ma-load/i);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/hindi ma-load/i);
+    // m4: the assertive alert is the single announcement for the error state.
+    // The polite status region must stay silent so the sentence is not read
+    // twice; the About-data screen follows the same contract.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
 
     server.use(planSuccessHandler);
     await user.click(screen.getByRole('button', { name: /subukan ulit/i }));
 
     expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The polite region is back to its normal job after recovery.
+    expect(screen.getByRole('status')).toHaveTextContent('3 ruta');
   });
 
   it('highlights the tapped card and keeps exactly one card selected', async () => {

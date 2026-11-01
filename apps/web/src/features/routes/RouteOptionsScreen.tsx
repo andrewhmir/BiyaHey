@@ -104,7 +104,10 @@ function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
     case 'loading':
       return t('routes.loading');
     case 'error':
-      return t('routes.error');
+      // The assertive `role="alert"` below is the single announcement for the
+      // error state (m4, same pattern as About data): keep the polite region
+      // silent so screen readers do not hear the sentence twice.
+      return '';
     case 'success':
       return count === 0 ? t('routes.emptyStatus') : t('routes.count', { count });
   }
