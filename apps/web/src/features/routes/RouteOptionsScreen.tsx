@@ -8,11 +8,7 @@ import { usePlan, type PlanOutcome } from './usePlan';
 /** Skeletons never flash: they appear only once the plan is still pending at 300 ms. */
 export const SKELETON_DELAY_MS = 300;
 
-export type RouteFilter =
-  | 'recommended'
-  | 'cheapest'
-  | 'fewest-transfers'
-  | 'less-walking';
+export type RouteFilter = 'recommended' | 'cheapest' | 'fewest-transfers' | 'less-walking';
 
 export const FILTER_OPTIONS: readonly FilterChipOption<RouteFilter>[] = [
   { value: 'recommended', label: 'Recommended' },
@@ -108,11 +104,7 @@ function statusMessage(plan: PlanOutcome, count: number): string {
 
 function SkeletonCards() {
   return (
-    <ul
-      aria-hidden="true"
-      data-testid="route-skeletons"
-      className="flex flex-col gap-3"
-    >
+    <ul aria-hidden="true" data-testid="route-skeletons" className="flex flex-col gap-3">
       {[0, 1, 2].map((index) => (
         <li
           key={index}
@@ -136,6 +128,8 @@ interface RouteOptionsContentProps {
   /** Effective selected itinerary id (ranked lead unless one was tapped). */
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Opens the trip-detail affordance without changing the selected card. */
+  onOpenDetail?: (id: string) => void;
   originLabel?: string;
   destinationLabel?: string;
   onBack?: () => void;
@@ -149,6 +143,7 @@ function RouteOptionsContent({
   onFilterChange,
   selectedId,
   onSelect,
+  onOpenDetail,
   originLabel,
   destinationLabel,
   onBack,
@@ -239,7 +234,7 @@ function RouteOptionsContent({
             />
             <ul aria-label="Mga ruta" className="flex flex-col gap-3">
               {ranked.map((itinerary, index) => (
-                <li key={itinerary.id}>
+                <li key={itinerary.id} className="flex flex-col gap-2">
                   <RouteCard
                     itinerary={itinerary}
                     sources={plan.sources}
@@ -247,6 +242,16 @@ function RouteOptionsContent({
                     onSelect={onSelect}
                     badge={badgeFor(filter, index)}
                   />
+                  {onOpenDetail !== undefined ? (
+                    <button
+                      type="button"
+                      data-testid="trip-open"
+                      onClick={() => onOpenDetail(itinerary.id)}
+                      className="trip-open flex min-h-12 w-full items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-sm font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                    >
+                      Detalye
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -262,6 +267,11 @@ export interface RouteOptionsLabels {
   originLabel?: string;
   destinationLabel?: string;
   onBack?: () => void;
+  /**
+   * Detail hand-off: a 48 dp `Detalye` action per card. It is separate from the
+   * card body so tapping the card still selects/highlights its polyline (R58).
+   */
+  onOpenDetail?: (id: string) => void;
 }
 
 /** Standalone screen: fetches its own plan (tests mount this without a map). */
@@ -282,9 +292,7 @@ export interface ControlledRouteOptionsProps extends RouteOptionsLabels {
   onSelect: (id: string) => void;
 }
 
-export type RouteOptionsScreenProps =
-  | SelfLoadingRouteOptionsProps
-  | ControlledRouteOptionsProps;
+export type RouteOptionsScreenProps = SelfLoadingRouteOptionsProps | ControlledRouteOptionsProps;
 
 /**
  * Fare-forward route options (spec §11 screen 3).
@@ -308,6 +316,7 @@ function SelfLoadingRouteOptionsScreen({
   originLabel,
   destinationLabel,
   onBack,
+  onOpenDetail,
 }: SelfLoadingRouteOptionsProps) {
   const plan = usePlan(origin, destination);
   const [filter, setFilter] = useState<RouteFilter>('recommended');
@@ -330,6 +339,7 @@ function SelfLoadingRouteOptionsScreen({
         onFilterChange={setFilter}
         selectedId={selectedId}
         onSelect={setExplicitSelection}
+        onOpenDetail={onOpenDetail}
         originLabel={originLabel}
         destinationLabel={destinationLabel}
         onBack={onBack}

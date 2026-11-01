@@ -1,6 +1,8 @@
 import type { DataSource, ItineraryDto, PlanPlaceInput } from '@biyahey/shared';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { ApiError, planTrip } from '../../lib/api';
+import { rememberPlan } from './planCache';
 
 export type PlanStatus = 'loading' | 'success' | 'error';
 
@@ -20,10 +22,7 @@ export interface PlanOutcome {
  * returned array locally, so the query key deliberately carries no
  * filter/preference state: changing a chip must never refetch (spec §9).
  */
-export function usePlan(
-  origin: PlanPlaceInput,
-  destination: PlanPlaceInput,
-): PlanOutcome {
+export function usePlan(origin: PlanPlaceInput, destination: PlanPlaceInput): PlanOutcome {
   const query = useQuery({
     queryKey: ['plan', origin.lat, origin.lon, destination.lat, destination.lon],
     queryFn: ({ signal }) => planTrip({ origin, destination }, { signal }),
@@ -34,6 +33,14 @@ export function usePlan(
     : query.data === undefined
       ? 'loading'
       : 'success';
+
+  // R62: the route layer owns the plan response, so it is also the writer of
+  // the in-memory cache `/trip/:id` reads. This is not a second fetch.
+  useEffect(() => {
+    if (query.data !== undefined) {
+      rememberPlan(query.data);
+    }
+  }, [query.data]);
 
   return {
     status,

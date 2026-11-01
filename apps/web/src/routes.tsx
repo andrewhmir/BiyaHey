@@ -1,6 +1,6 @@
 import type { PlanPlaceInput } from '@biyahey/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
+import { Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { MapSlot } from './components/layout/MapSlot';
 import { MapCanvas } from './components/map/MapCanvas';
@@ -11,8 +11,11 @@ import {
   rankItineraries,
   type RouteFilter,
 } from './features/routes/RouteOptionsScreen';
+import { cachedTrip } from './features/routes/planCache';
 import { usePlan } from './features/routes/usePlan';
 import { SearchScreen } from './features/search/SearchScreen';
+import { TripDetailScreen } from './features/trip/TripDetailScreen';
+import { TripLiveScreen } from './features/trip/TripLiveScreen';
 import { HomePage } from './pages/home';
 
 // Placeholder screens: later tasks replace each one with its feature screen.
@@ -47,9 +50,7 @@ function useBackToSearch(): () => void {
   return useCallback(() => {
     const state: unknown = window.history.state;
     const idx =
-      typeof state === 'object' && state !== null
-        ? (state as { idx?: unknown }).idx
-        : undefined;
+      typeof state === 'object' && state !== null ? (state as { idx?: unknown }).idx : undefined;
     if (typeof idx === 'number' && idx > 0) {
       navigate(-1);
     } else {
@@ -73,6 +74,7 @@ interface PlanViewProps {
  * emphasis and the highlighted line are always the same state.
  */
 function PlanView({ origin, destination, originLabel, destinationLabel, onBack }: PlanViewProps) {
+  const navigate = useNavigate();
   const plan = usePlan(origin, destination);
   const [filter, setFilter] = useState<RouteFilter>('recommended');
   const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
@@ -117,6 +119,7 @@ function PlanView({ origin, destination, originLabel, destinationLabel, onBack }
             onFilterChange={setFilter}
             selectedId={selectedId}
             onSelect={setExplicitSelection}
+            onOpenDetail={(id) => navigate(`/trip/${id}`)}
             originLabel={originLabel}
             destinationLabel={destinationLabel}
             onBack={onBack}
@@ -420,13 +423,69 @@ function PlanRoute() {
   );
 }
 
+/**
+ * `/trip/:id` — trip detail from the in-memory plan cache (R62).
+ *
+ * The plan response is the only source of an itinerary; there is no
+ * plan-by-id endpoint. A deep link or reload with no cache therefore shows an
+ * honest notice with a way back to search instead of refetching a fake plan.
+ */
+function TripRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const goBack = useBackToSearch();
+
+  if (id === undefined) {
+    return (
+      <PlanNotice
+        title="Wala nang ruta"
+        message="Walang itinerary id sa link. Bumalik sa search at mag-plano ulit."
+        primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+      />
+    );
+  }
+
+  const cached = cachedTrip(id);
+  if (cached === undefined) {
+    return (
+      <PlanNotice
+        title="Wala nang ruta"
+        message="Hindi na available ang plan na ito sa device. Walang naka-save na ruta para sa link — bumalik sa search at mag-plano ulit."
+        primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+      />
+    );
+  }
+
+  return (
+    <TripDetailScreen
+      itinerary={cached.itinerary}
+      sources={cached.sources}
+      onBack={goBack}
+      onStartTrip={() => navigate(`/trip/${cached.itinerary.id}/live`)}
+    />
+  );
+}
+
+/** `/trip/:id/live` — static tracking placeholder; never claims live data. */
+function TripLiveRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  return (
+    <TripLiveScreen
+      itineraryId={id}
+      onBack={() => navigate(id === undefined ? '/search' : `/trip/${id}`)}
+    />
+  );
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/search" element={<SearchScreen />} />
       <Route path="/plan" element={<PlanRoute />} />
-      <Route path="/trip/:id" element={<PlaceholderScreen title="Trip" />} />
+      <Route path="/trip/:id/live" element={<TripLiveRoute />} />
+      <Route path="/trip/:id" element={<TripRoute />} />
       <Route path="/saved" element={<PlaceholderScreen title="Saved" />} />
       <Route path="/sources" element={<PlaceholderScreen title="Sources" />} />
     </Routes>

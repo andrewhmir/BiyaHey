@@ -1,11 +1,8 @@
-import type {
-  PlanResponse,
-  SearchGroup,
-  SearchResponse,
-  SearchResultDto,
-} from '@biyahey/shared';
+import type { PlanResponse, SearchGroup, SearchResponse, SearchResultDto } from '@biyahey/shared';
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
 import planCubaoAyalaRaw from '../fixtures/plan-cubao-ayala.json?raw';
+import planLong15LegsRaw from '../fixtures/plan-long-15-legs.json?raw';
+import planMrt3CubaoAyalaRaw from '../fixtures/plan-mrt3-cubao-ayala.json?raw';
 
 // MSW fixtures for `GET /search` (R40/R50). Bodies mirror the BFF's real
 // contract: grouped DTOs from `@biyahey/shared`, `distanceM` in whole metres,
@@ -168,9 +165,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A fixture drift must fail here, not later when a screen reads the field. */
 function fixtureError(path: string, expected: string): never {
-  throw new Error(
-    `plan-cubao-ayala.json is not a valid PlanResponse: ${path} must be ${expected}`,
-  );
+  throw new Error(`plan fixture is not a valid PlanResponse: ${path} must be ${expected}`);
 }
 
 function expectRecord(value: unknown, path: string): Record<string, unknown> {
@@ -243,6 +238,25 @@ function assertLeg(value: unknown, path: string): void {
   for (const [index, id] of expectArray(leg.sourceIds, `${path}.sourceIds`).entries()) {
     expectString(id, `${path}.sourceIds[${index}]`);
   }
+  // `stops` is additive and optional (R61); when a fixture carries it, it must
+  // still be the served shape the timeline expands.
+  if (leg.stops !== undefined) {
+    for (const [index, stop] of expectArray(leg.stops, `${path}.stops`).entries()) {
+      assertStop(stop, `${path}.stops[${index}]`);
+    }
+  }
+}
+
+function assertStop(value: unknown, path: string): void {
+  const stop = expectRecord(value, path);
+  expectString(stop.name, `${path}.name`);
+  expectNumber(stop.lat, `${path}.lat`);
+  expectNumber(stop.lon, `${path}.lon`);
+  for (const field of ['stopId', 'arrivalTime', 'departureTime'] as const) {
+    if (stop[field] !== undefined) {
+      expectString(stop[field], `${path}.${field}`);
+    }
+  }
 }
 
 function assertItinerary(value: unknown, path: string): void {
@@ -297,7 +311,7 @@ export function parsePlanFixture(raw: string): PlanResponse {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new Error(`plan-cubao-ayala.json is not valid JSON: ${String(error)}`);
+    throw new Error(`plan fixture is not valid JSON: ${String(error)}`);
   }
 
   const response = expectRecord(parsed, 'response');
@@ -337,10 +351,28 @@ export function parsePlanFixture(raw: string): PlanResponse {
  */
 export const planCubaoAyalaResponse: PlanResponse = parsePlanFixture(planCubaoAyalaRaw);
 
+/**
+ * MRT-3 Cubao → Ayala fixture for the trip-detail tests (Task 6): one rail leg
+ * with a four-stop served list, `Look for: MRT-3 / Ayala`, the Farmers Plaza
+ * landmark, and the 2026-03-23 rail fare from `rail-fares`.
+ */
+export const planMrt3CubaoAyalaResponse: PlanResponse = parsePlanFixture(planMrt3CubaoAyalaRaw);
+
+/** Fifteen legs with 60-character stop names: the timeline clipping stress case. */
+export const planLong15LegsResponse: PlanResponse = parsePlanFixture(planLong15LegsRaw);
+
 /** Default `POST /plan` handler: the three-option Cubao → Ayala plan. */
 export const planSuccessHandler = http.post('*/plan', () =>
   HttpResponse.json(planCubaoAyalaResponse),
 );
+
+/** Additive handler for the MRT-3 trip-detail fixture. */
+export const planMrt3Handler = http.post('*/plan', () =>
+  HttpResponse.json(planMrt3CubaoAyalaResponse),
+);
+
+/** Additive handler for the 15-leg timeline fixture. */
+export const planLongHandler = http.post('*/plan', () => HttpResponse.json(planLong15LegsResponse));
 
 /** 200 with zero itineraries: the honest "Walang ruta" state (R41). */
 export const planEmptyHandler = http.post('*/plan', () =>
@@ -368,4 +400,9 @@ export const planPendingHandler = http.post('*/plan', async () => {
   return HttpResponse.json(planCubaoAyalaResponse);
 });
 
-export const handlers: HttpHandler[] = [searchSuccessHandler, planSuccessHandler];
+export const handlers: HttpHandler[] = [
+  searchSuccessHandler,
+  planSuccessHandler,
+  planMrt3Handler,
+  planLongHandler,
+];
