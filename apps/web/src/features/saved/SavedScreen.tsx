@@ -9,6 +9,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
+import { useT } from '../../i18n/useT';
 import { formatLongDate, formatClockTime } from '../../lib/time';
 import type { SavedTrip } from '../../lib/savedTripsStore';
 import { formatFare } from '../routes/RouteCard';
@@ -25,7 +26,8 @@ import { useSavedTrips } from './useSavedTrips';
  *
  * Honesty rules this screen enforces:
  * - A saved ETA is never rendered without a label: "Saved route (no live data)"
- *   offline, "Saved snapshot (no live ETA)" online.
+ *   offline, "Saved snapshot (no live ETA)" online. Both are mandated English
+ *   copy inside the Taglish UI and are tagged `lang="en"` (R44).
  * - Every fare shows its own `effective_from` date (global constraint).
  * - When the matrix date is unknown, the fare note says it *may* have changed
  *   instead of certifying freshness.
@@ -70,6 +72,7 @@ function SavedTripCard({
   onDelete,
   onRename,
 }: SavedTripCardProps) {
+  const { t } = useT();
   const inputId = useId();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(trip.nickname ?? '');
@@ -81,7 +84,7 @@ function SavedTripCard({
   const stale = stalenessOf(trip, matrixEffectiveFrom, now);
   const updated = formatLongDate(trip.savedAt) ?? trip.savedAt;
   const arrival = formatClockTime(trip.itinerary.endTime) ?? trip.itinerary.endTime;
-  const etaLabel = online ? 'Saved snapshot (no live ETA)' : 'Saved route (no live data)';
+  const etaLabel = online ? t('trip.savedSnapshot') : t('trip.savedRoute');
 
   function moveTo(next: number): void {
     currentOffset.current = next;
@@ -142,7 +145,7 @@ function SavedTripCard({
       setEditing(false);
       setRenameError(null);
     } else {
-      setRenameError('Hindi na-save ang pangalan. Subukan ulit.');
+      setRenameError(t('saved.renameFailedDetail'));
     }
   }
 
@@ -152,7 +155,7 @@ function SavedTripCard({
         aria-hidden="true"
         className="absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-error-container text-sm font-semibold text-on-error-container"
       >
-        I-delete
+        {t('saved.deleteReveal')}
       </div>
 
       <div
@@ -180,45 +183,55 @@ function SavedTripCard({
         </div>
 
         <p data-testid="saved-eta" className="mt-1 break-words text-sm text-on-surface-variant">
-          <span className="font-medium text-on-surface">{etaLabel}</span>
+          <span lang="en" className="font-medium text-on-surface">
+            {etaLabel}
+          </span>
           <span>
             {' '}
-            · {trip.itinerary.durationMin} min · arrive {arrival}
+            ·{' '}
+            {t('trip.summaryArrive', {
+              minutes: trip.itinerary.durationMin,
+              arrival,
+            })}
           </span>
         </p>
 
         <p data-testid="saved-fare" className="mt-1 break-words text-sm text-on-surface">
-          ₱{formatFare(trip.fareSnapshot.amount)} · fare effective{' '}
-          {trip.fareSnapshot.effective_from}
+          {t('saved.fareLine', {
+            amount: formatFare(trip.fareSnapshot.amount),
+            date: trip.fareSnapshot.effective_from,
+          })}
         </p>
 
         <p
           data-testid="saved-updated"
+          lang="en"
           className="mt-1 break-words text-xs leading-4 text-on-surface-variant"
         >
-          Last updated {updated}
+          {t('trip.lastUpdated', { date: updated })}
         </p>
 
         {stale !== 'fresh' ? (
           <p
             data-testid="fare-staleness"
+            lang="en"
             className="mt-2 break-words rounded-field bg-tertiary-container px-3 py-2 text-sm text-on-tertiary-container"
           >
-            Fare may have changed since you saved this.
+            {t('saved.changed')}
           </p>
         ) : null}
 
         <p className="mt-1 break-words text-xs leading-4 text-on-surface-variant">
           {stale === 'expired'
-            ? 'Mahigit 30 araw na ang snapshot na ito.'
+            ? t('saved.expired')
             : stale === 'unknown'
               ? isPuvFareSnapshot(trip)
-                ? 'Hindi ma-check ang fare matrix ngayon.'
-                : 'Hindi PUV fare ang snapshot na ito, kaya hindi maihahambing sa PUV matrix.'
+                ? t('saved.unknownPuv')
+                : t('saved.unknownNonPuv')
               : stale === 'fare-changed' && matrixEffectiveFrom !== undefined
-                ? `Kasalukuyang fare matrix: ${matrixEffectiveFrom}.`
+                ? t('saved.currentMatrix', { date: matrixEffectiveFrom })
                 : matrixEffectiveFrom !== undefined
-                  ? `Pareho ang fare matrix (${matrixEffectiveFrom}) sa snapshot.`
+                  ? t('saved.sameMatrix', { date: matrixEffectiveFrom })
                   : null}
         </p>
 
@@ -228,7 +241,7 @@ function SavedTripCard({
             onClick={() => onOpen(trip.itinerary.id)}
             className="flex min-h-12 items-center justify-center rounded-pill bg-primary px-4 text-sm font-medium text-on-primary transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
           >
-            Buksan
+            {t('common.open')}
           </button>
           {onRename !== undefined ? (
             <button
@@ -238,24 +251,24 @@ function SavedTripCard({
                 setRenameError(null);
                 setEditing((current) => !current);
               }}
-              aria-label={`Palitan ang pangalan ng ${name}`}
+              aria-label={t('saved.renameLabel', { name })}
               aria-expanded={editing}
               className="flex min-h-12 items-center justify-center gap-1 rounded-pill border border-outline-variant px-4 text-sm font-medium text-on-surface transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               <Pencil aria-hidden="true" className="size-4" />
-              Palitan
+              {t('saved.rename')}
             </button>
           ) : null}
           {onDelete !== undefined ? (
             <button
               type="button"
               onClick={() => onDelete(trip)}
-              aria-label={`I-delete ang ${name}`}
+              aria-label={t('saved.deleteLabel', { name })}
               data-testid="delete-saved"
               className="flex min-h-12 items-center justify-center gap-1 rounded-pill border border-outline-variant px-4 text-sm font-medium text-error transition hover:bg-error-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               <Trash2 aria-hidden="true" className="size-4" />
-              I-delete
+              {t('common.delete')}
             </button>
           ) : null}
         </div>
@@ -269,7 +282,7 @@ function SavedTripCard({
             }}
           >
             <label htmlFor={inputId} className="text-sm font-medium text-on-surface">
-              Pangalan ng biyahe
+              {t('saved.renameHeading')}
             </label>
             <input
               id={inputId}
@@ -283,7 +296,7 @@ function SavedTripCard({
                 type="submit"
                 className="flex min-h-12 items-center justify-center rounded-pill bg-primary px-4 text-sm font-medium text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
-                I-save ang pangalan
+                {t('saved.renameSave')}
               </button>
               <button
                 type="button"
@@ -293,7 +306,7 @@ function SavedTripCard({
                 }}
                 className="flex min-h-12 items-center justify-center rounded-pill border border-outline-variant px-4 text-sm font-medium text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
-                Kanselahin
+                {t('common.cancel')}
               </button>
             </div>
             {renameError !== null ? (
@@ -326,6 +339,7 @@ function EmptyRow({ children }: { children: ReactNode }) {
 }
 
 export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenProps = {}) {
+  const { t } = useT();
   const controller = useSavedTrips(now);
   const evaluatedAt = now ?? new Date();
   const [tab, setTab] = useState<'saved' | 'recent'>('saved');
@@ -367,12 +381,12 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
   function handleDelete(trip: SavedTrip): void {
     const label = tripName(trip);
     if (!controller.remove(trip.itinerary.id)) {
-      setAnnouncement('Hindi na-delete ang biyahe. Subukan ulit.');
+      setAnnouncement(t('saved.deleteFailed'));
       return;
     }
     clearUndoTimer();
     setUndo(trip);
-    setAnnouncement(`Nai-delete ang ${label}.`);
+    setAnnouncement(t('saved.deleted', { name: label }));
     undoTimer.current = window.setTimeout(() => {
       setUndo(null);
       undoTimer.current = null;
@@ -384,17 +398,17 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
       return;
     }
     if (!controller.restore(undo)) {
-      setAnnouncement('Hindi naibalik ang biyahe. Subukan ulit.');
+      setAnnouncement(t('saved.restoreFailed'));
       return;
     }
     clearUndoTimer();
     setUndo(null);
-    setAnnouncement('Naibalik ang biyahe.');
+    setAnnouncement(t('saved.restored'));
   }
 
   function handleRename(id: string, nickname: string): boolean {
     const renamed = controller.rename(id, nickname);
-    setAnnouncement(renamed ? 'Napalitan ang pangalan ng biyahe.' : 'Hindi na-save ang pangalan.');
+    setAnnouncement(renamed ? t('saved.renamed') : t('saved.renameFailed'));
     return renamed;
   }
 
@@ -431,7 +445,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           {onBack !== undefined ? (
             <button
               type="button"
-              aria-label="Bumalik"
+              aria-label={t('common.back')}
               onClick={onBack}
               className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
@@ -440,15 +454,16 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           ) : null}
           <div className="min-w-0 flex-1">
             <h1 className="break-words text-lg font-semibold tracking-tight text-on-surface">
-              Mga naka-save at kamakailan
+              {t('saved.title')}
             </h1>
             {!controller.online ? (
               <p
                 data-testid="offline-badge"
                 role="status"
+                lang="en"
                 className="mt-1 inline-flex items-center rounded-pill bg-tertiary-container px-3 py-1 text-xs font-semibold text-on-tertiary-container"
               >
-                Offline — saved routes only
+                {t('saved.offlineBadge')}
               </p>
             ) : null}
           </div>
@@ -462,7 +477,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
 
         <div
           role="tablist"
-          aria-label="Saved at recent na biyahe"
+          aria-label={t('saved.tabsLabel')}
           onKeyDown={handleTabKeyDown}
           className="flex gap-1 rounded-pill border border-outline-variant bg-surface-container-low p-1"
         >
@@ -477,7 +492,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
             onClick={() => setTab('saved')}
             className={tabClass(tab === 'saved')}
           >
-            Saved
+            {t('saved.tabSaved')}
           </button>
           <button
             ref={recentTabRef}
@@ -490,7 +505,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
             onClick={() => setTab('recent')}
             className={tabClass(tab === 'recent')}
           >
-            Recent
+            {t('saved.tabRecent')}
           </button>
         </div>
 
@@ -504,17 +519,21 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           // both panels would render at once (I1). The child <ul> is the flex
           // container.
         >
-          <ul data-testid="saved-list" aria-label="Mga naka-save na biyahe" className="flex flex-col gap-3">
+          <ul
+            data-testid="saved-list"
+            aria-label={t('saved.listLabel')}
+            className="flex flex-col gap-3"
+          >
             {controller.saved.length === 0 ? (
               <EmptyRow>
-                Wala ka pang naka-save na biyahe.
+                {t('saved.empty')}
                 {onSearch !== undefined ? (
                   <button
                     type="button"
                     onClick={onSearch}
                     className="mt-2 flex min-h-12 w-full items-center justify-center rounded-pill bg-primary px-4 text-sm font-medium text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                   >
-                    Maghanap ng ruta
+                    {t('saved.searchCta')}
                   </button>
                 ) : null}
               </EmptyRow>
@@ -542,16 +561,14 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           aria-labelledby={recentTabId}
           hidden={tab !== 'recent'}
         >
-          <p className="mb-2 text-sm text-on-surface-variant">
-            Awtomatikong nawawala ang mga kamakailang biyahe pagkatapos ng 30 araw.
-          </p>
+          <p className="mb-2 text-sm text-on-surface-variant">{t('saved.recentNote')}</p>
           <ul
             data-testid="recent-list"
-            aria-label="Mga kamakailang biyahe"
+            aria-label={t('saved.recentListLabel')}
             className="flex flex-col gap-3"
           >
             {controller.recents.length === 0 ? (
-              <EmptyRow>Wala pang kamakailang biyahe.</EmptyRow>
+              <EmptyRow>{t('saved.recentEmpty')}</EmptyRow>
             ) : (
               controller.recents.map((trip) => (
                 <SavedTripCard
@@ -575,14 +592,14 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           role="status"
           className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-card bg-inverse-surface px-4 py-3 text-sm text-inverse-on-surface shadow-elevation-3"
         >
-          <span className="min-w-0 break-words">Nai-delete ang biyahe.</span>
+          <span className="min-w-0 break-words">{t('saved.deletedToast')}</span>
           <button
             ref={undoButtonRef}
             type="button"
             onClick={handleUndo}
             className="flex min-h-12 shrink-0 items-center justify-center rounded-pill px-4 text-sm font-semibold text-primary-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
           >
-            Undo
+            {t('common.undo')}
           </button>
         </div>
       ) : null}

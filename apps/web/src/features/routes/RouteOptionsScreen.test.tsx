@@ -348,8 +348,8 @@ describe('/plan route wiring', () => {
     );
 
     // The plan response's provenance rows reach the map credit's ⓘ detail.
-    await user.click(screen.getByRole('button', { name: 'Data sources' }));
-    expect(screen.getByRole('dialog', { name: 'Data sources' })).toHaveTextContent(
+    await user.click(screen.getByRole('button', { name: 'Pinagmulan ng data' }));
+    expect(screen.getByRole('dialog', { name: 'Pinagmulan ng data' })).toHaveTextContent(
       'LTFRB fare matrix (transcribed)',
     );
   });

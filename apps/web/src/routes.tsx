@@ -13,6 +13,7 @@ import { MapSlot } from './components/layout/MapSlot';
 import { MapCanvas } from './components/map/MapCanvas';
 import { RoutePolylines } from './components/map/RoutePolylines';
 import { BottomSheet, type SheetMapPadding } from './components/sheet/BottomSheet';
+import { useT } from './i18n/useT';
 import { SavedScreen } from './features/saved/SavedScreen';
 import { AboutDataScreen } from './features/provenance/AboutDataScreen';
 import {
@@ -133,6 +134,7 @@ interface PlanViewProps {
  */
 function PlanView({ origin, destination, originLabel, destinationLabel, onBack }: PlanViewProps) {
   const navigate = useNavigate();
+  const { t } = useT();
   const plan = usePlan(origin, destination);
   const [filter, setFilter] = useState<RouteFilter>('recommended');
   const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
@@ -168,7 +170,7 @@ function PlanView({ origin, destination, originLabel, destinationLabel, onBack }
         <BottomSheet
           detents={PLAN_SHEET_DETENTS}
           initial="half"
-          label="Mga ruta"
+          label={t('plan.sheetLabel')}
           onMapPaddingChange={handleMapPaddingChange}
         >
           <RouteOptionsScreen
@@ -289,26 +291,22 @@ function useDeviceOrigin(attempt: number): OriginState {
   return state;
 }
 
-const ORIGIN_FAILURE_COPY: Record<OriginFailure, { title: string; message: string }> = {
+const ORIGIN_FAILURE_KEYS: Record<OriginFailure, { title: string; message: string }> = {
   denied: {
-    title: 'Hindi pinayagan ang lokasyon',
-    message:
-      'Kailangan ng starting point para makapag-plano ng ruta. Payagan ang location sa browser, o pumili ng destinasyon mula sa search.',
+    title: 'plan.originDeniedTitle',
+    message: 'plan.originDeniedMessage',
   },
   timeout: {
-    title: 'Matagal bago natagpuan ang lokasyon',
-    message:
-      'Kailangan ng starting point para makapag-plano ng ruta. Subukan ulit, o pumili ng destinasyon mula sa search.',
+    title: 'plan.originTimeoutTitle',
+    message: 'plan.originTimeoutMessage',
   },
   unavailable: {
-    title: 'Hindi available ang lokasyon',
-    message:
-      'Hindi available ang lokasyon sa device na ito. Kailangan ng starting point para makapag-plano — pumili ng destinasyon mula sa search.',
+    title: 'plan.originUnavailableTitle',
+    message: 'plan.originUnavailableMessage',
   },
   unsupported: {
-    title: 'Walang location sa device na ito',
-    message:
-      'Hindi sinusuportahan ng browser ang location. Kailangan ng starting point para makapag-plano — pumili ng destinasyon mula sa search.',
+    title: 'plan.originUnsupportedTitle',
+    message: 'plan.originUnsupportedMessage',
   },
 };
 
@@ -365,29 +363,31 @@ function LocatedPlanRoute({
   onBack: () => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useT();
   const [attempt, setAttempt] = useState(0);
   const origin = useDeviceOrigin(attempt);
 
   if (origin.status === 'locating') {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-surface px-6 text-center text-on-surface">
-        <h1 className="text-xl font-semibold tracking-tight">Naghahanap ng starting point</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{t('plan.locatingTitle')}</h1>
         <p role="status" aria-live="polite" className="text-sm text-on-surface-variant">
-          Hinahanap ang lokasyon mo…
+          {t('plan.locatingStatus')}
         </p>
         <button
           type="button"
           onClick={() => navigate('/search')}
           className="mt-2 flex min-h-12 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-6 text-base font-medium text-on-surface transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
         >
-          Bumalik sa search
+          {t('plan.backToSearch')}
         </button>
       </main>
     );
   }
 
   if (origin.status === 'missing') {
-    const copy = ORIGIN_FAILURE_COPY[origin.reason];
+    const keys = ORIGIN_FAILURE_KEYS[origin.reason];
+    const copy = { title: t(keys.title), message: t(keys.message) };
     // A browser with no geolocation cannot succeed on a retry, so offer the
     // honest way forward instead of a button that re-runs the same dead end.
     if (origin.reason === 'unsupported') {
@@ -395,7 +395,7 @@ function LocatedPlanRoute({
         <PlanNotice
           title={copy.title}
           message={copy.message}
-          primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+          primary={{ label: t('plan.backToSearch'), onClick: () => navigate('/search') }}
         />
       );
     }
@@ -403,8 +403,8 @@ function LocatedPlanRoute({
       <PlanNotice
         title={copy.title}
         message={copy.message}
-        primary={{ label: 'Subukan ulit', onClick: () => setAttempt((current) => current + 1) }}
-        secondary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+        primary={{ label: t('common.retry'), onClick: () => setAttempt((current) => current + 1) }}
+        secondary={{ label: t('plan.backToSearch'), onClick: () => navigate('/search') }}
       />
     );
   }
@@ -413,7 +413,7 @@ function LocatedPlanRoute({
     <PlanView
       origin={origin.point}
       destination={destination}
-      originLabel="Kasalukuyang lokasyon"
+      originLabel={t('plan.originCurrent')}
       destinationLabel={destinationLabel}
       onBack={onBack}
     />
@@ -431,6 +431,7 @@ function LocatedPlanRoute({
  */
 function PlanRoute() {
   const navigate = useNavigate();
+  const { t } = useT();
   const goBack = useBackToSearch();
   const [params] = useSearchParams();
   const destinationParam = params.get('dest');
@@ -443,9 +444,9 @@ function PlanRoute() {
   if (destination === null) {
     return (
       <PlanNotice
-        title="Walang destinasyon"
-        message="Walang valid na destinasyon sa link. Pumili muna ng lugar sa search."
-        primary={{ label: 'Maghanap ng lugar', onClick: () => navigate('/search') }}
+        title={t('plan.missingDestTitle')}
+        message={t('plan.missingDestMessage')}
+        primary={{ label: t('plan.findPlace'), onClick: () => navigate('/search') }}
       />
     );
   }
@@ -453,9 +454,9 @@ function PlanRoute() {
   if (originParam !== null && fixedOrigin === null) {
     return (
       <PlanNotice
-        title="Hindi valid ang starting point"
-        message="Hindi mabasa ang starting point sa link. Bumalik sa search at pumili ulit."
-        primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+        title={t('plan.badOriginTitle')}
+        message={t('plan.badOriginMessage')}
+        primary={{ label: t('plan.backToSearch'), onClick: () => navigate('/search') }}
       />
     );
   }
@@ -495,6 +496,7 @@ function PlanRoute() {
 function TripRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { t } = useT();
   const goBack = useBackToSearch();
   const cached = id === undefined ? undefined : cachedTrip(id);
   const stored = id === undefined ? undefined : findSavedTrip(id);
@@ -510,9 +512,9 @@ function TripRoute() {
   if (id === undefined) {
     return (
       <PlanNotice
-        title="Wala nang ruta"
-        message="Walang itinerary id sa link. Bumalik sa search at mag-plano ulit."
-        primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+        title={t('plan.noRouteTitle')}
+        message={t('plan.noIdMessage')}
+        primary={{ label: t('plan.backToSearch'), onClick: () => navigate('/search') }}
       />
     );
   }
@@ -520,9 +522,9 @@ function TripRoute() {
   if (cached === undefined && stored === undefined) {
     return (
       <PlanNotice
-        title="Wala nang ruta"
-        message="Hindi na available ang plan na ito sa device. Bumalik sa search at mag-plano ulit."
-        primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
+        title={t('plan.noRouteTitle')}
+        message={t('plan.expiredMessage')}
+        primary={{ label: t('plan.backToSearch'), onClick: () => navigate('/search') }}
       />
     );
   }

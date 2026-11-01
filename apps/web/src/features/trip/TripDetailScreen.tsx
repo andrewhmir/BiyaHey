@@ -1,6 +1,7 @@
 import type { DataSource, ItineraryDto } from '@biyahey/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
+import { useT } from '../../i18n/useT';
 import { formatFare } from '../routes/RouteCard';
 import { formatClockTime, formatLongDate } from '../../lib/time';
 import { isTripSaved, saveTrip } from '../../lib/savedTripsStore';
@@ -38,6 +39,9 @@ export interface TripDetailScreenProps {
  * and source rows (R45). The summary and CTAs live in a sticky header so a
  * 15-leg itinerary scrolls underneath them instead of pushing Start/Save off
  * screen; the page deliberately has no fixed height or overflow clipping.
+ *
+ * The saved-snapshot sentence is mandated English copy inside the Taglish UI,
+ * so its paragraph is tagged `lang="en"` (R44); every other string is Taglish.
  */
 export function TripDetailScreen({
   itinerary,
@@ -47,6 +51,7 @@ export function TripDetailScreen({
   savedSnapshotAt,
   onBack,
 }: TripDetailScreenProps) {
+  const { t } = useT();
   const [saved, setSaved] = useState(() => isTripSaved(itinerary.id));
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const arrival = formatClockTime(itinerary.endTime);
@@ -65,13 +70,11 @@ export function TripDetailScreen({
       // Storage refused the write (quota, private mode): never claim a save
       // that did not persist, and keep the label honest about what is stored.
       setSaved(isTripSaved(itinerary.id));
-      setSaveStatus(
-        'Hindi nai-save ang biyahe — puno o naka-off ang storage ng device. Subukan ulit.',
-      );
+      setSaveStatus(t('trip.saveFailed'));
       return;
     }
     setSaved(true);
-    setSaveStatus('Nai-save ang biyahe.');
+    setSaveStatus(t('trip.saveOk'));
     onSave?.(entry.savedAt);
   }
 
@@ -86,7 +89,7 @@ export function TripDetailScreen({
             {onBack !== undefined ? (
               <button
                 type="button"
-                aria-label="Bumalik"
+                aria-label={t('common.back')}
                 onClick={onBack}
                 className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
@@ -95,13 +98,17 @@ export function TripDetailScreen({
             ) : null}
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-semibold tracking-tight text-on-surface">
-                Detalye ng biyahe
+                {t('trip.title')}
               </h1>
               <p
                 data-testid="trip-summary"
                 className="break-words text-sm leading-5 text-on-surface-variant"
               >
-                {itinerary.durationMin} min · arrive {arrival ?? itinerary.endTime} ·{' '}
+                {t('trip.summaryArrive', {
+                  minutes: itinerary.durationMin,
+                  arrival: arrival ?? itinerary.endTime,
+                })}{' '}
+                ·{' '}
                 <span data-testid="fare-total" className="font-semibold text-on-surface">
                   ₱{formatFare(itinerary.fare.amount)}
                 </span>
@@ -109,10 +116,13 @@ export function TripDetailScreen({
               {savedSnapshotAt !== undefined ? (
                 <p
                   data-testid="saved-snapshot-note"
+                  lang="en"
                   className="mt-1 break-words text-xs leading-4 text-on-surface-variant"
                 >
-                  Saved route (no live data) · last updated{' '}
-                  {formatLongDate(savedSnapshotAt) ?? savedSnapshotAt}
+                  {t('trip.savedNote', {
+                    label: t('trip.savedRoute'),
+                    date: formatLongDate(savedSnapshotAt) ?? savedSnapshotAt,
+                  })}
                 </p>
               ) : null}
             </div>
@@ -125,7 +135,7 @@ export function TripDetailScreen({
               onClick={onStartTrip}
               className="flex min-h-12 flex-1 items-center justify-center rounded-pill bg-primary px-4 text-base font-medium text-on-primary transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
             >
-              Start trip
+              {t('trip.start')}
             </button>
             <button
               type="button"
@@ -134,7 +144,7 @@ export function TripDetailScreen({
               disabled={fromSavedStore}
               className="flex min-h-12 flex-1 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-base font-medium text-on-surface transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-surface-container-lowest"
             >
-              {saved ? 'Nai-save' : 'I-save'}
+              {saved ? t('common.saved') : t('common.save')}
             </button>
           </div>
           <p role="status" aria-live="polite" className="min-h-5 text-xs text-on-surface-variant">
@@ -149,7 +159,7 @@ export function TripDetailScreen({
             id="trip-steps-heading"
             className="mb-3 text-xl font-semibold tracking-tight text-on-surface"
           >
-            Hakbang-hakbang
+            {t('trip.steps')}
           </h2>
           <LegTimeline legs={itinerary.legs} />
         </section>

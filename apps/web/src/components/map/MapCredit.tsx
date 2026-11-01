@@ -1,6 +1,7 @@
 import type { DataSource } from '@biyahey/shared';
 import { Info } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useT } from '../../i18n/useT';
 import { AboutDataLink } from '../navigation/AboutDataLink';
 import { useMap } from './MapContext';
 
@@ -16,6 +17,10 @@ import { useMap } from './MapContext';
  * The full line collapses to a labelled ⓘ button after 5 s (OSMF guidance: the
  * credit must be reachable, not permanently expanded) or after the first map
  * interaction. The button always remains and `autoCollapseMs` is a test hook.
+ *
+ * Task 9: the ⓘ toggle is a 48 dp target (M1), the details popover closes with
+ * Escape and returns focus to the toggle, and focus moves into the popover while
+ * it is open — aligning this lightweight dialog with the L3 licence sheet.
  */
 
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
@@ -41,9 +46,12 @@ export function MapCredit({
   className,
 }: MapCreditProps) {
   const map = useMap();
+  const { t } = useT();
   const [showCredit, setShowCredit] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (autoCollapseMs <= 0) return;
@@ -59,6 +67,30 @@ export function MapCredit({
       for (const event of MAP_INTERACTION_EVENTS) map.off(event, collapse);
     };
   }, [map]);
+
+  // Move focus into the popover while it is open; Escape closes it and returns
+  // focus to the control that opened it.
+  useEffect(() => {
+    if (!detailsOpen) return;
+    dialogRef.current?.focus();
+  }, [detailsOpen]);
+
+  const closeDetails = () => {
+    setDetailsOpen(false);
+    toggleRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      closeDetails();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // `closeDetails` is recreated per render and reads the current state.
+  }, [detailsOpen]);
 
   const toggleDetails = () => {
     setDetailsOpen((open) => !open);
@@ -96,41 +128,47 @@ export function MapCredit({
       )}
 
       <button
+        ref={toggleRef}
         type="button"
-        aria-label="Data sources"
+        aria-label={t('common.dataSources')}
         aria-expanded={detailsOpen}
         aria-controls={detailsOpen ? detailsId : undefined}
         onClick={toggleDetails}
-        className="pointer-events-auto flex size-8 items-center justify-center rounded-pill bg-surface-container-lowest text-on-surface-variant shadow-elevation-1 transition hover:shadow-elevation-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        className="pointer-events-auto flex size-12 items-center justify-center rounded-pill bg-surface-container-lowest text-on-surface-variant shadow-elevation-1 transition hover:shadow-elevation-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
       >
-        <Info aria-hidden="true" className="size-4" />
+        <Info aria-hidden="true" className="size-5" />
       </button>
 
       {detailsOpen && (
         <div
+          ref={dialogRef}
           id={detailsId}
           role="dialog"
-          aria-label="Data sources"
-          className="absolute bottom-full left-0 mb-2 w-72 rounded-card bg-surface-container-lowest p-3 text-xs text-on-surface shadow-elevation-3"
+          aria-label={t('common.dataSources')}
+          tabIndex={-1}
+          className="absolute bottom-full left-0 mb-2 w-72 rounded-card bg-surface-container-lowest p-3 text-xs text-on-surface shadow-elevation-3 focus:outline-none"
         >
-          <p className="mb-2 text-sm font-semibold">Mga pinagmulan ng data</p>
+          <p className="mb-2 text-sm font-semibold">{t('map.creditKicker')}</p>
           {sources.length > 0 ? (
             <ul className="flex flex-col gap-1">
               {sources.map((source) => (
                 <li key={source.id}>
                   <span>{source.name}</span>{' '}
-                  <a href={source.licence_url} className="underline underline-offset-2">
+                  <a
+                    href={source.licence_url}
+                    className="inline-flex min-h-6 items-center underline underline-offset-2"
+                  >
                     {source.licence_spdx}
                   </a>
                 </li>
               ))}
             </ul>
           ) : (
-            <p>OpenFreeMap tiles, © OpenMapTiles · Data from OpenStreetMap.</p>
+            <p>{t('map.creditEmpty')}</p>
           )}
           {/* Task 7: one tap from the ⓘ detail to the full L2/L3 screen. */}
-          <AboutDataLink className="mt-2 inline-flex min-h-6 items-center text-sm font-medium text-primary">
-            About data
+          <AboutDataLink className="mt-2 text-sm font-medium text-primary">
+            {t('common.aboutData')}
           </AboutDataLink>
         </div>
       )}

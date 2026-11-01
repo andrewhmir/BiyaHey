@@ -1,15 +1,9 @@
 import type { SearchGroup, SearchResultDto } from '@biyahey/shared';
 import { Landmark, MapPin } from 'lucide-react';
+import { useT } from '../../i18n/useT';
 
 /** Display order fixed by the Task 4 contract: Stops · Landmarks · Routes · Saved. */
 export const SEARCH_GROUP_ORDER = ['stops', 'landmarks', 'routes', 'saved'] as const;
-
-const GROUP_TITLES: Record<keyof SearchGroup, string> = {
-  stops: 'Stops',
-  landmarks: 'Landmarks',
-  routes: 'Routes',
-  saved: 'Saved',
-};
 
 /**
  * Format the API's `distanceM` for a result row.
@@ -35,6 +29,8 @@ export interface SearchResultsProps {
 
 /** Grouped, keyboard-reachable result lists. Empty groups render no heading. */
 export function SearchResults({ groups, onSelect }: SearchResultsProps) {
+  const { t } = useT();
+
   return (
     <div className="flex flex-col gap-6" data-testid="search-results">
       {SEARCH_GROUP_ORDER.map((key) => {
@@ -49,7 +45,7 @@ export function SearchResults({ groups, onSelect }: SearchResultsProps) {
               id={headingId}
               className="px-1 pb-2 text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
             >
-              {GROUP_TITLES[key]}
+              {t(`group.${key}`)}
             </h2>
             <ul className="flex flex-col gap-2">
               {results.map((result) => (

@@ -117,8 +117,11 @@ describe('TripDetailScreen', () => {
     expect(screen.getByTestId('fare-estimate')).toHaveTextContent(/estimate/i);
     expect(screen.getByTestId('fare-breakdown-total')).toHaveTextContent('₱10.50');
 
-    const link = screen.getByRole('link', { name: /lrta/i });
-    expect(link).toHaveAttribute('href', 'https://www.lrta.gov.ph/tickets-and-fares/');
+    // M7: the rail row publishes two URLs; every one is rendered.
+    const links = screen.getAllByRole('link', { name: /lrta/i });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute('href', 'https://www.lrta.gov.ph/tickets-and-fares/');
+    expect(links[1]).toHaveAttribute('href', 'https://lrmc.ph');
   });
 
   it('labels an informal transfer with the 5-minute buffer', () => {
@@ -333,7 +336,7 @@ describe('TripDetailScreen', () => {
 
     // The rail row is one of this itinerary's own sources; the extra fare row
     // belongs to another returned option and must not be linked.
-    expect(screen.getByRole('link', { name: /lrta/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /lrta/i }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: /unrelated fare table/i })).toBeNull();
   });
 

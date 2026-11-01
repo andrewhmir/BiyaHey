@@ -1,9 +1,11 @@
 import type { DataSource } from '@biyahey/shared';
 import { joinAttributions } from '@biyahey/shared';
+import { defaultT, type Translate } from '../../i18n/strings';
+import { useT } from '../../i18n/useT';
 import { AboutDataLink } from '../navigation/AboutDataLink';
 
 /** Copy shown when an itinerary references a dataset the response did not carry. */
-export const MISSING_SOURCE_LABEL = 'source unavailable';
+export const MISSING_SOURCE_LABEL = defaultT('provenance.missingSource');
 
 export interface ProvenanceChipProps {
   /**
@@ -25,10 +27,15 @@ export interface ProvenanceChipProps {
  * An id with no matching row is never rendered as its raw value or as
  * `undefined`: a wholly missing set says "source unavailable", and a partly
  * missing set appends `· source unavailable` after the resolved attributions.
+ *
+ * The attribution fragments themselves are API data (R45) and are rendered
+ * verbatim in whatever language the registry publishes; only the joining words
+ * come from the string module.
  */
 export function provenanceLabel(
   sourcesFromItinerary: readonly string[],
   knownSources: readonly DataSource[],
+  t: Translate = defaultT,
 ): string {
   const requested = sourcesFromItinerary.slice(0, 2);
   const resolved = requested
@@ -37,9 +44,10 @@ export function provenanceLabel(
 
   const attribution = joinAttributions(resolved);
   const missing = requested.length > resolved.length;
-  const prefix = attribution.length > 0 ? attribution : missing ? MISSING_SOURCE_LABEL : '';
-  const missingNote = attribution.length > 0 && missing ? ` · ${MISSING_SOURCE_LABEL}` : '';
-  return `${prefix}${missingNote}${prefix.length > 0 ? ' · ' : ''}Data sources`;
+  const prefix = attribution.length > 0 ? attribution : missing ? t('provenance.missingSource') : '';
+  const missingNote =
+    attribution.length > 0 && missing ? ` · ${t('provenance.missingSource')}` : '';
+  return `${prefix}${missingNote}${prefix.length > 0 ? ' · ' : ''}${t('provenance.dataSources')}`;
 }
 
 /**
@@ -48,14 +56,16 @@ export function provenanceLabel(
  * The chip is itself the ⓘ entry point to `/sources`, reachable in one tap. It
  * is a link built by `AboutDataLink`, never a nested button: a route card's
  * select action stays a button, and the chip renders beside it in the card
- * footer so neither control wraps the other.
+ * footer so neither control wraps the other. `AboutDataLink` supplies the 48 dp
+ * target introduced by Task 9 (M1).
  */
 export function ProvenanceChip({
   sourcesFromItinerary,
   knownSources,
   className,
 }: ProvenanceChipProps) {
-  const label = provenanceLabel(sourcesFromItinerary, knownSources);
+  const { t } = useT();
+  const label = provenanceLabel(sourcesFromItinerary, knownSources, t);
 
   return (
     <span

@@ -8,6 +8,8 @@ import {
   PLAN_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   fetchFareStatus,
+  fetchSources,
+  isDataSourceRow,
   planTrip,
   request,
   searchPlaces,
@@ -205,6 +207,41 @@ describe('request abort and timeout', () => {
     await rejection;
 
     gate.resolve();
+  });
+});
+
+describe('fetchSources', () => {
+  const row = {
+    id: 'osm',
+    name: 'OpenStreetMap PH extract',
+    publisher: 'OSM contributors / Geofabrik',
+    url: 'https://download.geofabrik.de/asia/philippines.html',
+    licence_spdx: 'ODbL-1.0',
+    licence_url: 'https://opendatacommons.org/licenses/odbl/1-0/',
+    coverage: 'Philippines',
+    last_checked: '2026-11-01',
+    attribution: '© OpenStreetMap contributors',
+    used_for: ['roads'],
+  };
+
+  it('returns the registry rows unchanged', async () => {
+    server.use(http.get('*/sources', () => HttpResponse.json([row])));
+
+    await expect(fetchSources()).resolves.toEqual([row]);
+  });
+
+  it('rejects a non-array body', async () => {
+    server.use(http.get('*/sources', () => HttpResponse.json({ rows: [row] })));
+
+    await expect(fetchSources()).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('rejects a malformed row instead of letting a card render undefined (M3)', async () => {
+    server.use(http.get('*/sources', () => HttpResponse.json([row, { id: 'broken' }])));
+
+    await expect(fetchSources()).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(isDataSourceRow({ id: 'broken' })).toBe(false);
+    expect(isDataSourceRow(row)).toBe(true);
   });
 });
 

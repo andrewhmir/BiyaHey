@@ -7,12 +7,15 @@
  * keyed only by the identifier the API sent; an unknown identifier falls back to
  * the identifier itself rather than inventing a name, and no row here is used
  * as an attribution string.
+ *
+ * Task 9 (M8): names use the licence's own conventional title ("… v1.0
+ * Universal", "… 4.0 International") rather than a truncated paraphrase.
  */
 const LICENCE_NAMES: Readonly<Record<string, string>> = {
   'ODbL-1.0': 'Open Database License (ODbL) 1.0',
-  'CC-BY-SA-2.0': 'Creative Commons Attribution-ShareAlike 2.0',
-  'CC-BY-4.0': 'Creative Commons Attribution 4.0',
-  'CC0-1.0': 'Creative Commons Zero 1.0 Universal',
+  'CC-BY-SA-2.0': 'Creative Commons Attribution-ShareAlike 2.0 Generic',
+  'CC-BY-4.0': 'Creative Commons Attribution 4.0 International',
+  'CC0-1.0': 'Creative Commons Zero v1.0 Universal',
   MIT: 'MIT License',
   // SPDX's own marker for "no licence asserted"; the sheet shows the publisher
   // link the API supplied alongside it.

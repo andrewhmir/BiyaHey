@@ -1,7 +1,9 @@
 import type { ItineraryDto, PlanPlaceInput } from '@biyahey/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { FilterChips, type FilterChipOption } from './FilterChips';
+import { useT } from '../../i18n/useT';
+import type { Translate } from '../../i18n/strings';
+import { FilterChips } from './FilterChips';
 import { RouteCard, type RouteBadge } from './RouteCard';
 import { usePlan, type PlanOutcome } from './usePlan';
 
@@ -10,11 +12,17 @@ export const SKELETON_DELAY_MS = 300;
 
 export type RouteFilter = 'recommended' | 'cheapest' | 'fewest-transfers' | 'less-walking';
 
-export const FILTER_OPTIONS: readonly FilterChipOption<RouteFilter>[] = [
-  { value: 'recommended', label: 'Recommended' },
-  { value: 'cheapest', label: 'Cheapest' },
-  { value: 'fewest-transfers', label: 'Fewest transfers' },
-  { value: 'less-walking', label: 'Less walking' },
+/** A filter chip is a value plus the string key it renders (Task 9 i18n). */
+export interface RouteFilterOption {
+  value: RouteFilter;
+  labelKey: string;
+}
+
+export const FILTER_OPTIONS: readonly RouteFilterOption[] = [
+  { value: 'recommended', labelKey: 'routes.filterRecommended' },
+  { value: 'cheapest', labelKey: 'routes.filterCheapest' },
+  { value: 'fewest-transfers', labelKey: 'routes.filterFewestTransfers' },
+  { value: 'less-walking', labelKey: 'routes.filterLessWalking' },
 ];
 
 /**
@@ -91,14 +99,14 @@ function useDelayedFlag(active: boolean, delayMs: number): boolean {
   return active && elapsed;
 }
 
-function statusMessage(plan: PlanOutcome, count: number): string {
+function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
   switch (plan.status) {
     case 'loading':
-      return 'Naghahanap ng ruta…';
+      return t('routes.loading');
     case 'error':
-      return 'Hindi ma-load ang mga ruta. Subukan ulit.';
+      return t('routes.error');
     case 'success':
-      return count === 0 ? 'Walang ruta' : `${count} ruta`;
+      return count === 0 ? t('routes.emptyStatus') : t('routes.count', { count });
   }
 }
 
@@ -149,11 +157,20 @@ function RouteOptionsContent({
   onBack,
   embedded = false,
 }: RouteOptionsContentProps) {
+  const { t } = useT();
   const showSkeletons = useDelayedFlag(plan.status === 'loading', SKELETON_DELAY_MS);
 
   const ranked = useMemo(
     () => rankItineraries(plan.itineraries, filter),
     [plan.itineraries, filter],
+  );
+  const filterOptions = useMemo(
+    () =>
+      FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey),
+      })),
+    [t],
   );
 
   const placeLine = [originLabel, destinationLabel].filter(Boolean).join(' → ');
@@ -172,7 +189,7 @@ function RouteOptionsContent({
           {onBack !== undefined ? (
             <button
               type="button"
-              aria-label="Bumalik"
+              aria-label={t('common.back')}
               onClick={onBack}
               className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
@@ -180,7 +197,7 @@ function RouteOptionsContent({
             </button>
           ) : null}
           <div className="flex min-w-0 flex-col">
-            <h1 className="text-lg font-semibold tracking-tight text-on-surface">Mga ruta</h1>
+            <h1 className="text-lg font-semibold tracking-tight text-on-surface">{t('routes.title')}</h1>
             {placeLine.length > 0 ? (
               <p className="truncate text-sm text-on-surface-variant">{placeLine}</p>
             ) : null}
@@ -197,7 +214,7 @@ function RouteOptionsContent({
         }
       >
         <p role="status" aria-live="polite" className="text-sm text-on-surface-variant">
-          {statusMessage(plan, count)}
+          {statusMessage(plan, count, t)}
         </p>
 
         {plan.status === 'loading' && showSkeletons ? <SkeletonCards /> : null}
@@ -207,32 +224,32 @@ function RouteOptionsContent({
             role="alert"
             className="flex flex-col items-start gap-3 rounded-card border border-error-container bg-error-container px-4 py-3 text-on-error-container"
           >
-            <p className="text-sm">Hindi ma-load ang mga ruta. Subukan ulit.</p>
+            <p className="text-sm">{t('routes.error')}</p>
             <button
               type="button"
               onClick={plan.retry}
               className="flex min-h-12 items-center justify-center rounded-pill bg-primary px-6 text-base font-medium text-on-primary transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
             >
-              Subukan ulit
+              {t('common.retry')}
             </button>
           </div>
         ) : null}
 
         {plan.status === 'success' && plan.itineraries.length === 0 ? (
           <p className="rounded-card border border-outline-variant bg-surface-container-low px-4 py-6 text-center text-base text-on-surface">
-            Walang ruta — try a nearby landmark
+            {t('routes.empty')}
           </p>
         ) : null}
 
         {plan.status === 'success' && plan.itineraries.length > 0 ? (
           <>
             <FilterChips
-              options={FILTER_OPTIONS}
+              options={filterOptions}
               value={filter}
               onChange={onFilterChange}
-              label="Ayusin ang mga ruta"
+              label={t('routes.sortLabel')}
             />
-            <ul aria-label="Mga ruta" className="flex flex-col gap-3">
+            <ul aria-label={t('routes.title')} className="flex flex-col gap-3">
               {ranked.map((itinerary, index) => (
                 <li key={itinerary.id} className="flex flex-col gap-2">
                   <RouteCard
@@ -246,11 +263,11 @@ function RouteOptionsContent({
                     <button
                       type="button"
                       data-testid="trip-open"
-                      aria-label={`Detalye ng rutang ${itinerary.durationMin} min`}
+                      aria-label={t('routes.detailLabel', { minutes: itinerary.durationMin })}
                       onClick={() => onOpenDetail(itinerary.id)}
                       className="trip-open flex min-h-12 w-full items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-sm font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                     >
-                      Detalye
+                      {t('routes.detail')}
                     </button>
                   ) : null}
                 </li>

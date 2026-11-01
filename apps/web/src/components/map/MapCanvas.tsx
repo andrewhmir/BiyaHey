@@ -4,6 +4,7 @@ import { LocateFixed } from 'lucide-react';
 import { Map as MapLibreMap, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useT } from '../../i18n/useT';
 import { useMapPadding } from '../layout/MapSlot';
 import { MapContext } from './MapContext';
 import { MapCredit } from './MapCredit';
@@ -57,14 +58,13 @@ type LocateStatus =
   | 'timeout'
   | 'pinned';
 
-const LOCATE_MESSAGES: Partial<Record<LocateStatus, string>> = {
-  locating: 'Hinahanap ang lokasyon mo…',
-  located: 'Nakita ang lokasyon mo.',
-  denied: 'Hindi ma-access ang lokasyon. Pindutin ang mapa para maglagay ng pin.',
-  unavailable:
-    'Hindi available ang lokasyon sa device na ito. Pindutin ang mapa para maglagay ng pin.',
-  timeout: 'Matagal bago natagpuan ang lokasyon. Pindutin ang mapa para maglagay ng pin.',
-  pinned: 'Nakalagay na ang pin. Pindutin muli ang lokasyon para subukan ulit.',
+const LOCATE_MESSAGE_KEYS: Partial<Record<LocateStatus, string>> = {
+  locating: 'map.locating',
+  located: 'map.located',
+  denied: 'map.denied',
+  unavailable: 'map.unavailable',
+  timeout: 'map.timeout',
+  pinned: 'map.pinned',
 };
 
 export interface MapCanvasProps {
@@ -123,6 +123,7 @@ function removeMarker(map: MapLibreMap, sourceId: string): void {
 export function MapCanvas({ sources = [], children }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapPadding = useMapPadding();
+  const { t } = useT();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   // The context only exposes a map whose style is ready; `map` stays available
   // for camera calls and padding while the style is still fetching.
@@ -265,10 +266,11 @@ export function MapCanvas({ sources = [], children }: MapCanvasProps) {
     };
   }, [map, manualPinArmed]);
 
-  const locateMessage = LOCATE_MESSAGES[locateStatus];
+  const locateMessageKey = LOCATE_MESSAGE_KEYS[locateStatus];
+  const locateMessage = locateMessageKey === undefined ? undefined : t(locateMessageKey);
 
   return (
-    <div role="region" aria-label="Mapa ng ruta" className="relative size-full overflow-hidden">
+    <div role="region" aria-label={t('map.region')} className="relative size-full overflow-hidden">
       <div ref={containerRef} data-testid="map-canvas" className="absolute inset-0" />
 
       <MapContext.Provider value={styledMap}>
@@ -290,7 +292,7 @@ export function MapCanvas({ sources = [], children }: MapCanvasProps) {
             <button
               type="button"
               onClick={requestLocation}
-              aria-label="Hanapin ang lokasyon ko"
+              aria-label={t('map.locate')}
               aria-busy={locateStatus === 'locating'}
               className="pointer-events-auto flex size-12 items-center justify-center rounded-pill bg-surface-container-lowest text-primary shadow-elevation-2 transition hover:shadow-elevation-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >

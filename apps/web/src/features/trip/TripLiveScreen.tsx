@@ -1,4 +1,5 @@
 import { ArrowLeft } from 'lucide-react';
+import { useT } from '../../i18n/useT';
 import { formatFare } from '../routes/RouteCard';
 import { cachedTrip } from '../routes/planCache';
 
@@ -13,8 +14,12 @@ export interface TripLiveScreenProps {
  * v1 has no GTFS-RT feed, so this screen makes no live claim at all: it states
  * the expected wait and shows the cached plan summary. It is deliberately not a
  * fake progress tracker.
+ *
+ * The mandated "no live data — expected wait" sentence is English inside the
+ * Taglish UI, so its paragraph carries `lang="en"` for screen readers (R44).
  */
 export function TripLiveScreen({ itineraryId, onBack }: TripLiveScreenProps) {
+  const { t } = useT();
   const cached = itineraryId === undefined ? undefined : cachedTrip(itineraryId);
 
   return (
@@ -24,14 +29,14 @@ export function TripLiveScreen({ itineraryId, onBack }: TripLiveScreenProps) {
           {onBack !== undefined ? (
             <button
               type="button"
-              aria-label="Bumalik"
+              aria-label={t('common.back')}
               onClick={onBack}
               className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               <ArrowLeft aria-hidden="true" className="size-5" />
             </button>
           ) : null}
-          <h1 className="text-lg font-semibold tracking-tight">Live na biyahe</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t('trip.liveTitle')}</h1>
         </div>
       </header>
 
@@ -42,22 +47,19 @@ export function TripLiveScreen({ itineraryId, onBack }: TripLiveScreenProps) {
           data-testid="live-banner"
           className="rounded-card border border-outline-variant bg-surface-container-low px-4 py-4"
         >
-          <p className="text-base font-semibold">no live data — expected wait</p>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Walang real-time na datos para sa rutang ito. Asahan ang paghihintay sa sakayan at
-            sundan ang static na timeline sa detalye ng biyahe.
+          <p lang="en" className="text-base font-semibold">
+            {t('trip.liveBanner')}
           </p>
+          <p className="mt-1 text-sm text-on-surface-variant">{t('trip.liveBody')}</p>
         </section>
 
         {cached !== undefined ? (
           <p data-testid="live-trip-summary" className="text-sm text-on-surface-variant">
-            {cached.itinerary.durationMin} min · ₱{formatFare(cached.itinerary.fare.amount)} ·
-            naka-cache na plano
+            {cached.itinerary.durationMin} min · ₱{formatFare(cached.itinerary.fare.amount)} ·{' '}
+            {t('trip.cachedPlan')}
           </p>
         ) : (
-          <p className="text-sm text-on-surface-variant">
-            Wala nang ruta sa cache. Bumalik sa search at mag-plano ulit.
-          </p>
+          <p className="text-sm text-on-surface-variant">{t('trip.noCached')}</p>
         )}
       </div>
     </main>

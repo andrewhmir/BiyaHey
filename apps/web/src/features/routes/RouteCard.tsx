@@ -1,9 +1,17 @@
 import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
 import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
+import { defaultT, type Translate } from '../../i18n/strings';
+import { useT } from '../../i18n/useT';
 import { ModeChips } from './ModeChips';
 
 /** The single badge a card may show (spec §11 screen 3). */
 export type RouteBadge = 'BEST' | 'CHEAPEST' | 'FEWEST TRANSFERS';
+
+const BADGE_KEYS: Record<RouteBadge, string> = {
+  BEST: 'routes.badgeBest',
+  CHEAPEST: 'routes.badgeCheapest',
+  'FEWEST TRANSFERS': 'routes.badgeFewestTransfers',
+};
 
 export interface RouteCardProps {
   itinerary: ItineraryDto;
@@ -34,16 +42,15 @@ export function formatFare(amount: number): string {
 }
 
 /** Taglish transfer wording: `direct` for zero, `N sakay` otherwise. */
-export function transfersLabel(transfers: number): string {
-  return transfers <= 0 ? 'direct' : `${transfers} sakay`;
+export function transfersLabel(transfers: number, t: Translate = defaultT): string {
+  return transfers <= 0 ? t('routes.direct') : t('routes.transfers', { count: transfers });
 }
 
 /** Walk total in metres under 1 km, otherwise one decimal of a kilometre. */
-export function walkLabel(distanceM: number): string {
-  if (distanceM >= 1000) {
-    return `${(distanceM / 1000).toFixed(1)} km lakad`;
-  }
-  return `${Math.round(distanceM)} m lakad`;
+export function walkLabel(distanceM: number, t: Translate = defaultT): string {
+  const distance =
+    distanceM >= 1000 ? `${(distanceM / 1000).toFixed(1)} km` : `${Math.round(distanceM)} m`;
+  return t('routes.walk', { distance });
 }
 
 /**
@@ -54,17 +61,17 @@ export function walkLabel(distanceM: number): string {
  * known fare sources falls back to the generic wording rather than inventing a
  * publisher the API did not send (R45).
  */
-export function fareMatrixLabel(fare: FareQuote): string {
+export function fareMatrixLabel(fare: FareQuote, t: Translate = defaultT): string {
   if (fare.source_id === 'ltfrb-fares') {
-    return 'LTFRB matrix';
+    return t('routes.fareMatrixLtfrb');
   }
   if (fare.source_id === 'rail-fares') {
-    return 'rail fare matrix';
+    return t('routes.fareMatrixRail');
   }
   if (fare.source_id === null) {
-    return fare.breakdown.length === 0 ? 'no fare' : 'mixed fare sources';
+    return fare.breakdown.length === 0 ? t('routes.fareNone') : t('routes.fareMixed');
   }
-  return 'fare matrix';
+  return t('routes.fareMatrixGeneric');
 }
 
 /**
@@ -72,8 +79,11 @@ export function fareMatrixLabel(fare: FareQuote): string {
  * `effective_from` date the API returned, labelled with the matrix that priced
  * it. The web app never computes or guesses the date (R45).
  */
-export function fareEffectiveLine(fare: FareQuote): string {
-  return `Fares: ${fareMatrixLabel(fare)} effective ${fare.effective_from}`;
+export function fareEffectiveLine(fare: FareQuote, t: Translate = defaultT): string {
+  return t('routes.fareLine', {
+    matrix: fareMatrixLabel(fare, t),
+    date: fare.effective_from,
+  });
 }
 
 function arrivalLabel(endTime: string): string | null {
@@ -95,6 +105,7 @@ export function RouteCard({
   onSelect,
   badge,
 }: RouteCardProps) {
+  const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
 
   return (
@@ -119,7 +130,9 @@ export function RouteCard({
               {itinerary.durationMin} min
             </span>
             {arrival !== null ? (
-              <span className="text-sm text-on-surface-variant">Dating {arrival}</span>
+              <span className="text-sm text-on-surface-variant">
+                {t('routes.arrive', { time: arrival })}
+              </span>
             ) : null}
           </span>
           {badge !== undefined ? (
@@ -127,15 +140,15 @@ export function RouteCard({
               data-testid="route-badge"
               className="rounded-pill bg-primary px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-on-primary"
             >
-              {badge}
+              {t(BADGE_KEYS[badge])}
             </span>
           ) : null}
         </span>
 
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-on-surface-variant">
-          <span>{transfersLabel(itinerary.transfers)}</span>
+          <span>{transfersLabel(itinerary.transfers, t)}</span>
           <span aria-hidden="true">·</span>
-          <span>{walkLabel(itinerary.walkDistanceM)}</span>
+          <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
         </span>
 
         <span className="flex flex-col gap-0.5 rounded-card border border-fare-border bg-fare-bg px-3 py-2 text-on-fare-bg">
@@ -151,12 +164,12 @@ export function RouteCard({
                 data-testid="fare-estimate"
                 className="rounded-pill border border-fare-border px-1.5 py-0.5 text-[11px] font-medium leading-4"
               >
-                Estimate
+                {t('common.estimate')}
               </span>
             ) : null}
           </span>
           <span data-testid="fare-date" className="text-xs leading-4">
-            {fareEffectiveLine(itinerary.fare)}
+            {fareEffectiveLine(itinerary.fare, t)}
           </span>
         </span>
 

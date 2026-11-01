@@ -1,3 +1,5 @@
+import { useT } from '../../i18n/useT';
+
 export interface FilterChipOption<T extends string> {
   value: T;
   label: string;
@@ -16,12 +18,14 @@ export function FilterChips<T extends string>({
   options,
   value,
   onChange,
-  label = 'Filters',
+  label,
 }: FilterChipsProps<T>) {
+  const { t } = useT();
+
   return (
     <div
       role="group"
-      aria-label={label}
+      aria-label={label ?? t('routes.filterLabel')}
       data-testid="filter-chips"
       className="flex flex-wrap gap-2"
     >

@@ -72,6 +72,10 @@
   --tertiary: #7a5900;
   --on-tertiary: #ffffff;
   --tertiary-container: #ffdf9e;
+  /* Task 9 contrast-token gap: `on-tertiary-container` was mapped in Tailwind
+     but never defined, so the status/staleness banners inherited body colour.
+     Pinned here (light + dark) as a real 4.5:1+ pair. */
+  --on-tertiary-container: #2a1700;
   --error: #ba1a1a;
   --on-error: #ffffff;
   --error-container: #ffdad6;
@@ -110,6 +114,7 @@
   --_dark-tertiary: #f7bf3f;
   --_dark-on-tertiary: #402d00;
   --_dark-tertiary-container: #5c4300;
+  --_dark-on-tertiary-container: #ffdf9e;
   --_dark-error: #ffb4ab;
   --_dark-on-error: #690005;
   --_dark-error-container: #93000a;
@@ -146,6 +151,7 @@
     --tertiary: var(--_dark-tertiary);
     --on-tertiary: var(--_dark-on-tertiary);
     --tertiary-container: var(--_dark-tertiary-container);
+    --on-tertiary-container: var(--_dark-on-tertiary-container);
     --error: var(--_dark-error);
     --on-error: var(--_dark-on-error);
     --error-container: var(--_dark-error-container);
@@ -182,6 +188,7 @@
   --tertiary: var(--_dark-tertiary);
   --on-tertiary: var(--_dark-on-tertiary);
   --tertiary-container: var(--_dark-tertiary-container);
+  --on-tertiary-container: var(--_dark-on-tertiary-container);
   --error: var(--_dark-error);
   --on-error: var(--_dark-on-error);
   --error-container: var(--_dark-error-container);

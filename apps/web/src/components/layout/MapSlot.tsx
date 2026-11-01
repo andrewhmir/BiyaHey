@@ -1,4 +1,5 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from 'react';
+import { useT } from '../../i18n/useT';
 
 /**
  * Sheet-height padding for anything rendered inside the map slot.
@@ -31,6 +32,7 @@ export interface MapSlotProps {
  * `--map-padding-bottom` / the data attribute for CSS-positioned controls.
  */
 export function MapSlot({ mapPadding = 0, children }: MapSlotProps) {
+  const { t } = useT();
   const style = {
     '--map-padding-bottom': `${mapPadding}px`,
   } as CSSProperties;
@@ -46,7 +48,7 @@ export function MapSlot({ mapPadding = 0, children }: MapSlotProps) {
         {children ?? (
           <div aria-hidden="true" className="flex size-full items-center justify-center">
             <span className="rounded-pill bg-surface-container px-4 py-2 text-sm font-medium text-on-surface-variant shadow-elevation-1">
-              Map
+              {t('map.placeholder')}
             </span>
           </div>
         )}

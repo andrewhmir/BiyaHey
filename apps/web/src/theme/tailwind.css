@@ -12,4 +12,22 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /*
+   * Task 9 reduced-motion safety net (spec §11: no animation when
+   * `prefers-reduced-motion`). The sheet and the skeleton cards already opt out
+   * per component (`transition-none`, `motion-reduce:animate-none`); this rule
+   * covers hover/press transitions and any future animation. Motion is reduced,
+   * not removed from the accessibility tree.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

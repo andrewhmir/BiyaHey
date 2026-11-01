@@ -71,7 +71,10 @@ export interface RequestOptions {
   body?: unknown;
   /** Caller cancellation (a new keystroke, an unmount). */
   signal?: AbortSignal;
-  /** Override for tests; production always uses {@link REQUEST_TIMEOUT_MS}. */
+  /**
+   * Per-request budget. Defaults to {@link REQUEST_TIMEOUT_MS}; `planTrip` passes
+   * the 3 s {@link PLAN_TIMEOUT_MS} instead, and tests may shorten it.
+   */
   timeoutMs?: number;
 }
 
@@ -258,19 +261,54 @@ export async function planTrip(
 }
 
 /**
+ * Browser-safe runtime guard for one `GET /sources` registry row.
+ *
+ * About-data renders every field of every row, so a row that is missing one
+ * (or carries a non-string id) must reach the screen's error/retry state rather
+ * than a card that crashes on `undefined`. This mirrors `isFareStatusDto`:
+ * plain TypeScript, no Node-only imports, safe in the PWA bundle.
+ */
+export function isDataSourceRow(value: unknown): value is DataSource {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const row = value as Partial<DataSource>;
+  const requiredStrings = [
+    'id',
+    'name',
+    'publisher',
+    'url',
+    'licence_spdx',
+    'licence_url',
+    'coverage',
+    'last_checked',
+    'attribution',
+  ] as const;
+  for (const field of requiredStrings) {
+    if (typeof row[field] !== 'string' || row[field].length === 0) {
+      return false;
+    }
+  }
+  return (
+    Array.isArray(row.used_for) && row.used_for.every((entry) => typeof entry === 'string')
+  );
+}
+
+/**
  * `GET /sources` — the provenance registry, in the BFF's canonical order
  * (spec §10, Task 7).
  *
  * The rows are rendered as returned: the web app never has its own attribution
- * or licence table (R45). A response that is not an array is rejected here so
- * About-data fails with its honest retry state instead of crashing a card.
+ * or licence table (R45). A response that is not an array, or that carries a
+ * malformed row, is rejected here so About-data fails with its honest retry
+ * state instead of crashing a card (Task 9 M3).
  */
 export async function fetchSources(options: CallOptions = {}): Promise<DataSource[]> {
   const payload = await request<unknown>('/sources', { signal: options.signal });
-  if (!Array.isArray(payload)) {
+  if (!Array.isArray(payload) || !payload.every(isDataSourceRow)) {
     throw new ApiError('invalid_response', 'Hindi mabasa ang listahan ng data sources.');
   }
-  return payload as DataSource[];
+  return payload;
 }
 
 /**

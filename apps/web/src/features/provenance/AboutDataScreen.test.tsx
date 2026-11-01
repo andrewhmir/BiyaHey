@@ -9,6 +9,8 @@ import { AppRoutes } from '../../routes';
 import {
   planCubaoAyalaResponse,
   sourcesErrorHandler,
+  sourcesMalformedRowHandler,
+  sourcesNetworkErrorHandler,
   sourcesPendingHandler,
   sourcesResponse,
   sourcesSuccessHandler,
@@ -81,7 +83,7 @@ describe('AboutDataScreen', () => {
     expect(osm).toHaveTextContent('2026-11-01');
     expect(osm).toHaveTextContent('Philippines - Geofabrik PH extract (NCR + belt for v1)');
     expect(osm).toHaveTextContent('hindi naka-publish');
-    expect(screen.getByRole('status')).toHaveTextContent('10 dataset');
+    expect(screen.getByRole('status')).toHaveTextContent('10 na dataset');
   });
 
   it('opens the licence sheet with the full licence link and source URL', async () => {
@@ -107,11 +109,38 @@ describe('AboutDataScreen', () => {
 
   it('closes the licence sheet with Escape', async () => {
     const { user } = renderAbout();
-    await user.click((await screen.findAllByTestId('dataset-card'))[0]!);
+    const card = (await screen.findAllByTestId('dataset-card'))[0]!;
+    await user.click(card);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // M4: focus returns to the card that opened the sheet.
+    expect(card).toHaveFocus();
+  });
+
+  it('traps focus, locks body scroll and closes on a backdrop tap (M4)', async () => {
+    const { user } = renderAbout();
+    const card = (await screen.findAllByTestId('dataset-card'))[0]!;
+    await user.click(card);
+
+    const dialog = screen.getByRole('dialog');
+    const close = within(dialog).getByRole('button', { name: 'Isara' });
+    expect(close).toHaveFocus();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Shift+Tab from the first focusable wraps to the last one inside the sheet.
+    const links = within(dialog).getAllByRole('link');
+    await user.tab({ shift: true });
+    expect(links.at(-1)).toHaveFocus();
+    // Tab from the last focusable wraps back to the close button.
+    await user.tab();
+    expect(close).toHaveFocus();
+
+    fireEvent.click(screen.getByTestId('licence-backdrop'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+    expect(card).toHaveFocus();
   });
 
   it('does not invent a report link when none is configured', async () => {
@@ -154,6 +183,32 @@ describe('AboutDataScreen', () => {
 
     expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the error/retry state for a malformed /sources row (M3)', async () => {
+    server.use(sourcesMalformedRowHandler);
+    const { user } = renderAbout();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/hindi ma-load/i);
+    // The whole list is rejected: no card is rendered with undefined fields.
+    expect(screen.queryByTestId('dataset-card')).not.toBeInTheDocument();
+
+    server.use(sourcesSuccessHandler);
+    await user.click(within(alert).getByRole('button', { name: /subukan ulit/i }));
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+  });
+
+  it('uses the typed transport failure and never announces the error twice (M5/M6)', async () => {
+    server.use(sourcesNetworkErrorHandler);
+    renderAbout();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/walang koneksyon/i);
+    // The role="alert" is the single announcement; the polite status region
+    // stays silent instead of repeating the same sentence.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('has no axe violations', async () => {
@@ -224,9 +279,9 @@ describe('About-data entry points', () => {
     const { user } = renderApp(PLAN_ENTRY);
 
     await screen.findAllByTestId('route-card');
-    await user.click(screen.getByRole('button', { name: 'Data sources' }));
+    await user.click(screen.getByRole('button', { name: 'Pinagmulan ng data' }));
 
-    const credit = screen.getByRole('dialog', { name: 'Data sources' });
+    const credit = screen.getByRole('dialog', { name: 'Pinagmulan ng data' });
     await user.click(within(credit).getByRole('link', { name: /about data/i }));
 
     expect(
@@ -251,6 +306,13 @@ describe('About-data entry points', () => {
 
   it('offers an About-data entry from Home', async () => {
     const { user } = renderApp('/');
+
+    // M2: the link lives in the expanded sheet body; expand it like a rider
+    // would before activating the link.
+    const expand = screen.getByRole('button', { name: /expand sheet/i });
+    await user.click(expand);
+    await user.click(expand);
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'expanded');
 
     await user.click(screen.getByRole('link', { name: /about data/i }));
 
@@ -277,6 +339,36 @@ describe('About-data entry points', () => {
 
     expect(field).toHaveValue('/');
     expect(screen.getByRole('search')).toBeInTheDocument();
+  });
+
+  it('never hijacks / from a textarea, select, contenteditable or with a modifier (M10)', () => {
+    renderApp('/');
+
+    const textarea = document.createElement('textarea');
+    const select = document.createElement('select');
+    select.append(document.createElement('option'));
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    document.body.append(textarea, select, editable);
+
+    for (const target of [textarea, select, editable]) {
+      fireEvent.keyDown(target, { key: '/' });
+      expect(screen.queryByRole('search')).not.toBeInTheDocument();
+    }
+    fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+    fireEvent.keyDown(window, { key: '/', metaKey: true });
+    fireEvent.keyDown(window, { key: '/', altKey: true });
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
+
+    // Control: the same key outside a typing target does navigate, so the
+    // guards above are what the assertions are proving.
+    fireEvent.keyDown(window, { key: '/' });
+    expect(screen.getByRole('search')).toBeInTheDocument();
+
+    textarea.remove();
+    select.remove();
+    editable.remove();
   });
 
   it('links the fare footer to About data', () => {

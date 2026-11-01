@@ -423,6 +423,15 @@ export const sourcesPendingHandler = http.get('*/sources', async () => {
 /** The transport failed before a response arrived (offline simulation). */
 export const sourcesNetworkErrorHandler = http.get('*/sources', () => HttpResponse.error());
 
+/**
+ * A registry response whose second row is missing required fields (Task 9 M3).
+ * The client guard must reject the whole list so About-data shows its
+ * error/retry state instead of rendering a card with `undefined` fields.
+ */
+export const sourcesMalformedRowHandler = http.get('*/sources', () =>
+  HttpResponse.json([sourcesResponse[0], { id: 'broken-row', name: 'Broken' }]),
+);
+
 /** Default `POST /plan` handler: the three-option Cubao → Ayala plan. */
 export const planSuccessHandler = http.post('*/plan', () =>
   HttpResponse.json(planCubaoAyalaResponse),

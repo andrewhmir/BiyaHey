@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { MODE_COLORS, MODE_LABELS } from '../../components/map/RoutePolylines';
+import { useT } from '../../i18n/useT';
 
 /**
  * Mode chips for a route card (spec §11 screen 3).
@@ -47,19 +48,20 @@ export interface ModeChipsProps {
 }
 
 export function ModeChips({ modes }: ModeChipsProps) {
+  const { t } = useT();
   const uniqueModes = [...new Set(modes)];
 
   return (
     <span
       data-testid="mode-chips"
       role="group"
-      aria-label="Mga mode ng sakay"
+      aria-label={t('routes.modeGroup')}
       className="flex flex-wrap items-center gap-1.5"
     >
       {uniqueModes.map((mode) => {
         const known = isLegMode(mode);
         const Icon = known ? MODE_ICONS[mode] : Route;
-        const label = known ? MODE_LABELS[mode] : `sakay (${mode})`;
+        const label = known ? t(`mode.${mode}`) : t('routes.unknownMode', { mode });
         return (
           <span
             key={mode}

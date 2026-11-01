@@ -2,6 +2,8 @@ import type { SearchGroup, SearchResultDto } from '@biyahey/shared';
 import { ArrowLeft, Search as SearchIcon, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useT } from '../../i18n/useT';
+import type { Translate } from '../../i18n/strings';
 import { SearchResults } from './SearchResults';
 import { useSearch, type SearchOutcome } from './useSearch';
 
@@ -13,10 +15,15 @@ import { useSearch, type SearchOutcome } from './useSearch';
  * region), an incomplete-results note for `partial: true`, a retryable error,
  * and — when the device is offline — saved places under the exact
  * "Walang signal — showing saved places" copy instead of a blank screen.
+ *
+ * All copy comes from the Taglish string module (`t()`); the offline, no-results
+ * and partial strings are mandated verbatim by the plan and pinned in
+ * `strings.test.ts`.
  */
 export function SearchScreen() {
   const [term, setTerm] = useState('');
   const navigate = useNavigate();
+  const { t } = useT();
   const inputId = useId();
   const statusId = useId();
   const search = useSearch(term);
@@ -43,7 +50,7 @@ export function SearchScreen() {
         <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
           <button
             type="button"
-            aria-label="Bumalik"
+            aria-label={t('common.back')}
             onClick={() => navigate(-1)}
             className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
           >
@@ -56,7 +63,7 @@ export function SearchScreen() {
           >
             <SearchIcon aria-hidden="true" className="size-5 shrink-0 text-on-surface-variant" />
             <label htmlFor={inputId} className="sr-only">
-              Maghanap ng lugar
+              {t('search.label')}
             </label>
             <input
               id={inputId}
@@ -64,7 +71,7 @@ export function SearchScreen() {
               autoFocus
               autoComplete="off"
               enterKeyHint="search"
-              placeholder="Saan ka pupunta?"
+              placeholder={t('search.placeholder')}
               value={term}
               onChange={(event) => setTerm(event.currentTarget.value)}
               aria-describedby={statusId}
@@ -73,16 +80,16 @@ export function SearchScreen() {
             {term.length > 0 && (
               <button
                 type="button"
-                aria-label="Burahin ang search"
+                aria-label={t('search.clear')}
                 onClick={() => setTerm('')}
-                className="flex size-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
                 <X aria-hidden="true" className="size-5" />
               </button>
             )}
           </form>
         </div>
-        <h1 className="sr-only">Saan papunta?</h1>
+        <h1 className="sr-only">{t('search.heading')}</h1>
       </header>
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 py-4">
@@ -92,12 +99,12 @@ export function SearchScreen() {
           aria-live="polite"
           className="px-1 text-sm text-on-surface-variant"
         >
-          {statusMessage(search)}
+          {statusMessage(search, t)}
         </p>
 
         {search.partial && (
           <p className="rounded-card bg-tertiary-container px-3 py-2 text-sm text-on-tertiary-container">
-            Maaaring hindi kumpleto — results may be incomplete.
+            {t('search.partialNote')}
           </p>
         )}
 
@@ -107,7 +114,7 @@ export function SearchScreen() {
             onClick={search.retry}
             className="flex min-h-12 w-full items-center justify-center rounded-pill bg-primary px-6 text-base font-medium text-on-primary transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
           >
-            Subukan ulit
+            {t('common.retry')}
           </button>
         )}
 
@@ -117,7 +124,7 @@ export function SearchScreen() {
               id="recents-heading"
               className="px-1 pb-2 text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
             >
-              Mga kamakailang hanap
+              {t('search.recentsHeading')}
             </h2>
             <ul className="flex flex-wrap gap-2">
               {search.recents.map((recent) => (
@@ -139,9 +146,7 @@ export function SearchScreen() {
 
         {(search.status === 'idle' || search.status === 'offline') &&
           search.savedPlaces.length === 0 && (
-            <p className="px-1 text-sm text-on-surface-variant">
-              Wala pang naka-save na lugar. I-tap ang “Saved places” para mag-imbak.
-            </p>
+            <p className="px-1 text-sm text-on-surface-variant">{t('search.noSavedPlaces')}</p>
           )}
 
         {(search.status === 'idle' || search.status === 'offline') && (
@@ -153,7 +158,7 @@ export function SearchScreen() {
             <span className="flex size-10 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
               <SearchIcon aria-hidden="true" className="size-5" />
             </span>
-            Saved places
+            {t('search.savedPlaces')}
           </button>
         )}
       </div>
@@ -161,25 +166,25 @@ export function SearchScreen() {
   );
 }
 
-function statusMessage(search: SearchOutcome): string {
+function statusMessage(search: SearchOutcome, t: Translate): string {
   switch (search.status) {
     case 'loading':
-      return 'Naghahanap…';
+      return t('search.loading');
     case 'success':
       if (search.count === 0) {
         // A partial answer never proves the place does not exist, so the
         // zero-result claim stays explicitly incomplete.
         return search.partial
-          ? `Walang kumpletong resulta para sa “${search.query}”.`
-          : `Walang resulta para sa “${search.query}”.`;
+          ? t('search.partialNoResults', { query: search.query })
+          : t('search.noResults', { query: search.query });
       }
-      return `${search.count} resulta`;
+      return t('search.results', { count: search.count });
     case 'offline':
-      return 'Walang signal — showing saved places';
+      return t('search.offline');
     case 'error':
-      return 'Hindi ma-load ang search. Subukan ulit.';
+      return t('search.error');
     case 'idle':
     default:
-      return 'Mag-type para maghanap ng stops, landmarks, at ruta.';
+      return t('search.idle');
   }
 }

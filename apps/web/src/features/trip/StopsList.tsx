@@ -1,5 +1,6 @@
 import type { LegStopDto } from '@biyahey/shared';
 import { useState } from 'react';
+import { useT } from '../../i18n/useT';
 import { formatClockTime } from '../../lib/time';
 
 /**
@@ -14,6 +15,10 @@ import { formatClockTime } from '../../lib/time';
  * Long lines are virtualised above {@link STOPS_VIRTUALIZE_ABOVE} rows so a
  * 100-stop provincial route does not mount 100 DOM rows at once. The alight
  * row stays rendered (pinned) outside the scroll window.
+ *
+ * Task 9: the virtualised scroll box is a named, keyboard-focusable region so a
+ * keyboard-only rider can scroll it (WCAG 2.2 scrollable-region-focusable); its
+ * board/alight labels come from the Taglish string module.
  */
 export const STOPS_VIRTUALIZE_ABOVE = 30;
 const ROW_HEIGHT_PX = 48;
@@ -27,6 +32,7 @@ function stopTime(stop: LegStopDto, alight: boolean): string | null {
 }
 
 function StopRow({ stop, index, last }: { stop: LegStopDto; index: number; last: boolean }) {
+  const { t } = useT();
   const board = index === 0;
   const time = stopTime(stop, last);
   return (
@@ -47,7 +53,7 @@ function StopRow({ stop, index, last }: { stop: LegStopDto; index: number; last:
       <span className="min-w-0 flex-1">
         <span className="block break-words text-base leading-6 text-on-surface">{stop.name}</span>
         <span className="block text-xs leading-4 text-on-surface-variant">
-          {board ? 'Sakayan' : last ? 'Baba' : 'Daanan'}
+          {board ? t('trip.board') : last ? t('trip.baba') : t('trip.passThrough')}
           {time === null ? '' : ` · ${time}`}
         </span>
       </span>
@@ -56,6 +62,7 @@ function StopRow({ stop, index, last }: { stop: LegStopDto; index: number; last:
 }
 
 export function StopsList({ stops }: { stops: readonly LegStopDto[] }) {
+  const { t } = useT();
   const [scrollTop, setScrollTop] = useState(0);
 
   if (stops.length === 0) {
@@ -64,7 +71,7 @@ export function StopsList({ stops }: { stops: readonly LegStopDto[] }) {
 
   if (stops.length <= STOPS_VIRTUALIZE_ABOVE) {
     return (
-      <ol aria-label="Mga hintuan" className="flex flex-col">
+      <ol aria-label={t('trip.stopsLabel')} className="flex flex-col">
         {stops.map((stop, index) => (
           <StopRow
             key={`${stop.stopId ?? stop.name}-${index}`}
@@ -88,10 +95,13 @@ export function StopsList({ stops }: { stops: readonly LegStopDto[] }) {
     <div className="flex flex-col">
       <div
         data-testid="stops-scroll"
-        className="max-h-96 overflow-y-auto"
+        role="region"
+        aria-label={t('trip.stopsLabel')}
+        tabIndex={0}
+        className="max-h-96 overflow-y-auto rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >
-        <ol aria-label="Mga hintuan" className="flex flex-col">
+        <ol className="flex flex-col">
           <li aria-hidden="true" style={{ height: start * ROW_HEIGHT_PX }} />
           {scrollable.slice(start, end).map((stop, offset) => {
             const index = start + offset;
@@ -110,7 +120,7 @@ export function StopsList({ stops }: { stops: readonly LegStopDto[] }) {
           />
         </ol>
       </div>
-      <ol aria-label="Baba" className="flex flex-col">
+      <ol aria-label={t('trip.baba')} className="flex flex-col">
         <StopRow stop={alight} index={stops.length - 1} last />
       </ol>
     </div>

@@ -1,4 +1,6 @@
 import type { DataSource } from '@biyahey/shared';
+import { defaultT, type Translate } from '../../i18n/strings';
+import { useT } from '../../i18n/useT';
 import { licenceName } from './licences';
 
 /**
@@ -6,16 +8,14 @@ import { licenceName } from './licences';
  * Plan 1's `DataSource`). Spec §11 lists confidence among the L2 fields, so the
  * card reports the absence instead of inventing a value; a future additive
  * `confidence` field on the registry row is rendered as soon as the API sends
- * it. See the Task 7 report's proposed ruling.
+ * it. See the Task 7 report's proposed ruling (R68).
  */
-const CONFIDENCE_NOT_PUBLISHED = 'hindi naka-publish';
-
-export function datasetConfidence(dataset: DataSource): string {
+export function datasetConfidence(dataset: DataSource, t: Translate = defaultT): string {
   const confidence = (dataset as DataSource & { confidence?: unknown }).confidence;
   if (typeof confidence === 'string' && confidence.trim().length > 0) {
     return confidence.trim();
   }
-  return CONFIDENCE_NOT_PUBLISHED;
+  return t('about.confidenceUnpublished');
 }
 
 export interface DatasetCardProps {
@@ -31,10 +31,12 @@ export interface DatasetCardProps {
  * Every value is a field of the `DataSource` the API returned (R43/R45); the
  * only mappings are presentation ones (SPDX id → human licence name, documented
  * in `licences.ts`). The whole card is the affordance that opens the L3 sheet.
+ * The L2 field labels are Taglish strings from the module (Task 9 M12).
  */
 export function DatasetCard({ dataset, onOpen }: DatasetCardProps) {
+  const { t } = useT();
   const licence = licenceName(dataset.licence_spdx);
-  const confidence = datasetConfidence(dataset);
+  const confidence = datasetConfidence(dataset, t);
 
   return (
     <button
@@ -51,31 +53,31 @@ export function DatasetCard({ dataset, onOpen }: DatasetCardProps) {
       </span>
 
       <span className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm leading-5">
-        <span className="text-on-surface-variant">Publisher</span>
+        <span className="text-on-surface-variant">{t('about.publisher')}</span>
         <span className="min-w-0 break-words text-on-surface">{dataset.publisher}</span>
 
-        <span className="text-on-surface-variant">Lisensya</span>
+        <span className="text-on-surface-variant">{t('about.licence')}</span>
         <span className="min-w-0 break-words text-on-surface">
           <span data-testid="dataset-licence">{licence}</span>
           <span className="text-on-surface-variant"> · {dataset.licence_spdx}</span>
         </span>
 
-        <span className="text-on-surface-variant">Huling tsek</span>
+        <span className="text-on-surface-variant">{t('about.lastChecked')}</span>
         <span data-testid="dataset-last-checked" className="text-on-surface">
           {dataset.last_checked}
         </span>
 
-        <span className="text-on-surface-variant">Saklaw</span>
+        <span className="text-on-surface-variant">{t('about.coverage')}</span>
         <span className="min-w-0 break-words text-on-surface">{dataset.coverage}</span>
 
-        <span className="text-on-surface-variant">Confidence</span>
+        <span className="text-on-surface-variant">{t('about.confidence')}</span>
         <span data-testid="dataset-confidence" className="min-w-0 break-words text-on-surface">
           {confidence}
         </span>
       </span>
 
       <span className="flex items-center gap-1 text-xs font-medium text-primary">
-        <span>Buksan ang detalye</span>
+        <span>{t('about.openDetail')}</span>
         <span aria-hidden="true">ⓘ</span>
       </span>
     </button>

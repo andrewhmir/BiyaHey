@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
+import { useT } from '../../i18n/useT';
 
 /**
  * Non-modal bottom sheet, dependency-free.
@@ -127,10 +128,12 @@ export function BottomSheet({
   initial = 'peek',
   onDetentChange,
   onMapPaddingChange,
-  label = 'Trip details',
+  label,
   className,
   children,
 }: BottomSheetProps) {
+  const { t } = useT();
+  const resolvedLabel = label ?? t('sheet.tripDetails');
   const resolvedDetents = detents.length > 0 ? detents : DEFAULT_DETENTS;
   const names = useMemo(() => namesFor(resolvedDetents), [resolvedDetents]);
   const peekHeight = useMemo(() => peekHeightFor(resolvedDetents), [resolvedDetents]);
@@ -310,7 +313,7 @@ export function BottomSheet({
       data-detent={detentName}
       data-motion={reducedMotion ? 'reduced' : 'full'}
       data-dragging={dragging ? 'true' : undefined}
-      aria-label={label}
+      aria-label={resolvedLabel}
       className={[
         'pointer-events-auto absolute inset-x-0 bottom-0 z-10 mx-auto flex max-w-2xl flex-col overflow-hidden rounded-t-sheet bg-surface-container text-on-surface shadow-elevation-3',
         motionClass,
@@ -325,7 +328,7 @@ export function BottomSheet({
         {atPeek ? null : <span aria-hidden="true" className="size-12 shrink-0" />}
         <button
           type="button"
-          aria-label="Expand sheet"
+          aria-label={t('sheet.expand')}
           aria-expanded={atExpanded}
           aria-disabled={atExpanded || undefined}
           aria-controls={bodyId}
@@ -346,7 +349,7 @@ export function BottomSheet({
         {atPeek ? null : (
           <button
             type="button"
-            aria-label="Collapse sheet"
+            aria-label={t('sheet.collapse')}
             aria-controls={bodyId}
             onClick={() => commitDetent(index - 1)}
             className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"

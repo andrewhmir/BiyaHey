@@ -118,11 +118,13 @@ describe('SavedScreen tabs', () => {
     expect(savedPanel).toBeVisible();
     expect(recentPanel).not.toBeVisible();
     expect(recentPanel).toHaveAttribute('hidden');
-    // A `flex`/`block` utility on the section would beat the [hidden] UA rule
-    // in the built Tailwind CSS and show both lists at once.
-    expect(recentPanel.className).not.toMatch(
-      /\b(flex|grid|block|inline|inline-flex|table)\b/,
-    );
+    // A `flex`/`block` utility on either section would beat the [hidden] UA
+    // rule in the built Tailwind CSS and show both lists at once.
+    for (const panel of [savedPanel, recentPanel]) {
+      expect(panel.className).not.toMatch(
+        /\b(flex|grid|block|inline|inline-flex|table)\b/,
+      );
+    }
 
     await user.click(recentTab);
     expect(savedPanel).not.toBeVisible();

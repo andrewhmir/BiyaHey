@@ -1,5 +1,7 @@
 import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { RouteCard, fareEffectiveLine, transfersLabel, walkLabel } from './RouteCard';
 
@@ -197,5 +199,25 @@ describe('RouteCard copy', () => {
     expect(transfersLabel(2)).toBe('2 sakay');
     expect(walkLabel(484)).toBe('484 m lakad');
     expect(walkLabel(1300)).toBe('1.3 km lakad');
+  });
+
+  it('does not select the card when the provenance chip is activated (M14)', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <MemoryRouter>
+        <RouteCard
+          itinerary={itinerary()}
+          sources={[osmSource, ltfrbSource]}
+          selected={false}
+          onSelect={onSelect}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(within(screen.getByTestId('provenance-chip')).getByRole('link'));
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByTestId('route-card')).toHaveAttribute('data-selected', 'false');
   });
 });

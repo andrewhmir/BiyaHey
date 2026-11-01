@@ -200,8 +200,8 @@ describe('MapCredit', () => {
     expect(screen.getByText(/OpenFreeMap/)).toBeInTheDocument();
     expect(screen.getByText(/© OpenMapTiles/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /data sources/i }));
-    expect(screen.getByRole('dialog', { name: /data sources/i })).toHaveTextContent(
+    await user.click(screen.getByRole('button', { name: /pinagmulan ng data/i }));
+    expect(screen.getByRole('dialog', { name: /pinagmulan ng data/i })).toHaveTextContent(
       /OpenFreeMap tiles/,
     );
     expect(screen.queryByText(osmSource.name)).not.toBeInTheDocument();
@@ -225,7 +225,7 @@ describe('MapCredit', () => {
     });
 
     expect(screen.queryByText(/© OpenStreetMap contributors/)).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: /data sources/i });
+    const toggle = screen.getByRole('button', { name: /pinagmulan ng data/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
@@ -234,7 +234,7 @@ describe('MapCredit', () => {
       'href',
       'https://www.openstreetmap.org/copyright',
     );
-    expect(screen.getByRole('dialog', { name: /data sources/i })).toHaveTextContent(
+    expect(screen.getByRole('dialog', { name: /pinagmulan ng data/i })).toHaveTextContent(
       'OpenStreetMap PH extract',
     );
   });
@@ -408,7 +408,7 @@ describe('MapCanvas', () => {
     await waitFor(() =>
       expect(screen.queryByText(/© OpenStreetMap contributors/)).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole('button', { name: /data sources/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /pinagmulan ng data/i })).toBeInTheDocument();
   });
 
   it('falls back to a manual pin when geolocation permission is denied', async () => {
