@@ -16,7 +16,12 @@ import { expect, test } from '@playwright/test';
  * 2. `navigator.serviceWorker.ready` resolves (install + precache + activate);
  * 3. a saved trip seeded into the real `biyahey:v1:saved-trips` envelope
  *    renders after an **offline reload** of `/saved`, with the offline badge,
- *    the "Saved route (no live data)" ETA label and the staleness stamp.
+ *    the "Saved route (no live data)" ETA label and the staleness stamp;
+ * 4. the emitted MapLibre worker module is served as JavaScript from its
+ *    hashed `/assets/` URL — asserted by content type and URL, not by status
+ *    alone, because `vite preview` answers a missing asset with the SPA
+ *    fallback (`200 text/html`) and would otherwise pass on the very failure
+ *    the test exists to catch.
  *
  * The trip is seeded instead of driven through the live `/plan` + Save flow on
  * purpose: this project's preview build talks to the BFF on :8787, but the
@@ -174,18 +179,40 @@ test('built app serves the manifest and renders a saved trip after an offline re
   }
 });
 
+interface WorkerResponse {
+  status: number;
+  contentType: string;
+  url: string;
+}
+
+/** The emitted hashed module, e.g. `/assets/maplibre-gl-worker-CMkqA50c.mjs`. */
+const EMITTED_WORKER_URL = /\/assets\/maplibre-gl-worker-[\w-]+\.mjs$/;
+
+/** A JavaScript content type; `text/javascript` in the served preview build. */
+const JAVASCRIPT_CONTENT_TYPE = /^(?:text|application)\/javascript\b/;
+
 test('the built app serves the MapLibre worker asset', async ({ page }) => {
   // Regression guard for a production-only failure found while measuring the
   // tile budget: MapLibre v6 builds its worker URL with a runtime `new URL()`
   // that Vite cannot statically follow. The build emitted no
-  // `assets/maplibre-gl-worker.mjs` and `vite preview` answered the request
+  // `assets/maplibre-gl-worker-*.mjs` and `vite preview` answered the request
   // with index.html, so the built map fetched zero tiles while the dev server
   // worked. `MapCanvas` now imports the packaged worker with `?url` and calls
   // `setWorkerUrl()`; this test proves the emitted asset is actually served.
-  const workerStatuses: number[] = [];
+  //
+  // Status alone is not enough: the preview server's SPA fallback answers a
+  // *missing* `.mjs` with `200 text/html`, which is exactly the original
+  // defect. The response must therefore be JavaScript from the emitted,
+  // hashed `/assets/` path — and the body is fetched independently to prove
+  // it is the module, not the HTML shell.
+  const workerResponses: WorkerResponse[] = [];
   page.on('response', (response) => {
     if (/maplibre-gl-worker[^/]*\.mjs/.test(response.url())) {
-      workerStatuses.push(response.status());
+      workerResponses.push({
+        status: response.status(),
+        contentType: response.headers()['content-type'] ?? '',
+        url: response.url(),
+      });
     }
   });
 
@@ -194,6 +221,29 @@ test('the built app serves the MapLibre worker asset', async ({ page }) => {
   // is requested at that point even if the external tile host is slow.
   await expect(page.getByTestId('map-canvas')).toBeVisible();
 
-  await expect.poll(() => workerStatuses.length, { timeout: 30_000 }).toBeGreaterThan(0);
-  expect(workerStatuses.every((status) => status === 200)).toBe(true);
+  await expect.poll(() => workerResponses.length, { timeout: 30_000 }).toBeGreaterThan(0);
+
+  for (const response of workerResponses) {
+    expect(response.status).toBe(200);
+    expect(response.contentType).toMatch(JAVASCRIPT_CONTENT_TYPE);
+    expect(response.url).toMatch(EMITTED_WORKER_URL);
+  }
+
+  const workerUrl = workerResponses.find((response) => EMITTED_WORKER_URL.test(response.url))?.url;
+  if (workerUrl === undefined) {
+    throw new Error(
+      `the page never requested an emitted MapLibre worker module: ${workerResponses
+        .map((response) => response.url)
+        .join(', ')}`,
+    );
+  }
+
+  // Independent fetch of the same URL: the SPA fallback answers 200 here too,
+  // so the body is what separates the worker module from `index.html`.
+  const workerResponse = await page.request.get(workerUrl);
+  expect(workerResponse.status()).toBe(200);
+  expect(workerResponse.headers()['content-type']).toMatch(JAVASCRIPT_CONTENT_TYPE);
+  const workerBody = await workerResponse.text();
+  expect(workerBody).not.toMatch(/^\s*<!doctype html/i);
+  expect(workerBody).toMatch(/maplibre/i);
 });
