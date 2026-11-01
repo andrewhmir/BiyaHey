@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+coverage/
+
+# local env
+.env
+.env.*
+!.env.example
+
+# generated data (regenerate with pipelines, never commit)
+data/snapshots/*
+!data/snapshots/.gitkeep
+services/routing/data/
+*.osm.pbf
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# test artifacts
+playwright-report/
+test-results/
+
+# os noise
+.DS_Store
+Thumbs.db
+*.log
