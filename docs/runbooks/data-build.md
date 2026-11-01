@@ -36,8 +36,8 @@ cd pipelines
 ..\pipelines\.venv\Scripts\python.exe -m pytest
 ```
 
-Expected: `13 passed`. Alternatively from the repository root:
-`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `13 passed`).
+Expected: `18 passed`. Alternatively from the repository root:
+`pipelines\.venv\Scripts\python.exe -m pytest pipelines` (also `18 passed`).
 
 > Tests never download the OSM extract and never call taginfo. The download step below
 > is an explicit, separate action, and the coverage test reads a committed snapshot.
@@ -105,7 +105,10 @@ ptv2_share: 0.9948  data_until: 2026-10-31T21:22:57Z (synthesized taginfo snapsh
 coverage report: data\build\osm\coverage.json
 ```
 
-A missing input returns exit code `2` with a one-line error (no traceback); run from
+A missing or invalid input — absent `--pbf`/`--taginfo`, malformed taginfo JSON, a snapshot
+that does not match the expected shape or the coverage schema — returns exit code `2` with a
+one-line error and no traceback. The taginfo snapshot is validated **before** the clip starts,
+so a bad snapshot fails in milliseconds and creates nothing under `--out`. Run from
 `pipelines/` instead and drop the `$env:PYTHONPATH` line if you prefer — then use
 `..\data\build` and `tests\fixtures\...` paths.
 
@@ -198,7 +201,7 @@ instance and rewrite the fixture, keeping `_snapshot` truthful about the query d
 pipelines\.venv\Scripts\python.exe -m pytest pipelines
 ```
 
-Expected `13 passed`, offline. Then confirm the artifacts:
+Expected `18 passed`, offline. Then confirm the artifacts:
 
 ```powershell
 Get-ChildItem data\build\osm
@@ -224,6 +227,7 @@ second line of defence. Never `git add -f` an extract.
 |---|---|
 | `No module named pipeline` | Run with `$env:PYTHONPATH = "pipelines"` from the repo root, or `cd pipelines` first |
 | `error: OSM extract not found` (exit 2) | Run step 1.1, or pass the correct `--pbf` path |
+| `error: invalid taginfo JSON` / `error: invalid taginfo snapshot` / `error: taginfo snapshot fails the coverage schema` (exit 2) | The `--taginfo` file is missing, malformed, or does not match the snapshot shape/schema documented in §1.5. The snapshot is validated before the clip, so nothing was written — fix the snapshot and re-run |
 | `coverage.json` reports `ptv2_share: 0.9948` | Expected — it is derived from 1930/1940, not quoted from the note |
 | Extract is much smaller than expected | Check the bbox and that the input is the Philippines extract, not a small regional one |
 | `osmium: command not found` | Expected on this machine — see §1.3 |

@@ -18,11 +18,14 @@ Example (the runbook's sequence)::
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Sequence
 
-from .osm import download_geofabrik, run_stage_osm
+from jsonschema import ValidationError
+
+from .osm import CoverageError, download_geofabrik, run_stage_osm
 
 #: Default download target, relative to the repository root (data/build is gitignored).
 DEFAULT_DOWNLOAD_DEST = Path("data/build/philippines-latest.osm.pbf")
@@ -76,8 +79,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _one_line(message: object) -> str:
+    """Collapse a message onto a single line, whatever the underlying exception prints."""
+    return " ".join(str(message).split())
+
+
+def _fail(message: object) -> int:
+    """Print one ``error:`` line to stderr and return the documented input-error code."""
+    print(f"error: {_one_line(message)}", file=sys.stderr)
+    return 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one stage. Returns a process exit code (0 ok, 2 missing input)."""
+    """Run one stage. Returns a process exit code (0 ok, 2 missing or invalid input)."""
     args = build_parser().parse_args(argv)
 
     if args.stage == "download":
@@ -88,15 +102,32 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     pbf = Path(args.pbf)
     if not pbf.is_file():
-        print(f"error: OSM extract not found: {pbf}", file=sys.stderr)
-        print(
-            "       download it first: "
-            f"python -m pipeline.cli download --dest {pbf}",
-            file=sys.stderr,
+        return _fail(
+            f"OSM extract not found: {pbf} "
+            f"(download it first: python -m pipeline.cli download --dest {pbf})"
         )
-        return 2
 
-    report = run_stage_osm(pbf, Path(args.out), Path(args.taginfo))
+    # Documented contract (runbook §1.2): every missing or invalid input returns
+    # exit code 2 with a one-line stderr message, never a traceback. run_stage_osm
+    # validates the taginfo snapshot before clipping, so a bad snapshot never
+    # leaves a partial build directory behind.
+    try:
+        report = run_stage_osm(pbf, Path(args.out), Path(args.taginfo))
+    except json.JSONDecodeError as exc:
+        return _fail(
+            f"invalid taginfo JSON: {args.taginfo} "
+            f"({exc.msg} at line {exc.lineno} column {exc.colno})"
+        )
+    except CoverageError as exc:
+        return _fail(f"invalid taginfo snapshot: {args.taginfo} ({exc})")
+    except ValidationError as exc:
+        return _fail(
+            f"taginfo snapshot fails the coverage schema: {args.taginfo} "
+            f"({exc.message} at {exc.json_path})"
+        )
+    except FileNotFoundError as exc:
+        return _fail(exc)
+
     print(f"route_relations: {report['route_relations']}  by_mode: {report['by_mode']}")
     print(
         f"ptv2_share: {report['ptv2_share']}  data_until: {report['data_until']} "

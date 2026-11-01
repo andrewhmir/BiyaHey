@@ -26,6 +26,7 @@ from pipeline.cli import main as cli_main
 from pipeline.osm import (
     GEOFABRIK_PH_URL,
     GEOFABRIK_SNAPSHOT_DATE,
+    CoverageError,
     bbox_text,
     download_geofabrik,
     extract_bbox,
@@ -310,3 +311,122 @@ def test_cli_osm_reports_a_missing_pbf_without_a_traceback(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "absent.osm.pbf" in captured.err
     assert not (tmp_path / "build" / "osm" / "ncr.osm.pbf").exists()
+
+
+# --------------------------------------------------------------------------
+# CLI contract: an invalid taginfo snapshot fails fast — exit 2, one stderr
+# line, no traceback, and no build directory (the clip never starts)
+# --------------------------------------------------------------------------
+
+
+def test_cli_osm_reports_a_missing_taginfo_before_clipping(tmp_path, capsys):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    exit_code = cli_main(
+        [
+            "osm",
+            "--pbf",
+            str(source),
+            "--out",
+            str(out_dir),
+            "--taginfo",
+            str(tmp_path / "absent-taginfo.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "absent-taginfo.json" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(captured.err.strip().splitlines()) == 1
+    # fail-fast contract: the clip never starts, so the build dir is not created
+    assert not out_dir.exists()
+
+
+def test_cli_osm_reports_malformed_taginfo_json_before_clipping(tmp_path, capsys):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+    taginfo = tmp_path / "broken-taginfo.json"
+    taginfo.write_text('{"type_route": {"count": 2851},', encoding="utf-8")
+
+    exit_code = cli_main(
+        ["osm", "--pbf", str(source), "--out", str(out_dir), "--taginfo", str(taginfo)]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "invalid taginfo JSON" in captured.err
+    assert "broken-taginfo.json" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(captured.err.strip().splitlines()) == 1
+    assert not out_dir.exists()
+
+
+def test_cli_osm_reports_a_taginfo_shape_error_before_clipping(tmp_path, capsys):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+    taginfo = tmp_path / "shape-taginfo.json"
+    taginfo.write_text(
+        json.dumps(
+            {
+                "data_until": "2026-10-31T21:22:57Z",
+                "type_route": {"count": 2851},
+                "route_values": [{"value": "bus", "count": 1425}],
+                # "ptv2" is missing: this must be a one-line error, not a KeyError traceback
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli_main(
+        ["osm", "--pbf", str(source), "--out", str(out_dir), "--taginfo", str(taginfo)]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "invalid taginfo snapshot" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(captured.err.strip().splitlines()) == 1
+    assert not out_dir.exists()
+
+
+def test_cli_osm_reports_a_taginfo_schema_error_before_clipping(tmp_path, capsys):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+    taginfo = tmp_path / "schema-taginfo.json"
+    taginfo.write_text(
+        json.dumps(
+            {
+                # a date-only timestamp violates the coverage schema's ISO-8601 pattern
+                "data_until": "2026-10-31",
+                "type_route": {"count": 2851},
+                "route_values": [{"value": "bus", "count": 1425}],
+                "ptv2": {"relations": 1930, "tagged_relations": 1940},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli_main(
+        ["osm", "--pbf", str(source), "--out", str(out_dir), "--taginfo", str(taginfo)]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "fails the coverage schema" in captured.err
+    assert "data_until" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(captured.err.strip().splitlines()) == 1
+    assert not out_dir.exists()
+
+
+def test_parse_coverage_rejects_a_malformed_taginfo_shape():
+    taginfo = {
+        "data_until": "2026-10-31T21:22:57Z",
+        "type_route": {"count": 3},
+        "route_values": [{"value": "bus"}],  # every entry needs a "count"
+        "ptv2": {"relations": 1, "tagged_relations": 1},
+    }
+    with pytest.raises(CoverageError, match="malformed"):
+        parse_coverage(taginfo)

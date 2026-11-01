@@ -283,8 +283,16 @@ def run_stage_osm(pbf: Path, out_dir: Path, taginfo_path: Path) -> Dict[str, Any
     Writes ``<out_dir>/osm/ncr.osm.pbf`` and ``<out_dir>/osm/coverage.json``
     (schema-validated before it is written) and returns the report.
 
+    The taginfo snapshot is read, parsed and schema-validated **before** the clip
+    runs. With the real 584 MB extract the clip costs minutes, so a typo, malformed
+    JSON or a stale snapshot shape must fail in milliseconds and before anything is
+    written under ``out_dir``.
+
     Raises:
         FileNotFoundError: if the extract or the taginfo snapshot is missing.
+        json.JSONDecodeError: if the snapshot is not valid JSON.
+        CoverageError: if the snapshot does not have the expected shape.
+        jsonschema.ValidationError: if the snapshot cannot produce a valid report.
     """
     pbf = Path(pbf)
     out_dir = Path(out_dir)
@@ -298,10 +306,13 @@ def run_stage_osm(pbf: Path, out_dir: Path, taginfo_path: Path) -> Dict[str, Any
     if not taginfo_path.is_file():
         raise FileNotFoundError(f"taginfo snapshot not found: {taginfo_path}")
 
+    # Fail fast: the snapshot is cheap to validate, the clip is not. Parse and
+    # validate it first so an invalid snapshot never starts the extraction.
+    coverage = parse_coverage(json.loads(taginfo_path.read_text(encoding="utf-8")))
+
     extract_path = out_dir / "osm" / "ncr.osm.pbf"
     stats = extract_bbox(pbf, ncr_bbox(), extract_path)
 
-    coverage = parse_coverage(json.loads(taginfo_path.read_text(encoding="utf-8")))
     report: Dict[str, Any] = {
         **coverage,
         "bbox": list(ncr_bbox()),
