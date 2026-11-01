@@ -42,7 +42,10 @@ Two gates, both enforced here
     ``BusMaps``, ``bus_maps`` and ``busmaps`` are all refused.
 ``assert_licence_notice``
     A published manifest must carry an ``ODbL-1.0`` dataset *and* the exact spec
-    Appendix A OpenStreetMap attribution.
+    Appendix A OpenStreetMap attribution. When it also lists the CC BY-SA 2.0
+    wiki inventory (``osm-wiki-jeepney``), the manifest attributions *and* the
+    published ``gtfs.zip`` must state the exact inventory attribution (spec 8.2;
+    ruling R32).
 
 ``build_manifest`` refuses to build from a blocked source at all, so a blocked
 dataset cannot even reach the manifest-writing code path.
@@ -57,7 +60,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
-from .gtfs import ODBL_ATTRIBUTION
+from .gtfs import ODBL_ATTRIBUTION, WIKI_INVENTORY_ATTRIBUTION, read_licence_text
 
 __all__ = [
     "BLOCKED_DATASET_IDS",
@@ -65,9 +68,13 @@ __all__ = [
     "ENGINE",
     "BlockedDatasetError",
     "LicenceGateError",
+    "WIKI_INVENTORY_DATASET_ID",
+    "WIKI_INVENTORY_LICENCE_SPDX",
+    "artifact_licence_text",
     "assert_licence_notice",
     "assert_no_blocked_dataset",
     "build_manifest",
+    "carries_wiki_inventory",
     "gate_manifest",
     "gate_sources",
     "load_sources",
@@ -91,6 +98,13 @@ BLOCKED_DATASET_REASON = (
 #: ``bus_maps``, ``bus-maps`` and ``busmaps`` are the same dataset.
 _SQUASH = re.compile(r"[^a-z0-9]+")
 _BLOCKED_KEYS = frozenset(_SQUASH.sub("", blocked) for blocked in BLOCKED_DATASET_IDS)
+
+#: Registry id and SPDX licence of the wiki-derived route inventory (spec 8.1).
+#: A published feed that lists either one must state its CC BY-SA 2.0
+#: attribution inside the artifact (spec 8.2; ruling R32).
+WIKI_INVENTORY_DATASET_ID = "osm-wiki-jeepney"
+WIKI_INVENTORY_LICENCE_SPDX = "CC-BY-SA-2.0"
+_WIKI_INVENTORY_KEY = _SQUASH.sub("", WIKI_INVENTORY_DATASET_ID)
 
 
 class BlockedDatasetError(RuntimeError):
@@ -247,19 +261,77 @@ def assert_no_blocked_dataset(manifest: Mapping[str, Any]) -> None:
         )
 
 
+def carries_wiki_inventory(datasets: Sequence[Mapping[str, Any]]) -> bool:
+    """True when the manifest/registry lists the CC BY-SA 2.0 wiki inventory.
+
+    A published build that used ``data/routes/jeepney-inventory.yaml`` lists
+    ``osm-wiki-jeepney`` (``CC-BY-SA-2.0``) among its datasets, which means the
+    feed may contain routes derived from that file and must state its
+    attribution (spec 8.2; ruling R32). Detection is by SPDX licence or by the
+    registry id, so neither a renamed id nor a missing licence can skip the
+    check.
+    """
+    for dataset in datasets:
+        if not isinstance(dataset, Mapping):
+            continue
+        if dataset.get("licence_spdx") == WIKI_INVENTORY_LICENCE_SPDX:
+            return True
+        dataset_id = _SQUASH.sub("", str(dataset.get("id") or "").casefold())
+        if dataset_id == _WIKI_INVENTORY_KEY:
+            return True
+    return False
+
+
+def artifact_licence_text(manifest: Mapping[str, Any]) -> Optional[str]:
+    """Read the licence/attribution text from the GTFS artifacts a manifest names.
+
+    This is the manifest-mode input to :func:`assert_licence_notice`: every
+    dataset path ending in ``.zip`` is opened and its ``LICENSE-DATA.txt`` /
+    ``attributions.txt`` read. Registry-mode gating has no artifacts and gets
+    ``None``.
+
+    Raises:
+        FileNotFoundError: a named artifact does not exist.
+        ValueError: an artifact is not a readable zip or has no licence table.
+    """
+    datasets = manifest.get("datasets")
+    if not isinstance(datasets, list):
+        return None
+    texts: List[str] = []
+    for dataset in datasets:
+        if not isinstance(dataset, Mapping):
+            continue
+        raw_path = dataset.get("path")
+        if not isinstance(raw_path, str) or not raw_path.lower().endswith(".zip"):
+            continue
+        texts.append(read_licence_text(Path(raw_path)))
+    return "\n".join(texts) if texts else None
+
+
 def assert_licence_notice(
-    datasets: Sequence[Mapping[str, Any]], attributions: Sequence[Any]
+    datasets: Sequence[Mapping[str, Any]],
+    attributions: Sequence[Any],
+    *,
+    artifact_text: Optional[str] = None,
 ) -> None:
-    """Require an ODbL-1.0 dataset and the exact Appendix A attribution.
+    """Require the ODbL notice and, when applicable, the CC BY-SA 2.0 notice.
 
     Args:
-        datasets: manifest dataset entries (only ``licence_spdx`` is read).
+        datasets: manifest dataset entries (``licence_spdx`` and ``id`` are read).
         attributions: attribution strings; one must contain the exact
             :data:`pipeline.gtfs.ODBL_ATTRIBUTION` text.
+        artifact_text: licence/attribution text read from the published feed zip
+            (see :func:`artifact_licence_text`). When a wiki-derived
+            (``CC-BY-SA-2.0``) dataset is listed, this text must also contain
+            :data:`pipeline.gtfs.WIKI_INVENTORY_ATTRIBUTION`. ``None`` means no
+            artifact was supplied (registry-mode gating), so only the manifest
+            attributions are checked.
 
     Raises:
         ValueError: if the inputs are not sequences of mappings/strings.
-        LicenceGateError: if no ODbL-1.0 licence or the notice is missing.
+        LicenceGateError: if no ODbL-1.0 licence, a required attribution notice
+            is missing, or the published artifact lost the CC BY-SA
+            attribution.
     """
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
         raise ValueError("datasets must be a sequence of manifest dataset mappings")
@@ -287,19 +359,45 @@ def assert_licence_notice(
             f"attributions; expected exactly: {ODBL_ATTRIBUTION!r}"
         )
 
+    if not carries_wiki_inventory(datasets):
+        return
+    if not any(WIKI_INVENTORY_ATTRIBUTION in text for text in texts):
+        raise LicenceGateError(
+            "licence gate: the CC BY-SA 2.0 attribution for the wiki-derived "
+            "route inventory is missing from the manifest attributions; "
+            f"expected exactly: {WIKI_INVENTORY_ATTRIBUTION!r}"
+        )
+    if artifact_text is not None and WIKI_INVENTORY_ATTRIBUTION not in artifact_text:
+        raise LicenceGateError(
+            "licence gate: the published GTFS artifact does not state the "
+            "CC BY-SA 2.0 attribution for its wiki-derived route inventory; "
+            f"expected exactly: {WIKI_INVENTORY_ATTRIBUTION!r} inside the "
+            "feed's LICENSE-DATA.txt (spec 8.2; ruling R32)"
+        )
 
-def gate_manifest(manifest: Mapping[str, Any]) -> None:
+
+def gate_manifest(
+    manifest: Mapping[str, Any], *, artifact_text: Optional[str] = None
+) -> None:
     """Run both licence gates over a built manifest.
+
+    Args:
+        manifest: the manifest mapping.
+        artifact_text: licence/attribution text read from the published feed
+            (``artifact_licence_text(manifest)``); ``None`` skips the
+            artifact-content check (registry-style callers).
 
     Raises:
         BlockedDatasetError: a blocked dataset is named.
-        LicenceGateError: the ODbL licence or attribution is missing.
+        LicenceGateError: the ODbL licence/attribution, or the CC BY-SA 2.0
+            inventory attribution inside the artifact, is missing.
         ValueError: the manifest is malformed.
     """
     assert_no_blocked_dataset(manifest)
     assert_licence_notice(
         manifest.get("datasets", []),
         manifest.get("attributions", []),
+        artifact_text=artifact_text,
     )
 
 

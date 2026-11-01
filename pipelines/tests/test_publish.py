@@ -50,6 +50,13 @@ SPEC_APPENDIX_A_ATTRIBUTION = (
     "© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0"
 )
 
+#: Spec Appendix A CC BY-SA 2.0 literal for the wiki-derived inventory (R32),
+#: hardcoded on purpose for the same reason: the constant under test must not
+#: vouch for itself.
+SPEC_WIKI_ATTRIBUTION = (
+    "Route inventory derived from OpenStreetMap Wiki (CC BY-SA 2.0)"
+)
+
 
 @pytest.fixture(scope="module")
 def published(tmp_path_factory):
@@ -129,6 +136,24 @@ def test_zip_contains_the_fare_tables_and_keeps_the_odbl_licence(published):
         # rail fares live in data/fares/rail-tables.yaml; UV Express is per-km.
         # Neither can be a flat GTFS fare, so neither gets a rule.
         assert all(not row["route_id"].startswith(("rail-", "uv-")) for row in rules)
+
+
+def test_published_zip_states_the_cc_by_sa_inventory_attribution(published):
+    """Ruling R32: the artifact itself, not only the manifest, states it."""
+    out, report = published
+
+    # wiki-derived routes really are in this feed (10 of the 16 curated routes)
+    assert report["curated_routes_modelled"] > 0
+
+    with zipfile.ZipFile(out / "gtfs" / "gtfs.zip") as archive:
+        licence = archive.read("LICENSE-DATA.txt").decode("utf-8-sig")
+
+    assert SPEC_WIKI_ATTRIBUTION in licence
+    # the ODbL notice is unchanged: both notices, exact spec Appendix A literal
+    assert SPEC_APPENDIX_A_ATTRIBUTION in licence
+    assert "published under the Open Database License (ODbL) 1.0" in " ".join(
+        licence.split()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +265,45 @@ def test_publish_is_reproducible(published, tmp_path):
     first_zip = Path(first["feed"]["path"])
     assert (second_out / "gtfs" / "gtfs.zip").read_bytes() == first_zip.read_bytes()
     assert second["feed"]["sha256"] == first["feed"]["sha256"]
+
+
+def test_cli_licence_gate_passes_the_published_feed(published, capsys):
+    out, _ = published
+
+    assert main(["licence-gate", "--manifest", str(out / "manifest.json")]) == 0
+    printed = capsys.readouterr().out
+    assert "licence-gate: ok" in printed
+    assert "CC BY-SA 2.0" in printed
+
+
+def test_licence_gate_rejects_a_feed_that_lost_the_cc_by_sa_attribution(
+    published, tmp_path, capsys
+):
+    """R32 negative proof: strip the notice from a copy of the artifact."""
+    out, _ = published
+    stripped = tmp_path / "gtfs.zip"
+    with zipfile.ZipFile(out / "gtfs" / "gtfs.zip") as source, zipfile.ZipFile(
+        stripped, "w", zipfile.ZIP_DEFLATED
+    ) as target:
+        for info in source.infolist():
+            payload = source.read(info.filename)
+            if info.filename == "LICENSE-DATA.txt":
+                text = payload.decode("utf-8-sig")
+                assert SPEC_WIKI_ATTRIBUTION in text  # the strip must be real
+                payload = text.replace(f"{SPEC_WIKI_ATTRIBUTION}\n", "").encode(
+                    "utf-8-sig"
+                )
+            target.writestr(info, payload)
+
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    for dataset in manifest["datasets"]:
+        if dataset["id"] == "gtfs":
+            dataset["path"] = str(stripped)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert main(["licence-gate", "--manifest", str(manifest_path)]) == 1
+    assert "CC BY-SA" in capsys.readouterr().err
 
 
 def test_publish_refuses_a_blocked_sources_registry(tmp_path):

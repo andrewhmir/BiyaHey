@@ -11,10 +11,11 @@ Stages (run from the ``pipelines/`` directory with the venv interpreter):
   OSM + curated routes, build the GTFS feed with fare tables, and write
   ``<out>/gtfs/gtfs.zip``, ``<out>/manifest.json`` and
   ``<out>/build-report.json``. Offline.
-* ``licence-gate`` — check a built ``manifest.json`` (``--manifest``) or, with no
-  manifest, the committed provenance registry (``--sources``): fails on a
-  blocked dataset or a missing ODbL notice. Reads local files only, so CI can
-  gate ``data/**`` changes without a build.
+* ``licence-gate`` — check a built ``manifest.json`` (``--manifest``) together
+  with the feed it names, or, with no manifest, the committed provenance
+  registry (``--sources``): fails on a blocked dataset, a missing ODbL notice,
+  or a published feed that lost the CC BY-SA 2.0 inventory attribution. Reads
+  local files only, so CI can gate ``data/**`` changes without a build.
 
 Example (the runbook's sequence)::
 
@@ -38,6 +39,8 @@ from jsonschema import ValidationError
 from .manifest import (
     BlockedDatasetError,
     LicenceGateError,
+    artifact_licence_text,
+    carries_wiki_inventory,
     gate_manifest,
     gate_sources,
     load_sources,
@@ -146,11 +149,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     licence = stages.add_parser(
         "licence-gate",
-        help="fail on a blocked dataset or a missing ODbL notice (offline)",
+        help="fail on a blocked dataset or a missing licence attribution (offline)",
         description=(
-            "With --manifest, gate a built manifest. Without it, gate the committed "
-            "provenance registry, which needs no data/build artifacts and is how CI "
-            "polices data/** changes. Exit 1 = gate failed, 2 = missing/invalid input."
+            "With --manifest, gate a built manifest and read the GTFS artifact it "
+            "names: the feed must state the ODbL notice and, when wiki-derived routes "
+            "are present, the CC BY-SA 2.0 inventory attribution. Without --manifest, "
+            "gate the committed provenance registry, which needs no data/build "
+            "artifacts and is how CI polices data/** changes. "
+            "Exit 1 = gate failed, 2 = missing/invalid input."
         ),
     )
     licence.add_argument(
@@ -197,15 +203,26 @@ def _run_licence_gate(args: argparse.Namespace) -> int:
                 f"({exc.msg} at line {exc.lineno} column {exc.colno})"
             )
         try:
-            gate_manifest(manifest)
+            # Manifest mode gates the artifact too: read the feed the manifest
+            # names so a published zip that lost an attribution fails here
+            # (spec 8.2; ruling R32).
+            artifact_text = artifact_licence_text(manifest)
+        except (OSError, ValueError) as exc:
+            return _fail(f"invalid manifest {manifest_path}: {exc}")
+        try:
+            gate_manifest(manifest, artifact_text=artifact_text)
         except (BlockedDatasetError, LicenceGateError) as exc:
             return _gate_fail(exc)
         except ValueError as exc:
             return _fail(f"invalid manifest {manifest_path}: {exc}")
         datasets = len(manifest.get("datasets") or [])
+        checks = "ODbL-1.0 notice present"
+        if artifact_text is not None and carries_wiki_inventory(
+            manifest.get("datasets") or []
+        ):
+            checks += ", CC BY-SA 2.0 inventory attribution present in artifact"
         print(
-            f"licence-gate: ok ({datasets} datasets, "
-            "ODbL-1.0 notice present, no blocked dataset)"
+            f"licence-gate: ok ({datasets} datasets, {checks}, no blocked dataset)"
         )
         return 0
 
@@ -260,7 +277,10 @@ def _run_publish(args: argparse.Namespace) -> int:
     print(f"gtfs: {feed['path']}")
     print(f"manifest: {report['manifest_path']} (sha256 {feed['sha256']})")
     print(f"report: {report['report_path']}")
-    print("licence gate: ok (blocked datasets checked, ODbL-1.0 notice present)")
+    print(
+        "licence gate: ok (blocked datasets checked, ODbL-1.0 and "
+        "CC BY-SA 2.0 notices present in artifact)"
+    )
     return 0
 
 

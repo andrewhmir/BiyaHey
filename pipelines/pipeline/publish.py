@@ -15,11 +15,13 @@ This stage is that link. It:
    OSM winning the collision because measured geometry beats a transcription;
 3. builds the merged GTFS feed and attaches the fare tables from
    :mod:`pipeline.fares`;
-4. writes ``<out>/gtfs/gtfs.zip`` (deterministic bytes, with the ODbL notice),
-   ``<out>/manifest.json`` (sha256 + datasets + attributions) and
-   ``<out>/build-report.json`` (the coverage report Task 11 consumes);
-5. refuses to publish if the provenance registry names a blocked dataset or
-   loses the ODbL notice (spec 8.1; ruling R22).
+4. writes ``<out>/gtfs/gtfs.zip`` (deterministic bytes, with the ODbL notice
+   and the CC BY-SA 2.0 inventory attribution inside), ``<out>/manifest.json``
+   (sha256 + datasets + attributions) and ``<out>/build-report.json`` (the
+   coverage report Task 11 consumes);
+5. refuses to publish if the provenance registry names a blocked dataset, or if
+   the manifest or the written feed loses the ODbL notice or the CC BY-SA 2.0
+   inventory attribution (spec 8.1/8.2; rulings R22, R32).
 
 Build-report contract
 ---------------------
@@ -60,7 +62,13 @@ from .fares import (
     build_gtfs_fare_tables,
     unrepresentable_fares,
 )
-from .gtfs import AgencyInfo, RouteDef, build_feed
+from .gtfs import (
+    WIKI_INVENTORY_ATTRIBUTION,
+    AgencyInfo,
+    RouteDef,
+    build_feed,
+    read_licence_text,
+)
 from .inventory import (
     InventoryRoute,
     TerminalNotMappedError,
@@ -190,7 +198,8 @@ def run_stage_publish(
         ValueError: an input is malformed (inventory schema, fare matrix,
             registry) or the build cannot produce a valid feed.
         BlockedDatasetError: the registry names a blocked dataset (spec 8.1).
-        LicenceGateError: the ODbL licence/attribution would be lost.
+        LicenceGateError: the ODbL licence/attribution or the CC BY-SA 2.0
+            inventory attribution would be lost (spec 8.2; ruling R32).
     """
     pbf = Path(pbf)
     out_dir = Path(out_dir)
@@ -304,14 +313,23 @@ def run_stage_publish(
         fares_document, [route.route_id for route in feed.routes]
     )
     zip_path = out_dir / "gtfs" / "gtfs.zip"
-    feed.write(zip_path, extra_tables=fare_tables)
+    # Ruling R32: the CC BY-SA 2.0 attribution for the wiki-derived inventory
+    # must be stated by the published feed itself, not only by the manifest.
+    feed.write(
+        zip_path,
+        extra_tables=fare_tables,
+        wiki_inventory_attribution=WIKI_INVENTORY_ATTRIBUTION,
+    )
 
     manifest = build_manifest(
         [zip_path],
         _manifest_sources(sources, pbf, inventory_path, fares_path, zip_path),
         built_at,
     )
-    gate_manifest(manifest)
+    # Self-check the artifact that was just written: the gate reads the feed's
+    # LICENSE-DATA.txt, so losing the inventory attribution fails the build
+    # before the manifest can ship (ruling R32).
+    gate_manifest(manifest, artifact_text=read_licence_text(zip_path))
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

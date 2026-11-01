@@ -65,10 +65,14 @@ not re-licensed as ODbL.
 
 Routes from that file do enter the generated feed as coarse landmark-only
 placeholders when OSM has no measured geometry. Any GTFS derived from the file
-therefore **states its CC BY-SA attribution**: `sources.yaml` carries the text
-"Route inventory derived from OpenStreetMap Wiki (CC BY-SA 2.0)", the publish
-manifest includes it in `attributions`, and the build report lists each curated
-route's `source_url` and `needs_verification` flag so no row loses its origin.
+therefore **states its CC BY-SA attribution inside the published artifact**:
+`gtfs.zip` carries the exact string
+"Route inventory derived from OpenStreetMap Wiki (CC BY-SA 2.0)" in its
+`LICENSE-DATA.txt` (the "Route inventory attribution" section), `manifest.json`
+repeats it in `attributions`, and the build report lists each curated route's
+`source_url` and `needs_verification` flag so no row loses its origin. The
+licence gate fails a build whose published feed loses either the ODbL notice or
+this CC BY-SA attribution (see "What each publish records" below).
 
 The mixing of CC BY-SA inventory with ODbL OSM data in one feed is a known risk
 (spec §15). The mitigation is migration: as route relations for these corridors
@@ -87,7 +91,8 @@ They contribute fare amounts and attribution strings, not geometry.
 
 `python -m pipeline.cli publish` writes, under the build directory:
 
-- `gtfs/gtfs.zip` — deterministic bytes, ODbL notice inside, fare tables inside;
+- `gtfs/gtfs.zip` — deterministic bytes, ODbL notice inside, the CC BY-SA 2.0
+  inventory attribution inside, fare tables inside;
 - `manifest.json` — `{built_at, engine, datasets:[{id, path, sha256,
   licence_spdx}], attributions}` covering the OSM extract, the wiki inventory,
   the fare matrix and the generated zip;
