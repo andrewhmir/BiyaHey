@@ -98,13 +98,13 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
   imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
   `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-02):** Tasks 1–5 **complete and reviewed clean** — Task 1
+- **Plan 2 progress (2026-11-02):** Tasks 1–6 **complete and reviewed clean** — Task 1
   scaffold; Task 2 tokens/shell/sheet (`b2baea3`); Task 3 map (`afbd7a1`); Task 4 typed API
   client + debounced grouped search (`9942b4b`, fix round `693c5e4`); Task 5 route options
-  over the map (`673df80`, fix round `0cd528b`, scoped re-review APPROVED — no open findings;
-  89 web tests). **Task 6 (trip detail) is in flight.** Next per plan: 7 provenance, 8
-  saved/offline, 9 Taglish/a11y, 10 perf/E2E, 11 acceptance. Ledger has all rulings
-  (R39–R63).
+  over the map (`673df80`, fix round `0cd528b`); Task 6 trip detail + leg stops (`23b6d4a`,
+  `f67a23b`, fix round `03f995c` — saved-trip validation hardened per R66; root suite 251
+  passed / 4 skipped). **Task 7 (About-data provenance) is in flight.** Next per plan: 8
+  saved/offline, 9 Taglish/a11y, 10 perf/E2E, 11 acceptance. Ledger has all rulings (R39–R66).
 - **Plan-2 contract addendum (R61, 2026-11-02):** MOTIS `leg.intermediateStops` is present
   (verified live: 8 stops on MRT-3 Cubao→Buendia) but the shared `LegDto` exposed no stops,
   so the trip-detail stop list (spec §11 screen 4) was impossible. Task 6 adds an **optional**
