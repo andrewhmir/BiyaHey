@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { AppShell } from '../components/layout/AppShell';
 import { MapSlot } from '../components/layout/MapSlot';
 import { MapCanvas } from '../components/map/MapCanvas';
+import { RoutePolylines } from '../components/map/RoutePolylines';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 
 const HOME_DETENTS = [96, 'half', 'expanded'] as const;
@@ -20,7 +21,11 @@ export function HomePage() {
     <AppShell
       map={
         <MapSlot mapPadding={mapPadding}>
-          <MapCanvas />
+          {/* The route overlay is wired into the real page tree from day one;
+              its itinerary list stays empty until a plan response exists. */}
+          <MapCanvas>
+            <RoutePolylines itineraries={[]} />
+          </MapCanvas>
         </MapSlot>
       }
       sheet={

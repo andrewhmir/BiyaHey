@@ -1,7 +1,7 @@
 import type { ItineraryDto, LegMode } from '@biyahey/shared';
 import type { Feature, LineString } from 'geojson';
 import { useEffect, useRef } from 'react';
-import { useMap } from './MapContext';
+import { useMap, useMapStyleVersion } from './MapContext';
 
 /**
  * Route lines for the itinerary shortlist.
@@ -90,6 +90,9 @@ export function RoutePolylines({
   onSelect,
 }: RoutePolylinesProps) {
   const map = useMap();
+  // Bumped after a style reload, which drops every source and layer; the
+  // effects below re-add what this component owns.
+  const styleVersion = useMapStyleVersion();
   // Keep the latest callback without making it an effect dependency: an inline
   // arrow from the sheet must not tear down and recreate every layer.
   const onSelectRef = useRef(onSelect);
@@ -100,7 +103,9 @@ export function RoutePolylines({
   // Sources and layers are owned by this effect so unmount removes exactly what
   // was added, even if the map itself is being destroyed at the same time.
   useEffect(() => {
-    if (!map) return;
+    // `MapContext` only publishes a style-ready map, but the guard keeps the
+    // invariant local and protects the style-reload path as well.
+    if (!map || !map.isStyleLoaded()) return;
 
     const added: string[] = [];
     const clickHandlers: { layerId: string; handler: () => void }[] = [];
@@ -147,10 +152,10 @@ export function RoutePolylines({
         }
       }
     };
-  }, [map, itineraries]);
+  }, [map, itineraries, styleVersion]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
     for (const itinerary of itineraries) {
       const layerId = `route-${itinerary.id}`;
       if (!map.getLayer(layerId)) continue;
@@ -158,7 +163,7 @@ export function RoutePolylines({
       map.setPaintProperty(layerId, 'line-opacity', selected ? 1 : DIMMED_OPACITY);
       map.setPaintProperty(layerId, 'line-width', selected ? SELECTED_WIDTH : DIMMED_WIDTH);
     }
-  }, [map, itineraries, selectedId]);
+  }, [map, itineraries, selectedId, styleVersion]);
 
   return null;
 }
