@@ -24,7 +24,10 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dataRoot = join(repoRoot, 'data');
 const DATA_FILE_PATTERN = /\.(ya?ml|json)$/i;
 const SCHEMA_SUFFIX = '.schema.json';
-const IGNORED_DIRS = new Set(['snapshots']);
+// Generated output under data/ is gitignored and has no schemas: never validate
+// data/build/ (pipeline manifest.json, build-report.json, osm/coverage.json) or
+// data/snapshots/ (dated feed zips).
+const IGNORED_DIRS = new Set(['build', 'snapshots']);
 
 let problems = 0;
 
