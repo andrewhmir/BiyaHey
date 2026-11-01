@@ -12,6 +12,7 @@ import {
   ayalaSearchResponse,
   cubaoSearchResponse,
   emptySearchHandler,
+  partialEmptySearchHandler,
   partialSearchHandler,
   searchErrorHandler,
   searchNetworkErrorHandler,
@@ -20,7 +21,7 @@ import {
 } from '../../test/msw/handlers';
 import { SearchScreen } from './SearchScreen';
 import { SAVED_PLACES_KEY } from './savedPlaces';
-import { writeSearchCache } from './searchCache';
+import { SEARCH_CACHE_KEY, writeSearchCache } from './searchCache';
 
 // The brief pins the debounce at 250 ms; hard-code it here so the test still
 // fails if the implementation drifts rather than importing its constant.
@@ -49,6 +50,14 @@ let fetchSpy: ReturnType<typeof spyOnFetch>;
 
 function seedSavedPlaces(places: SearchResultDto[]): void {
   window.localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(places));
+}
+
+/** Seed a raw cache entry, including payloads the typed writer would reject. */
+function seedSearchCache(query: string, response: unknown): void {
+  window.localStorage.setItem(
+    SEARCH_CACHE_KEY,
+    JSON.stringify([{ query, response, savedAt: Date.now() }]),
+  );
 }
 
 function renderSearchScreen() {
@@ -141,7 +150,7 @@ describe('SearchScreen', () => {
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/search?q=ayala');
   });
 
-  it('renders all four groups: Stops, Landmarks, Routes and Saved', async () => {
+  it('renders all four groups in the mandated order: Stops, Landmarks, Routes, Saved', async () => {
     const route: SearchResultDto = {
       id: 'route-edsa',
       name: 'EDSA Carousel',
@@ -173,6 +182,13 @@ describe('SearchScreen', () => {
     expect(screen.getByRole('heading', { name: /^saved$/i })).toBeInTheDocument();
     expect(screen.getByText('EDSA Carousel')).toBeInTheDocument();
     expect(screen.getByText('Bahay')).toBeInTheDocument();
+
+    // The Task 4 contract fixes the group order; assert it from the DOM, not
+    // from the constant the component maps over.
+    const renderedGroups = within(screen.getByTestId('search-results'))
+      .getAllByRole('heading')
+      .map((heading) => heading.textContent);
+    expect(renderedGroups).toEqual(['Stops', 'Landmarks', 'Routes', 'Saved']);
   });
 
   it('renders locality as the subtitle and a distance only when the API sends one', async () => {
@@ -226,8 +242,9 @@ describe('SearchScreen', () => {
     const { user } = renderSearchScreen();
     await typeQuery(user, 'ayala');
 
-    expect(await screen.findByText(/walang signal/i, {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByText(/showing saved places/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText('Walang signal — showing saved places', {}, WAIT),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /saved places/i })).toBeInTheDocument();
     expect(screen.getByText('Bahay')).toBeInTheDocument();
     expect(screen.queryByText('Ayala Triangle Gardens')).not.toBeInTheDocument();
@@ -240,7 +257,9 @@ describe('SearchScreen', () => {
     const { user } = renderSearchScreen();
     await typeQuery(user, 'ayala');
 
-    expect(await screen.findByText(/walang signal/i, {}, WAIT)).toBeInTheDocument();
+    expect(
+      await screen.findByText('Walang signal — showing saved places', {}, WAIT),
+    ).toBeInTheDocument();
     expect(screen.getByText('Bahay')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -278,7 +297,39 @@ describe('SearchScreen', () => {
     await typeQuery(user, 'zzzzzz');
 
     expect(await screen.findByText(/walang resulta/i, {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Walang resulta para sa “zzzzzz”.',
+    );
     expect(screen.queryByText(/results may be incomplete/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the partial caveat when the API returns zero results', async () => {
+    server.use(partialEmptySearchHandler);
+
+    const { user } = renderSearchScreen();
+    await typeQuery(user, 'zzzzzz');
+
+    // `partial: true` covers "the geocoder returned nothing", so the caveat
+    // must survive a zero count instead of becoming a definite absence.
+    expect(await screen.findByText(/results may be incomplete/i, {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Walang kumpletong resulta para sa “zzzzzz”.',
+    );
+    expect(screen.queryByText('Walang resulta para sa “zzzzzz”.')).not.toBeInTheDocument();
+  });
+
+  it('ignores a cached response with a corrupt group row instead of crashing', async () => {
+    seedSearchCache('zzzzzz', {
+      partial: false,
+      groups: { stops: [null], landmarks: [], routes: [], saved: [] },
+    });
+    server.use(emptySearchHandler);
+
+    const { user } = renderSearchScreen();
+    await typeQuery(user, 'zzzzzz');
+
+    expect(await screen.findByText(/walang resulta/i, {}, WAIT)).toBeInTheDocument();
+    expect(screen.queryByTestId('search-group-stops')).not.toBeInTheDocument();
   });
 
   it('cancels the in-flight request when the next keystroke starts a newer one', async () => {
@@ -346,6 +397,21 @@ describe('SearchScreen', () => {
     expect(queries).toEqual(['ay', 'aya']);
     expect(screen.queryByText('Stale Ayala')).not.toBeInTheDocument();
     expect(screen.getByText('Current Ayala')).toBeInTheDocument();
+  });
+
+  it('aborts the in-flight request when the screen unmounts', async () => {
+    server.use(searchSlowHandler);
+
+    const { user, unmount } = renderSearchScreen();
+    await typeQuery(user, 'ayala');
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1), WAIT);
+
+    const signal = fetchSpy.mock.calls[0]?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
+
+    unmount();
+
+    await waitFor(() => expect(signal?.aborted).toBe(true), WAIT);
   });
 
   it('announces a loading state while a slow search is in flight', async () => {

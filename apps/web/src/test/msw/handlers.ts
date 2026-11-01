@@ -88,8 +88,20 @@ export const cubaoSearchResponse: SearchResponse = {
   groups: { stops: [cubaoStop], landmarks: [], routes: [], saved: [] },
 };
 
-/** A query the geocoder could not match: honest `partial` with no results. */
+/**
+ * A genuine empty result: the query was understood and matched nothing. The
+ * screen may claim absence, so `partial` stays false.
+ */
 export const emptySearchResponse: SearchResponse = {
+  partial: false,
+  groups: emptyGroups(),
+};
+
+/**
+ * The geocoder could not answer completely and mapped no rows. The shared DTO
+ * contract requires the PWA to keep the caveat rather than claim absence.
+ */
+export const partialEmptySearchResponse: SearchResponse = {
   partial: true,
   groups: emptyGroups(),
 };
@@ -112,9 +124,14 @@ export const searchSuccessHandler = http.get('*/search', ({ request }) => {
   return HttpResponse.json(emptySearchResponse);
 });
 
-/** 200 with no results (used to assert the no-results state). */
+/** 200 with no results and `partial: false` (asserts definite no-results). */
 export const emptySearchHandler = http.get('*/search', () =>
   HttpResponse.json(emptySearchResponse),
+);
+
+/** 200 with no results but `partial: true` (asserts the caveat survives zero rows). */
+export const partialEmptySearchHandler = http.get('*/search', () =>
+  HttpResponse.json(partialEmptySearchResponse),
 );
 
 /** 200 with results but `partial: true` (used to assert the honesty note). */

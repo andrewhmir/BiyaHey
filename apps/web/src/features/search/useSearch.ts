@@ -139,9 +139,11 @@ export function useSearch(term: string, options: UseSearchOptions = {}): SearchO
   const groups = status === 'offline' ? offlineGroups : (query.data?.groups ?? EMPTY_GROUPS);
   const count =
     groups.stops.length + groups.landmarks.length + groups.routes.length + groups.saved.length;
-  // "Incomplete" only makes sense next to some results; with zero results the
-  // screen says "walang resulta" instead of two competing caveats.
-  const partial = status === 'success' && query.data?.partial === true && count > 0;
+  // The API's `partial` is an honesty flag, not a results modifier: it covers a
+  // geocoder that returned nothing (shared `SearchResponse` contract), so it is
+  // surfaced even when the count is zero. The screen pairs it with a
+  // partial-aware no-results claim instead of a definite absence.
+  const partial = status === 'success' && query.data?.partial === true;
 
   return {
     status,

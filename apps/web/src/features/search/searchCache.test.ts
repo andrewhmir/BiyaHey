@@ -54,4 +54,25 @@ describe('searchCache', () => {
     expect(readSearchCache()).toEqual([]);
     expect(readRecentQueries()).toEqual([]);
   });
+
+  it('rejects a cached response containing a null group row', () => {
+    window.localStorage.setItem(
+      SEARCH_CACHE_KEY,
+      JSON.stringify([
+        {
+          query: 'ayala',
+          savedAt: Date.now(),
+          response: {
+            partial: false,
+            groups: { stops: [null], landmarks: [], routes: [], saved: [] },
+          },
+        },
+      ]),
+    );
+
+    // A `[null]` row would crash SearchResults; the cache is an optimisation,
+    // so the corrupt entry is dropped and the live request fills the screen.
+    expect(readSearchCache()).toEqual([]);
+    expect(cachedSearchResponse('ayala')).toBeUndefined();
+  });
 });

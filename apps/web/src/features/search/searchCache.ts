@@ -1,4 +1,5 @@
 import type { SearchResponse } from '@biyahey/shared';
+import { normalizeSearchResponse } from './searchGuards';
 
 /**
  * Namespaced localStorage key for the typeahead cache. It shares the
@@ -28,38 +29,28 @@ function storage(): Storage | null {
   }
 }
 
-function isResultArray(value: unknown): boolean {
-  return Array.isArray(value);
-}
-
-function isSearchResponse(value: unknown): value is SearchResponse {
+/**
+ * Validate a stored entry. Rows are validated through the shared guard, so a
+ * `[null]` group row from a partial write is rejected instead of crashing the
+ * results list when the entry is used as `placeholderData`.
+ */
+function normalizeCachedSearch(value: unknown): CachedSearch | undefined {
   if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const candidate = value as { partial?: unknown; groups?: unknown };
-  if (typeof candidate.partial !== 'boolean') {
-    return false;
-  }
-  if (typeof candidate.groups !== 'object' || candidate.groups === null) {
-    return false;
-  }
-  const groups = candidate.groups as Record<string, unknown>;
-  return (['stops', 'landmarks', 'routes', 'saved'] as const).every((key) =>
-    isResultArray(groups[key]),
-  );
-}
-
-function isCachedSearch(value: unknown): value is CachedSearch {
-  if (typeof value !== 'object' || value === null) {
-    return false;
+    return undefined;
   }
   const entry = value as Partial<CachedSearch>;
-  return (
-    typeof entry.query === 'string' &&
-    entry.query.trim().length > 0 &&
-    typeof entry.savedAt === 'number' &&
-    isSearchResponse(entry.response)
-  );
+  if (
+    typeof entry.query !== 'string' ||
+    entry.query.trim().length === 0 ||
+    typeof entry.savedAt !== 'number'
+  ) {
+    return undefined;
+  }
+  const response = normalizeSearchResponse(entry.response);
+  if (response === undefined) {
+    return undefined;
+  }
+  return { query: entry.query, response, savedAt: entry.savedAt };
 }
 
 function normalizeQuery(query: string): string {
@@ -94,7 +85,10 @@ export function readSearchCache(): CachedSearch[] {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed.filter(isCachedSearch).slice(0, SEARCH_CACHE_LIMIT);
+    return parsed
+      .map(normalizeCachedSearch)
+      .filter((entry): entry is CachedSearch => entry !== undefined)
+      .slice(0, SEARCH_CACHE_LIMIT);
   } catch {
     return [];
   }

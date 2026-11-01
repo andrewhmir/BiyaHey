@@ -95,7 +95,7 @@ export function SearchScreen() {
           {statusMessage(search)}
         </p>
 
-        {search.status === 'success' && search.partial && (
+        {search.partial && (
           <p className="rounded-card bg-tertiary-container px-3 py-2 text-sm text-on-tertiary-container">
             Maaaring hindi kumpleto — results may be incomplete.
           </p>
@@ -166,9 +166,14 @@ function statusMessage(search: SearchOutcome): string {
     case 'loading':
       return 'Naghahanap…';
     case 'success':
-      return search.count === 0
-        ? `Walang resulta para sa “${search.query}”.`
-        : `${search.count} resulta`;
+      if (search.count === 0) {
+        // A partial answer never proves the place does not exist, so the
+        // zero-result claim stays explicitly incomplete.
+        return search.partial
+          ? `Walang kumpletong resulta para sa “${search.query}”.`
+          : `Walang resulta para sa “${search.query}”.`;
+      }
+      return `${search.count} resulta`;
     case 'offline':
       return 'Walang signal — showing saved places';
     case 'error':
