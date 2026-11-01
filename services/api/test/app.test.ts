@@ -40,6 +40,54 @@ describe('api', () => {
     await app.close();
   });
 
+  it('quotes a p2p fare from the operator route fare', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/fares/quote',
+      payload: { mode: 'p2p', distanceKm: 12, routeFare: 100 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      amount: 115,
+      currency: 'PHP',
+      source_id: 'ltfrb-fares',
+    });
+    await app.close();
+  });
+
+  it('accepts a p2p free ride without a route fare', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/fares/quote',
+      payload: { mode: 'p2p', distanceKm: 12, freeRideOverride: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      amount: 0,
+      currency: 'PHP',
+      confidence: 'estimated',
+    });
+    await app.close();
+  });
+
+  it('rejects a p2p quote without a route fare unless it is a free ride', async () => {
+    const app = buildApp();
+    // Only `freeRideOverride: true` waives the route fare; an absent or false
+    // override is still a client error rather than a 500 from the engine.
+    for (const freeRideOverride of [undefined, false]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/fares/quote',
+        payload: { mode: 'p2p', distanceKm: 12, freeRideOverride },
+      });
+      expect(res.statusCode, String(freeRideOverride)).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_BODY');
+    }
+    await app.close();
+  });
+
   it('rejects an unknown mode with 400 INVALID_MODE', async () => {
     const app = buildApp();
     for (const mode of ['hovercraft', 'toString']) {

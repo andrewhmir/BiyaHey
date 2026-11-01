@@ -19,8 +19,10 @@ const quoteBodySchema = z
   })
   .superRefine((body, ctx) => {
     // P2P is priced from the operator's route fare; reject it here as a client
-    // error instead of letting the engine's RangeError become a 500.
-    if (body.mode === 'p2p' && body.routeFare === undefined) {
+    // error instead of letting the engine's RangeError become a 500. A free
+    // ride short-circuits before route-fare validation in the engine, so it
+    // legitimately has no route fare (see quoteFareForLeg).
+    if (body.mode === 'p2p' && body.routeFare === undefined && body.freeRideOverride !== true) {
       ctx.addIssue({
         code: 'custom',
         path: ['routeFare'],
