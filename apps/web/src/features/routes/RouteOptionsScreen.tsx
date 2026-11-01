@@ -246,6 +246,7 @@ function RouteOptionsContent({
                     <button
                       type="button"
                       data-testid="trip-open"
+                      aria-label={`Detalye ng rutang ${itinerary.durationMin} min`}
                       onClick={() => onOpenDetail(itinerary.id)}
                       className="trip-open flex min-h-12 w-full items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-sm font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                     >

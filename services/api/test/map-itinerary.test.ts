@@ -463,6 +463,119 @@ describe('transit stop lists (R61)', () => {
     ]);
   });
 
+  it('deduplicates by name and coordinates when the router sends no stop id', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              transitLeg({
+                from: { name: 'Cubao', lat: 14.6194, lon: 121.0531, departure: start },
+                to: {
+                  name: 'Ayala',
+                  lat: 14.5487,
+                  lon: 121.0275,
+                  arrival: '2026-11-02T08:28:00Z',
+                },
+                intermediateStops: [
+                  { name: 'Cubao', lat: 14.6194, lon: 121.0531 },
+                  { name: 'Ortigas', lat: 14.5873, lon: 121.0565 },
+                  { name: 'Ayala', lat: 14.5487, lon: 121.0275 },
+                ],
+              }),
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    const stops = itinerary?.legs[0]?.stops;
+    expect(stops?.map((stop) => stop.name)).toEqual(['Cubao', 'Ortigas', 'Ayala']);
+    expect(stops?.every((stop) => stop.stopId === undefined)).toBe(true);
+    // The alight endpoint still keeps its role: last row, arrival only.
+    expect(stops?.[2]?.arrivalTime).toBe('2026-11-02T08:28:00Z');
+  });
+
+  it('omits stops when intermediateStops is an empty list', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [transitLeg({ intermediateStops: [] })],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    expect(itinerary?.legs[0]?.mode).toBe('mrt3');
+    expect(itinerary?.legs[0]).not.toHaveProperty('stops');
+  });
+
+  it('omits stops when every intermediate stop is malformed', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              transitLeg({
+                intermediateStops: [
+                  null,
+                  { name: 'Name only' },
+                  { lat: 14.6, lon: 121.0 },
+                  'not-an-object',
+                ],
+              }),
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    expect(itinerary?.legs[0]?.mode).toBe('mrt3');
+    expect(itinerary?.legs[0]).not.toHaveProperty('stops');
+  });
+
+  it('falls back to the leg start and end when MOTIS omits endpoint times', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              transitLeg({
+                from: {
+                  name: 'Cubao',
+                  stopId: 'gtfs_rail-3:node:board',
+                  lat: 14.6194,
+                  lon: 121.0531,
+                },
+                to: {
+                  name: 'Ayala',
+                  stopId: 'gtfs_rail-3:node:alight',
+                  lat: 14.5487,
+                  lon: 121.0275,
+                },
+              }),
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+
+    const stops = itinerary?.legs[0]?.stops;
+    expect(stops?.[0]?.departureTime).toBe(start);
+    expect(stops?.[0]?.arrivalTime).toBeUndefined();
+    expect(stops?.at(-1)?.arrivalTime).toBe(end);
+    expect(stops?.at(-1)?.departureTime).toBeUndefined();
+  });
+
   it('omits stops on a walk leg', () => {
     const itinerary = mapPlanItineraries(
       {

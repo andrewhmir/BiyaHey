@@ -52,7 +52,7 @@ export function TripLiveScreen({ itineraryId, onBack }: TripLiveScreenProps) {
         {cached !== undefined ? (
           <p data-testid="live-trip-summary" className="text-sm text-on-surface-variant">
             {cached.itinerary.durationMin} min · ₱{formatFare(cached.itinerary.fare.amount)} ·
-            naka-save na plano
+            naka-cache na plano
           </p>
         ) : (
           <p className="text-sm text-on-surface-variant">

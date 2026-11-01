@@ -40,7 +40,7 @@ export interface LegPlaceDto {
  */
 export interface LegStopDto {
   name: string;
-  /** GTFS stop id when the router reported a served stop rather than a platform. */
+  /** GTFS stop/platform id when the router reported a served stop. */
   stopId?: string;
   lat: number;
   lon: number;

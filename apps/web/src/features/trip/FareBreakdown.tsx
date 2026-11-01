@@ -10,11 +10,13 @@ import { formatFare } from '../routes/RouteCard';
  * free-ride override is never presented as an official matrix fare.
  *
  * Breakdown lines carry no per-line source id, so the source link is derived
- * from the plan response's `DataSource` rows:
+ * from the plan response's `DataSource` rows. The screen passes only the rows
+ * the itinerary itself referenced, so a mixed quote cannot link a fare row that
+ * belonged to a different returned option:
  *
  * - a quote with `source_id` links that row;
- * - a mixed quote (`source_id: null`) links the fare-related rows the response
- *   actually contains (their `used_for` mentions fares);
+ * - a mixed quote (`source_id: null`) links the fare-related rows among those
+ *   rows (their `used_for` mentions fares);
  * - when no such row exists, no link is invented.
  */
 export function fareSourceRows(fare: FareQuote, sources: readonly DataSource[]): DataSource[] {
@@ -41,7 +43,7 @@ export function primarySourceUrl(source: DataSource): string | undefined {
 
 export interface FareBreakdownProps {
   fare: FareQuote;
-  /** Provenance rows from the same plan response (never hardcoded, R45). */
+  /** Provenance rows the itinerary used (already intersected; never hardcoded, R45). */
   sources: readonly DataSource[];
 }
 

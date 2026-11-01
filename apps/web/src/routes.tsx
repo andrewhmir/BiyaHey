@@ -450,7 +450,7 @@ function TripRoute() {
     return (
       <PlanNotice
         title="Wala nang ruta"
-        message="Hindi na available ang plan na ito sa device. Walang naka-save na ruta para sa link — bumalik sa search at mag-plano ulit."
+        message="Hindi na available ang plan na ito sa device. Bumalik sa search at mag-plano ulit."
         primary={{ label: 'Bumalik sa search', onClick: () => navigate('/search') }}
       />
     );

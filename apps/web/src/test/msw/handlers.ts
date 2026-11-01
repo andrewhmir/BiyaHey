@@ -366,14 +366,6 @@ export const planSuccessHandler = http.post('*/plan', () =>
   HttpResponse.json(planCubaoAyalaResponse),
 );
 
-/** Additive handler for the MRT-3 trip-detail fixture. */
-export const planMrt3Handler = http.post('*/plan', () =>
-  HttpResponse.json(planMrt3CubaoAyalaResponse),
-);
-
-/** Additive handler for the 15-leg timeline fixture. */
-export const planLongHandler = http.post('*/plan', () => HttpResponse.json(planLong15LegsResponse));
-
 /** 200 with zero itineraries: the honest "Walang ruta" state (R41). */
 export const planEmptyHandler = http.post('*/plan', () =>
   HttpResponse.json({
@@ -400,9 +392,4 @@ export const planPendingHandler = http.post('*/plan', async () => {
   return HttpResponse.json(planCubaoAyalaResponse);
 });
 
-export const handlers: HttpHandler[] = [
-  searchSuccessHandler,
-  planSuccessHandler,
-  planMrt3Handler,
-  planLongHandler,
-];
+export const handlers: HttpHandler[] = [searchSuccessHandler, planSuccessHandler];

@@ -1,4 +1,11 @@
-import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
+import type {
+  DataSource,
+  FareQuote,
+  ItineraryDto,
+  LegDto,
+  LegPlaceDto,
+  LegStopDto,
+} from '@biyahey/shared';
 
 /**
  * Minimal saved-trips store seeded by the trip-detail Save CTA (R63).
@@ -18,9 +25,10 @@ import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
  *   the manifest id if the API starts publishing one.
  * - `savedAt` is an ISO timestamp.
  *
- * Storage is corrupt-safe like `searchCache`: a bad row is dropped instead of
- * crashing the screen, and a failed write is swallowed because saving is a
- * convenience, not correctness.
+ * Reads are corrupt-safe and validate every field a consumer can reach — nested
+ * `LegDto.stops` included — so a malformed row is dropped whole instead of
+ * being partially normalized and crashing a later renderer (R66). Writes report
+ * whether they persisted; a failed write is never reported as a success.
  */
 export const SAVED_TRIPS_KEY = 'biyahey:v1:saved-trips';
 
@@ -35,6 +43,18 @@ export interface SavedTrip {
   savedAt: string;
 }
 
+const LEG_MODES: ReadonlySet<string> = new Set<string>([
+  'walk',
+  'jeepney',
+  'bus',
+  'mrt3',
+  'lrt1',
+  'lrt2',
+  'ferry',
+  'uv-express',
+  'p2p',
+]);
+
 function storage(): Storage | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage;
@@ -47,63 +67,105 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+/** Finite number guard shared by every numeric DTO field. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** ISO 8601 guard: a non-empty string `Date.parse` can read. */
+function isIsoTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !Number.isNaN(Date.parse(value));
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
 function isFareQuote(value: unknown): value is FareQuote {
   if (!isRecord(value)) {
     return false;
   }
   const breakdown = value.breakdown;
   return (
-    typeof value.amount === 'number' &&
-    Number.isFinite(value.amount) &&
+    isFiniteNumber(value.amount) &&
     value.currency === 'PHP' &&
     (value.confidence === 'official' || value.confidence === 'estimated') &&
-    typeof value.effective_from === 'string' &&
+    isIsoTimestamp(value.effective_from) &&
+    (value.source_id === null || typeof value.source_id === 'string') &&
     Array.isArray(breakdown) &&
     breakdown.every(
       (line) =>
         isRecord(line) &&
-        typeof line.label === 'string' &&
-        typeof line.amount === 'number' &&
-        Number.isFinite(line.amount),
+        isNonEmptyString(line.label) &&
+        isFiniteNumber(line.amount),
     )
   );
 }
 
-function isPlace(value: unknown): boolean {
+function isPlace(value: unknown): value is LegPlaceDto {
   return (
     isRecord(value) &&
-    typeof value.name === 'string' &&
-    typeof value.lat === 'number' &&
-    Number.isFinite(value.lat) &&
-    typeof value.lon === 'number' &&
-    Number.isFinite(value.lon)
+    isNonEmptyString(value.name) &&
+    isFiniteNumber(value.lat) &&
+    isFiniteNumber(value.lon) &&
+    isOptionalString(value.stopId)
   );
 }
 
-function isLeg(value: unknown): boolean {
+/** One served stop (R61): every field `StopsList` reads, and nothing invented. */
+function isStop(value: unknown): value is LegStopDto {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.name) &&
+    isFiniteNumber(value.lat) &&
+    isFiniteNumber(value.lon) &&
+    isOptionalString(value.stopId) &&
+    isOptionalString(value.arrivalTime) &&
+    isOptionalString(value.departureTime)
+  );
+}
+
+function isLeg(value: unknown): value is LegDto {
   return (
     isRecord(value) &&
     typeof value.mode === 'string' &&
+    LEG_MODES.has(value.mode) &&
     isPlace(value.from) &&
     isPlace(value.to) &&
-    typeof value.startTime === 'string' &&
-    typeof value.endTime === 'string' &&
-    typeof value.durationMin === 'number' &&
-    Number.isFinite(value.durationMin) &&
-    typeof value.distanceM === 'number' &&
-    Number.isFinite(value.distanceM) &&
-    Array.isArray(value.sourceIds)
+    isIsoTimestamp(value.startTime) &&
+    isIsoTimestamp(value.endTime) &&
+    isFiniteNumber(value.durationMin) &&
+    isFiniteNumber(value.distanceM) &&
+    (value.landmarkHint === null || typeof value.landmarkHint === 'string') &&
+    isOptionalString(value.routeShortName) &&
+    isOptionalString(value.headsign) &&
+    isOptionalString(value.signage) &&
+    (value.informalTransfer === undefined || typeof value.informalTransfer === 'boolean') &&
+    isStringArray(value.sourceIds) &&
+    (value.stops === undefined ||
+      (Array.isArray(value.stops) && value.stops.every(isStop)))
   );
 }
 
 function isItinerary(value: unknown): value is ItineraryDto {
   return (
     isRecord(value) &&
-    typeof value.id === 'string' &&
-    value.id.length > 0 &&
-    typeof value.durationMin === 'number' &&
-    typeof value.startTime === 'string' &&
-    typeof value.endTime === 'string' &&
+    isNonEmptyString(value.id) &&
+    isFiniteNumber(value.durationMin) &&
+    isIsoTimestamp(value.startTime) &&
+    isIsoTimestamp(value.endTime) &&
+    isFiniteNumber(value.transfers) &&
+    isFiniteNumber(value.walkDistanceM) &&
+    isStringArray(value.modes) &&
+    isStringArray(value.sources) &&
     Array.isArray(value.legs) &&
     value.legs.every(isLeg) &&
     isFareQuote(value.fare)
@@ -117,38 +179,47 @@ function isSource(value: unknown): value is DataSource {
     typeof value.name === 'string' &&
     typeof value.url === 'string' &&
     typeof value.attribution === 'string' &&
-    Array.isArray(value.used_for)
+    isStringArray(value.used_for)
   );
 }
 
 function normalizeSavedTrip(value: unknown): SavedTrip | undefined {
-  if (!isRecord(value) || !isItinerary(value.itinerary) || !isFareQuote(value.fareSnapshot)) {
+  if (!isRecord(value)) {
     return undefined;
   }
-  if (typeof value.datasetVersion !== 'string' || typeof value.savedAt !== 'string') {
+  const { itinerary, fareSnapshot, sources } = value;
+  if (!isItinerary(itinerary) || !isFareQuote(fareSnapshot)) {
     return undefined;
   }
-  const sources = Array.isArray(value.sources)
-    ? value.sources.filter((source): source is DataSource => isSource(source))
-    : [];
+  // The row's identity is `itinerary.id`: the seed shape carries no separate
+  // row id, and a row without one is not addressable by Task 8.
+  if (!isNonEmptyString(value.datasetVersion) || !isIsoTimestamp(value.savedAt)) {
+    return undefined;
+  }
+  if (!Array.isArray(sources) || !sources.every(isSource)) {
+    return undefined;
+  }
   return {
-    itinerary: value.itinerary,
+    itinerary,
     sources,
-    fareSnapshot: value.fareSnapshot,
+    fareSnapshot,
     datasetVersion: value.datasetVersion,
     savedAt: value.savedAt,
   };
 }
 
-function writeEntries(entries: readonly SavedTrip[]): void {
+/** Returns whether the store accepted the write. Never throws at the rider. */
+function writeEntries(entries: readonly SavedTrip[]): boolean {
   const store = storage();
   if (store === null) {
-    return;
+    return false;
   }
   try {
     store.setItem(SAVED_TRIPS_KEY, JSON.stringify(entries));
+    return true;
   } catch {
     // Quota exceeded or private mode: saving must not throw at the rider.
+    return false;
   }
 }
 
@@ -186,14 +257,17 @@ export function datasetVersionFor(sources: readonly DataSource[]): string {
 }
 
 /**
- * Save (or replace) one trip. Returns the stored entry so a caller can report
- * what was written without re-reading storage.
+ * Save (or replace) one trip.
+ *
+ * Returns the stored entry, or `null` when storage refused the write (absent
+ * storage, quota exceeded, private mode) or a read-back cannot find the entry.
+ * Callers must only announce success for a non-null result.
  */
 export function saveTrip(
   itinerary: ItineraryDto,
   sources: readonly DataSource[],
   now: Date = new Date(),
-): SavedTrip {
+): SavedTrip | null {
   const entry: SavedTrip = {
     itinerary,
     sources: [...sources],
@@ -202,8 +276,13 @@ export function saveTrip(
     savedAt: now.toISOString(),
   };
   const rest = readSavedTrips().filter((trip) => trip.itinerary.id !== itinerary.id);
-  writeEntries([entry, ...rest].slice(0, SAVED_TRIPS_LIMIT));
-  return entry;
+  if (!writeEntries([entry, ...rest].slice(0, SAVED_TRIPS_LIMIT))) {
+    return null;
+  }
+  // Read the entry back so a storage shim that silently no-ops is not
+  // mistaken for a durable save.
+  const persisted = readSavedTrips().some((trip) => trip.itinerary.id === itinerary.id);
+  return persisted ? entry : null;
 }
 
 /** True when `id` already has a stored snapshot. */

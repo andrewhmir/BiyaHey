@@ -45,6 +45,15 @@ export function TripDetailScreen({
 
   function handleSave(): void {
     const entry = saveTrip(itinerary, sources);
+    if (entry === null) {
+      // Storage refused the write (quota, private mode): never claim a save
+      // that did not persist, and keep the label honest about what is stored.
+      setSaved(isTripSaved(itinerary.id));
+      setSaveStatus(
+        'Hindi nai-save ang biyahe — puno o naka-off ang storage ng device. Subukan ulit.',
+      );
+      return;
+    }
     setSaved(true);
     setSaveStatus('Nai-save ang biyahe.');
     onSave?.(entry.savedAt);
@@ -119,7 +128,10 @@ export function TripDetailScreen({
           <LegTimeline legs={itinerary.legs} />
         </section>
 
-        <FareBreakdown fare={itinerary.fare} sources={sources} />
+        <FareBreakdown
+          fare={itinerary.fare}
+          sources={sources.filter((source) => itinerary.sources.includes(source.id))}
+        />
       </div>
     </main>
   );

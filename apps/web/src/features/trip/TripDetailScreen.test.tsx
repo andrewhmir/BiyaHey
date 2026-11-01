@@ -1,4 +1,4 @@
-import type { FareQuote } from '@biyahey/shared';
+import type { DataSource, FareQuote } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
@@ -61,6 +61,27 @@ afterEach(() => {
 });
 
 describe('TripDetailScreen', () => {
+  /** A valid stored row; overrides let a test corrupt exactly one field. */
+  function storedRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      itinerary: MRT_ITINERARY,
+      sources: MRT_PLAN.sources,
+      fareSnapshot: MRT_ITINERARY.fare,
+      datasetVersion: '2026-11-01',
+      savedAt: '2026-11-01T08:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function itineraryWithLegPatch(patch: Record<string, unknown>) {
+    return {
+      ...MRT_ITINERARY,
+      legs: MRT_ITINERARY.legs.map((leg) =>
+        leg.mode === 'mrt3' ? { ...leg, ...patch } : leg,
+      ),
+    };
+  }
+
   it('renders leg instructions with signage to look for and landmark hints', () => {
     renderDetail();
 
@@ -151,6 +172,70 @@ describe('TripDetailScreen', () => {
     expect(screen.getByTestId('save-trip')).toHaveTextContent('Nai-save');
   });
 
+  it('drops every malformed stored row whole instead of partially normalizing it', () => {
+    const corruptRows: Record<string, unknown>[] = [
+      // I1: a persisted stop list with null entries used to reach StopsList.
+      storedRow({ itinerary: itineraryWithLegPatch({ stops: [null, null] }) }),
+      storedRow({ savedAt: 'garbage' }),
+      storedRow({ itinerary: { ...MRT_ITINERARY, id: '' } }),
+      storedRow({ itinerary: { ...MRT_ITINERARY, durationMin: null } }),
+      storedRow({ itinerary: { ...MRT_ITINERARY, walkDistanceM: undefined } }),
+      storedRow({ itinerary: { ...MRT_ITINERARY, transfers: undefined } }),
+      storedRow({ itinerary: { ...MRT_ITINERARY, modes: undefined } }),
+      storedRow({ itinerary: itineraryWithLegPatch({ startTime: 'not-a-time' }) }),
+      storedRow({ fareSnapshot: { ...MRT_ITINERARY.fare, source_id: 42 } }),
+      storedRow({ fareSnapshot: { ...MRT_ITINERARY.fare, effective_from: 'not-a-date' } }),
+      storedRow({ datasetVersion: undefined }),
+      storedRow({ sources: undefined }),
+    ];
+
+    for (const row of corruptRows) {
+      localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify([row]));
+      expect(readSavedTrips()).toEqual([]);
+    }
+  });
+
+  it('renders a valid itinerary after dropping corrupt stop data', async () => {
+    localStorage.setItem(
+      SAVED_TRIPS_KEY,
+      JSON.stringify([
+        storedRow({ itinerary: itineraryWithLegPatch({ stops: [null, null] }) }),
+      ]),
+    );
+    expect(readSavedTrips()).toEqual([]);
+
+    // Rendering the valid itinerary must not crash: the corrupt store never
+    // hands a null stop to StopsList.
+    renderDetail();
+    await user.click(screen.getByRole('button', { name: /show 3 stops/i }));
+    expect(screen.getAllByTestId('stop-row')).toHaveLength(4);
+  });
+
+  it('round-trips a valid saved row', () => {
+    localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify([storedRow()]));
+
+    const stored = readSavedTrips();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.itinerary).toEqual(MRT_ITINERARY);
+    expect(stored[0]?.sources).toEqual(MRT_PLAN.sources);
+    expect(stored[0]?.fareSnapshot).toEqual(MRT_ITINERARY.fare);
+    expect(stored[0]?.datasetVersion).toBe('2026-11-01');
+    expect(stored[0]?.savedAt).toBe('2026-11-01T08:00:00.000Z');
+  });
+
+  it('shows an honest failure status when storage rejects the save', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    });
+    renderDetail();
+
+    await user.click(screen.getByTestId('save-trip'));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/hindi nai-save ang biyahe/i);
+    expect(screen.getByTestId('save-trip')).toHaveTextContent('I-save');
+    expect(readSavedTrips()).toEqual([]);
+  });
+
   it('tolerates a corrupt saved-trips store and overwrites it on save', async () => {
     localStorage.setItem(SAVED_TRIPS_KEY, '{not-json');
     expect(readSavedTrips()).toEqual([]);
@@ -208,6 +293,33 @@ describe('TripDetailScreen', () => {
     );
   });
 
+  it('links only the fare rows the itinerary used for a mixed quote', () => {
+    const unrelatedFare: DataSource = {
+      id: 'crowd-reports',
+      name: 'Unrelated fare table',
+      publisher: 'Example',
+      url: 'https://example.test/fares',
+      licence_spdx: 'CC0-1.0',
+      licence_url: 'https://example.test/licence',
+      coverage: 'NCR',
+      last_checked: '2026-11-01',
+      attribution: 'Example',
+      used_for: ['fare lookup'],
+    };
+
+    render(
+      <TripDetailScreen
+        itinerary={{ ...MRT_ITINERARY, fare: { ...MRT_ITINERARY.fare, source_id: null } }}
+        sources={[...MRT_PLAN.sources, unrelatedFare]}
+      />,
+    );
+
+    // The rail row is one of this itinerary's own sources; the extra fare row
+    // belongs to another returned option and must not be linked.
+    expect(screen.getByRole('link', { name: /lrta/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /unrelated fare table/i })).toBeNull();
+  });
+
   it('virtualises a stop list longer than 30 rows and keeps the alight row last', () => {
     const manyStops = Array.from({ length: 40 }, (_value, index) => ({
       name: `Stop ${index + 1}`,
@@ -239,6 +351,9 @@ describe('/trip/:id route wiring', () => {
       'no live data — expected wait',
     );
     expect(screen.getByTestId('live-trip-summary')).toHaveTextContent('31 min');
+    // The plan came from the in-memory cache, not the saved-trips store.
+    expect(screen.getByTestId('live-trip-summary')).toHaveTextContent(/naka-cache na plano/i);
+    expect(screen.queryByText(/naka-save na plano/i)).toBeNull();
   });
 
   it('shows the honest notice when the plan cache is empty', async () => {
@@ -246,6 +361,12 @@ describe('/trip/:id route wiring', () => {
     renderApp('/trip/plan-not-in-cache');
 
     expect(await screen.findByRole('heading', { name: 'Wala nang ruta' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/hindi na available ang plan na ito sa device/i),
+    ).toBeInTheDocument();
+    // The notice must not claim the trip is absent from the saved-trips store
+    // without reading it (M2).
+    expect(screen.queryByText(/naka-save/i)).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: /bumalik sa search/i }));
@@ -261,7 +382,9 @@ describe('/trip/:id route wiring', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(cachedTrip('plan-cubao-ayala-1')).toBeDefined());
 
-    const detailActions = screen.getAllByRole('button', { name: 'Detalye' });
+    const detailActions = screen.getAllByRole('button', {
+      name: /^detalye ng rutang \d+ min$/i,
+    });
     expect(detailActions.length).toBeGreaterThan(0);
     await user.click(detailActions[0]!);
 

@@ -98,7 +98,7 @@ function WalkLeg({ leg }: { leg: LegDto }) {
   );
 }
 
-function RideLeg({ leg, index }: { leg: LegDto; index: number }) {
+function RideLeg({ leg }: { leg: LegDto }) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
   const label = modeLabel(leg.mode);
@@ -142,7 +142,6 @@ function RideLeg({ leg, index }: { leg: LegDto; index: number }) {
         </div>
       ) : null}
       <LandmarkLine hint={leg.landmarkHint} />
-      <span className="sr-only">Leg {index + 1}</span>
     </>
   );
 }
@@ -168,7 +167,7 @@ export function LegTimeline({ legs }: LegTimelineProps) {
         const label = `${modeLabel(leg.mode)} · leg ${index + 1} of ${legs.length}`;
         return (
           <TimelineRow key={`${leg.mode}-${leg.startTime}-${index}`} icon={Icon} label={label}>
-            {leg.mode === 'walk' ? <WalkLeg leg={leg} /> : <RideLeg leg={leg} index={index} />}
+            {leg.mode === 'walk' ? <WalkLeg leg={leg} /> : <RideLeg leg={leg} />}
           </TimelineRow>
         );
       })}
