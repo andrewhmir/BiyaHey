@@ -8,6 +8,7 @@ import type {
   SourceId,
 } from '@biyahey/shared';
 import { quoteFareForLeg, sumFares } from '@biyahey/shared';
+import { haversineM } from '../domain/geo.js';
 
 /**
  * Data the adapter needs beyond the raw MOTIS payload.
@@ -64,6 +65,13 @@ const RAIL_MODES: Readonly<Record<string, LegMode>> = Object.freeze({
  * and as the brief's `rail-mrt3`/`rail-lrt2`/`rail-lrt1` aliases. Rail lines v1
  * cannot price (`rail-ss`, `rail-mnc`, the future `rail-mrt9`) return
  * `undefined` and the whole itinerary is dropped rather than mispriced.
+ *
+ * Ferry ids are the Pasig River Ferry (MMDA, free) only: `ferry-prfs…`. The
+ * feed also carries long-distance ferries (`ferry-manilacoron`,
+ * `ferry-maniladavao…`) that are not MMDA services and have no v1 fare; pricing
+ * them as the free PRFS service would be false, so they return `undefined` too
+ * and the plan route counts them as unsupported. The publish stage also
+ * excludes both families from the built feed, so this is a defence in depth.
  */
 export function modeFromRouteId(routeId: string): LegMode | undefined {
   const normalized = normalizeRouteId(routeId);
@@ -83,7 +91,7 @@ export function modeFromRouteId(routeId: string): LegMode | undefined {
     case 'uv':
       return 'uv-express';
     case 'ferry':
-      return 'ferry';
+      return suffix.startsWith('prfs') ? 'ferry' : undefined;
     default:
       return undefined;
   }
@@ -104,6 +112,11 @@ export function normalizeRouteId(routeId: string): string | undefined {
  * `bus-` legs are priced as ordinary city buses and `uv-` legs as traditional
  * UV Express: the GTFS route id carries no aircon/class distinction, so v1
  * chooses the cheaper documented class instead of guessing a premium.
+ *
+ * P2P is formally deferred in v1 (ruling R48): MOTIS exposes PT2-style services
+ * as ordinary `bus-` routes and the feed publishes no machine-readable per-route
+ * P2P fare, so the adapter never emits a `p2p` leg and `/plan` never claims P2P.
+ * The fare engine's `p2p` rule stays for a later phase.
  */
 const FARE_MODE_BY_LEG: Readonly<Partial<Record<LegMode, FareMode>>> = Object.freeze({
   jeepney: 'jeepney',
@@ -116,8 +129,6 @@ const FARE_MODE_BY_LEG: Readonly<Partial<Record<LegMode, FareMode>>> = Object.fr
 });
 
 const WALK_ONLY_EFFECTIVE_FROM = '2026-09-28'; // LTFRB PUV matrix (spec §8.3)
-
-const EARTH_RADIUS_M = 6_371_000;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -137,20 +148,6 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function toRadians(degrees: number): number {
-  return (degrees * Math.PI) / 180;
-}
-
-/** Great-circle distance between two `[lat, lon]` pairs, in metres. */
-function haversineM(a: readonly [number, number], b: readonly [number, number]): number {
-  const dLat = toRadians(b[0] - a[0]);
-  const dLon = toRadians(b[1] - a[1]);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRadians(a[0])) * Math.cos(toRadians(b[0])) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function decodeValue(encoded: string, state: { index: number }): number | undefined {
@@ -280,11 +277,11 @@ function modeFromMotisMode(mode: string | undefined): LegMode | undefined {
     case 'BUS':
     case 'COACH':
       return 'bus';
-    case 'FERRY':
-      return 'ferry';
     default:
       // SUBWAY/METRO/TRAM/RAIL without a route id cannot be attributed to
-      // MRT-3/LRT-1/LRT-2, and v1 has no generic rail fare.
+      // MRT-3/LRT-1/LRT-2, and v1 has no generic rail fare. FERRY without a
+      // route id likewise cannot be proven to be the free MMDA PRFS service;
+      // pricing it as free would be a false claim.
       return undefined;
   }
 }
@@ -339,7 +336,22 @@ function landmarkHintFor(
   return null;
 }
 
-function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
+/**
+ * Sentinel returned by {@link mapLeg} when the leg is a mode/route family v1
+ * deliberately does not price (unsupported rail, non-PRFS ferry, P2P, ...).
+ *
+ * It is distinct from `undefined`, which means the leg was malformed. The
+ * distinction lets `/plan` count unsupported-mode drops in a response header
+ * without claiming every malformed payload was an unsupported mode.
+ */
+const UNSUPPORTED_MODE = Symbol('unsupportedMode');
+
+/** Sentinel returned by {@link mapItinerary} for an unsupported-mode itinerary. */
+const UNSUPPORTED_ITINERARY = Symbol('unsupportedItinerary');
+
+type LegMapResult = MappedLeg | typeof UNSUPPORTED_MODE | undefined;
+
+function mapLeg(raw: unknown, context: MapContext): LegMapResult {
   const record = asRecord(raw);
   if (record === undefined) {
     return undefined;
@@ -356,7 +368,7 @@ function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
     mode = modeFromMotisMode(motisMode);
   }
   if (mode === undefined) {
-    return undefined;
+    return UNSUPPORTED_MODE;
   }
 
   const from = mapPlace(record.from);
@@ -450,7 +462,10 @@ function mapLeg(raw: unknown, context: MapContext): MappedLeg | undefined {
     : { dto, quote, durationSeconds: rawDurationSeconds };
 }
 
-function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefined {
+function mapItinerary(
+  raw: unknown,
+  context: MapContext,
+): ItineraryDto | typeof UNSUPPORTED_ITINERARY | undefined {
   const record = asRecord(raw);
   if (record === undefined) {
     return undefined;
@@ -462,13 +477,30 @@ function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefin
   const mappedLegs: MappedLeg[] = [];
   for (const rawLeg of rawLegs) {
     const leg = mapLeg(rawLeg, context);
+    if (leg === UNSUPPORTED_MODE) {
+      // One unsupported mode (PNR, non-PRFS ferry, P2P, ...) makes the whole
+      // itinerary unpriceable; the caller counts it instead of mispricing it.
+      return UNSUPPORTED_ITINERARY;
+    }
     if (leg === undefined) {
-      // One unsupported mode (e.g. PNR) makes the whole itinerary unpriceable.
       return undefined;
     }
     mappedLegs.push(leg);
   }
   const legs = mappedLegs.map((leg) => leg.dto);
+
+  // Spec §9: a walk between two transit legs is the informal-transfer leg. The
+  // flag is set only where it is true, so access/egress walks and walk-only
+  // trips stay unlabelled rather than carrying a misleading `false`.
+  const hasTransitBefore = (index: number): boolean =>
+    legs.slice(0, index).some((leg) => leg.mode !== 'walk');
+  const hasTransitAfter = (index: number): boolean =>
+    legs.slice(index + 1).some((leg) => leg.mode !== 'walk');
+  legs.forEach((leg, index) => {
+    if (leg.mode === 'walk' && hasTransitBefore(index) && hasTransitAfter(index)) {
+      leg.informalTransfer = true;
+    }
+  });
 
   const startTime = asString(record.startTime) ?? legs[0].startTime;
   const endTime = asString(record.endTime) ?? legs[legs.length - 1].endTime;
@@ -610,6 +642,73 @@ export function isPlausibleItinerary(itinerary: ItineraryDto): boolean {
   return implausibleTransitLegs(itinerary).length === 0;
 }
 
+/** Result of {@link mapPlanItinerariesDetailed}. */
+export interface DetailedMapResult {
+  itineraries: ItineraryDto[];
+  /**
+   * Stable keys for itineraries dropped because they contain a mode/route
+   * family v1 does not price. Keys let `/plan` dedupe the count across its
+   * three MOTIS attempts, like the plausibility guard does.
+   */
+  unsupportedKeys: string[];
+}
+
+/**
+ * A stable identity for an unsupported raw itinerary.
+ *
+ * It cannot use {@link itineraryKey} (no DTO exists). The departure time plus
+ * the ordered route ids/modes is enough to recognise the same option arriving
+ * on the base call and the +10-minute retry.
+ */
+function unsupportedItineraryKey(record: JsonRecord): string {
+  const legs = asArray(record.legs) ?? [];
+  const identity = legs
+    .map((entry) => {
+      const leg = asRecord(entry);
+      if (leg === undefined) {
+        return '?';
+      }
+      return asString(leg.routeId) ?? asString(leg.mode)?.toUpperCase() ?? '?';
+    })
+    .join('>');
+  return `${asString(record.startTime) ?? asString(record.scheduledStartTime) ?? ''}|${identity}`;
+}
+
+/**
+ * Map a MOTIS `/api/v6/plan` payload and report unsupported-mode drops.
+ *
+ * `mapPlanItineraries` is the simple view over this function: it ignores the
+ * count. `/plan` uses this one to expose
+ * `x-biyahey-unsupported-dropped`, so a PNR or long-distance-ferry option
+ * disappears visibly instead of silently.
+ */
+export function mapPlanItinerariesDetailed(
+  payload: unknown,
+  context: MapContext,
+): DetailedMapResult {
+  const record = asRecord(payload);
+  if (record === undefined) {
+    return { itineraries: [], unsupportedKeys: [] };
+  }
+  const raw = [...(asArray(record.itineraries) ?? []), ...(asArray(record.direct) ?? [])];
+  const itineraries: ItineraryDto[] = [];
+  const unsupportedKeys: string[] = [];
+  for (const entry of raw) {
+    const itinerary = mapItinerary(entry, context);
+    if (itinerary === UNSUPPORTED_ITINERARY) {
+      const rawRecord = asRecord(entry);
+      if (rawRecord !== undefined) {
+        unsupportedKeys.push(unsupportedItineraryKey(rawRecord));
+      }
+      continue;
+    }
+    if (itinerary !== undefined) {
+      itineraries.push(itinerary);
+    }
+  }
+  return { itineraries, unsupportedKeys };
+}
+
 /**
  * Map a MOTIS `/api/v6/plan` payload into v2 DTOs.
  *
@@ -618,17 +717,5 @@ export function isPlausibleItinerary(itinerary: ItineraryDto): boolean {
  * `itineraries: []`.
  */
 export function mapPlanItineraries(payload: unknown, context: MapContext): ItineraryDto[] {
-  const record = asRecord(payload);
-  if (record === undefined) {
-    return [];
-  }
-  const raw = [...(asArray(record.itineraries) ?? []), ...(asArray(record.direct) ?? [])];
-  const itineraries: ItineraryDto[] = [];
-  for (const entry of raw) {
-    const itinerary = mapItinerary(entry, context);
-    if (itinerary !== undefined) {
-      itineraries.push(itinerary);
-    }
-  }
-  return itineraries;
+  return mapPlanItinerariesDetailed(payload, context).itineraries;
 }

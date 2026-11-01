@@ -13,11 +13,17 @@ import { createMotisClient, type MotisClient } from '../routing/motis-client.js'
 import {
   isPlausibleItinerary,
   itineraryKey,
-  mapPlanItineraries,
+  mapPlanItinerariesDetailed,
 } from '../routing/map-itinerary.js';
 
 /** Fewer than this and the route asks MOTIS again with a shifted departure. */
 const TARGET_ITINERARIES = 3;
+/**
+ * Spec §9 asks for the best 3–5 options, never MOTIS's full 10–12. The cap is
+ * applied after ranking and dedupe, so it keeps the order the client's
+ * preference chose (cheapest / fewest transfers / MOTIS ETA order) intact.
+ */
+export const MAX_ITINERARIES = 5;
 /** Second attempt: leave ten minutes later, catching the next vehicle batch. */
 const SHIFTED_DEPARTURE_MIN = 10;
 
@@ -37,6 +43,15 @@ export const MOTIS_CALLS_HEADER = 'x-biyahey-motis-calls';
  */
 export const IMPLAUSIBLE_DROPPED_HEADER = 'x-biyahey-implausible-dropped';
 
+/**
+ * Response header carrying the number of unique itineraries dropped because
+ * they use a mode/route family v1 cannot price: PNR lines (`rail-ss`,
+ * `rail-mnc`), the proposed MRT-9 (`rail-mrt9`), and ferries that are not the
+ * free MMDA PRFS service. The publish stage also excludes them from the feed,
+ * so a non-zero count here means an unexpected feed reached the router.
+ */
+export const UNSUPPORTED_DROPPED_HEADER = 'x-biyahey-unsupported-dropped';
+
 interface PlanAttempt {
   time: string;
   maxTransfers?: number;
@@ -48,6 +63,8 @@ interface CollectionResult {
   motisCalls: number;
   /** Unique itineraries the plausibility guard dropped, deduped across attempts. */
   implausibleDropped: number;
+  /** Unique itineraries dropped for a mode/route family v1 cannot price. */
+  unsupportedDropped: number;
 }
 
 function shiftedDeparture(departAt: string, minutes: number): string {
@@ -74,6 +91,7 @@ async function collectItineraries(
   let itineraries: ItineraryDto[] = [];
   let motisCalls = 0;
   const dropped = new Set<string>();
+  const unsupported = new Set<string>();
   for (const [index, attempt] of attempts.entries()) {
     try {
       motisCalls += 1;
@@ -85,8 +103,14 @@ async function collectItineraries(
       });
       // Drop impossible geometry before it can count toward the three-option
       // target or reach the fare engine (R10 feed defect; see map-itinerary.ts).
+      // Unsupported modes (PNR, non-PRFS ferry, P2P) are counted separately so
+      // the feed gap is visible instead of looking like an empty corridor.
+      const mapped = mapPlanItinerariesDetailed(payload, context);
+      for (const key of mapped.unsupportedKeys) {
+        unsupported.add(key);
+      }
       const plausible: ItineraryDto[] = [];
-      for (const itinerary of mapPlanItineraries(payload, context)) {
+      for (const itinerary of mapped.itineraries) {
         if (isPlausibleItinerary(itinerary)) {
           plausible.push(itinerary);
         } else {
@@ -107,7 +131,12 @@ async function collectItineraries(
       break;
     }
   }
-  return { itineraries, motisCalls, implausibleDropped: dropped.size };
+  return {
+    itineraries,
+    motisCalls,
+    implausibleDropped: dropped.size,
+    unsupportedDropped: unsupported.size,
+  };
 }
 
 /**
@@ -133,12 +162,19 @@ export function registerPlanRoutes(
     const plan = parsePlanRequest(request.body);
     const departAt = plan.departAt ?? new Date().toISOString();
     const collected = await collectItineraries(client, curated, plan, departAt);
-    const itineraries = applyPreferences(collected.itineraries, plan.preferences);
+    // Spec §9 / final-review item 5: rank and dedupe first, then serve the best
+    // 3–5 options. The cap never drops below the three-option target because a
+    // corridor with fewer options already triggered the extra MOTIS attempts.
+    const itineraries = applyPreferences(collected.itineraries, plan.preferences).slice(
+      0,
+      MAX_ITINERARIES,
+    );
 
-    // Observable proof for the R37 stress probe and for the R10 guard: the
-    // fan-out actually made N calls and the feed's bad geometry was dropped.
+    // Observable proof for the R37 stress probe, the R10 guard and the mode
+    // gate: the fan-out actually made N calls and both drop counts are visible.
     reply.header(MOTIS_CALLS_HEADER, String(collected.motisCalls));
     reply.header(IMPLAUSIBLE_DROPPED_HEADER, String(collected.implausibleDropped));
+    reply.header(UNSUPPORTED_DROPPED_HEADER, String(collected.unsupportedDropped));
 
     for (const itinerary of itineraries) {
       // Reject an id absent from the active registry with 422 through the

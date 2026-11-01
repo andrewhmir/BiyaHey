@@ -18,10 +18,12 @@ const nonsenseFixture = loadFixture<unknown>('motis-geocode-nonsense.json');
 async function search(
   app: ReturnType<typeof buildApp>,
   query: string,
+  near?: string,
 ): Promise<{ statusCode: number; body: SearchResponse }> {
+  const nearParam = near === undefined ? '' : `&near=${encodeURIComponent(near)}`;
   const res = await app.inject({
     method: 'GET',
-    url: `/search?q=${encodeURIComponent(query)}`,
+    url: `/search?q=${encodeURIComponent(query)}${nearParam}`,
   });
   return { statusCode: res.statusCode, body: res.json() as SearchResponse };
 }
@@ -130,6 +132,51 @@ describe('GET /search', () => {
     expect(statusCode).toBe(200);
     expect(body.partial).toBe(true);
     expect(body.groups.stops).toEqual([]);
+  });
+
+  it('attaches a haversine distance when near is supplied', async () => {
+    const app = buildApp({ motisFetch: async () => cubaoFixture });
+    // The fixture's Cubao stop is at 14.6195, 121.051; searching from exactly
+    // that point must report a zero-ish distance for it and a real one for the
+    // other rows.
+    const { statusCode, body } = await search(app, 'Cubao', '14.6195,121.051');
+
+    expect(statusCode).toBe(200);
+    const rows = [...body.groups.stops, ...body.groups.landmarks];
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(typeof row.distanceM, row.name).toBe('number');
+      expect(row.distanceM, row.name).toBeGreaterThanOrEqual(0);
+    }
+    const cubaoStop = body.groups.stops.find((stop) => stop.name === 'Cubao');
+    expect(cubaoStop?.distanceM).toBeLessThan(10);
+    expect(Math.max(...rows.map((row) => row.distanceM ?? 0))).toBeGreaterThan(1_000);
+    await app.close();
+  });
+
+  it('omits distance when near is not supplied', async () => {
+    const app = buildApp({ motisFetch: async () => cubaoFixture });
+    const { statusCode, body } = await search(app, 'Cubao');
+
+    expect(statusCode).toBe(200);
+    const rows = [...body.groups.stops, ...body.groups.landmarks];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('distanceM');
+    }
+    await app.close();
+  });
+
+  it('rejects a malformed near with 400 instead of guessing a point', async () => {
+    const app = buildApp({ motisFetch: async () => cubaoFixture });
+    for (const near of ['abc', '14.6', '91,121', '14.6,181', '14.6,']) {
+      const { statusCode, body } = await search(app, 'Cubao', near);
+      expect(statusCode, near).toBe(400);
+      expect((body as unknown as { error?: { code: string } }).error?.code, near).toBe(
+        'INVALID_BODY',
+      );
+    }
+    await app.close();
   });
 
   it('never 500s when the router is unavailable', async () => {

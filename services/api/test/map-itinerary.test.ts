@@ -9,6 +9,7 @@ import {
   implausibleTransitLegs,
   isPlausibleItinerary,
   mapPlanItineraries,
+  mapPlanItinerariesDetailed,
   modeFromRouteId,
   polylineLengthM,
 } from '../src/routing/map-itinerary.js';
@@ -58,6 +59,13 @@ describe('modeFromRouteId', () => {
     expect(modeFromRouteId('rail-mnc')).toBeUndefined();
     expect(modeFromRouteId('rail-mrt9')).toBeUndefined();
     expect(modeFromRouteId('taxi-1')).toBeUndefined();
+  });
+
+  it('prices only the MMDA PRFS ferry family, not long-distance ferries', () => {
+    expect(modeFromRouteId('gtfs_ferry-prfsescoltapinagbuhatan')).toBe('ferry');
+    expect(modeFromRouteId('ferry-prfsguadelupeescolta')).toBe('ferry');
+    expect(modeFromRouteId('gtfs_ferry-manilacoron')).toBeUndefined();
+    expect(modeFromRouteId('ferry-maniladavaocitygeneralsantosiloilomanila')).toBeUndefined();
   });
 });
 
@@ -190,5 +198,133 @@ describe('decodePolyline', () => {
 
     const lengthM = polylineLengthM(points);
     expect(Math.abs(lengthM - leg.distance)).toBeLessThan(10);
+  });
+});
+
+describe('unsupported-mode gate and informal transfers', () => {
+  const emptyContext = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+  };
+  const start = '2026-11-02T08:00:00Z';
+
+  function busLeg(routeId: string, from: string, to: string, distance = 5_000) {
+    return {
+      mode: 'BUS',
+      routeId,
+      routeShortName: routeId.split('-').pop(),
+      from: { name: from, lat: 14.62, lon: 121.05 },
+      to: { name: to, lat: 14.63, lon: 121.06 },
+      startTime: start,
+      endTime: start,
+      duration: 600,
+      distance,
+    };
+  }
+
+  it('reports an unsupported rail itinerary instead of mapping it', () => {
+    const { itineraries, unsupportedKeys } = mapPlanItinerariesDetailed(
+      { itineraries: [{ startTime: start, legs: [busLeg('gtfs_rail-ss', 'A', 'B')] }] },
+      emptyContext,
+    );
+    expect(itineraries).toEqual([]);
+    expect(unsupportedKeys).toHaveLength(1);
+  });
+
+  it('reports a non-PRFS ferry itinerary as unsupported', () => {
+    const { itineraries, unsupportedKeys } = mapPlanItinerariesDetailed(
+      {
+        itineraries: [
+          { startTime: start, legs: [busLeg('gtfs_ferry-manilacoron', 'A', 'B')] },
+        ],
+      },
+      emptyContext,
+    );
+    expect(itineraries).toEqual([]);
+    expect(unsupportedKeys).toHaveLength(1);
+  });
+
+  it('keeps a PRFS ferry itinerary and prices it free', () => {
+    const { itineraries } = mapPlanItinerariesDetailed(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [busLeg('gtfs_ferry-prfsescoltapinagbuhatan', 'A', 'B', 12_000)],
+          },
+        ],
+      },
+      emptyContext,
+    );
+    expect(itineraries).toHaveLength(1);
+    const leg = itineraries[0]?.legs[0];
+    expect(leg?.mode).toBe('ferry');
+    expect(itineraries[0]?.fare.amount).toBe(0);
+    expect(itineraries[0]?.fare.source_id).toBe('mmda-ferry');
+  });
+
+  it('marks a walk between two transit legs as an informal transfer', () => {
+    const payload = {
+      itineraries: [
+        {
+          duration: 2_000,
+          startTime: start,
+          endTime: start,
+          transfers: 1,
+          legs: [
+            {
+              mode: 'WALK',
+              from: { name: 'START', lat: 14.61, lon: 121.05 },
+              to: { name: 'A', lat: 14.62, lon: 121.05 },
+              startTime: start,
+              endTime: start,
+              duration: 240,
+              distance: 300,
+            },
+            busLeg('gtfs_bus-1', 'A', 'B'),
+            {
+              mode: 'WALK',
+              from: { name: 'B', lat: 14.63, lon: 121.06 },
+              to: { name: 'C', lat: 14.631, lon: 121.061 },
+              startTime: start,
+              endTime: start,
+              duration: 180,
+              distance: 150,
+            },
+            busLeg('gtfs_bus-2', 'C', 'END'),
+          ],
+        },
+      ],
+    };
+    const itinerary = mapPlanItineraries(payload, emptyContext)[0];
+    expect(itinerary?.legs).toHaveLength(4);
+    expect(itinerary?.legs[0]?.informalTransfer).toBeUndefined();
+    expect(itinerary?.legs[2]?.informalTransfer).toBe(true);
+  });
+
+  it('does not label a walk-only trip as an informal transfer', () => {
+    const itinerary = mapPlanItineraries(
+      {
+        itineraries: [
+          {
+            startTime: start,
+            legs: [
+              {
+                mode: 'WALK',
+                from: { name: 'START', lat: 14.61, lon: 121.05 },
+                to: { name: 'END', lat: 14.62, lon: 121.05 },
+                startTime: start,
+                endTime: start,
+                duration: 240,
+                distance: 300,
+              },
+            ],
+          },
+        ],
+      },
+      emptyContext,
+    )[0];
+    expect(itinerary?.legs[0]?.informalTransfer).toBeUndefined();
   });
 });

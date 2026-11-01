@@ -1,9 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import type { SearchGroup, SearchResponse, SearchResultDto } from '@biyahey/shared';
+import { haversineM } from '../domain/geo.js';
+import { InvalidBodyError } from '../errors.js';
 import { createMotisClient } from '../routing/motis-client.js';
 
 /** Below this length the endpoint answers `partial: true` without a router call. */
 const MIN_QUERY_LENGTH = 3;
+
+/** Caller's origin for result distances (`?near=lat,lon`). */
+interface NearPoint {
+  lat: number;
+  lon: number;
+}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -59,7 +67,7 @@ function localityOf(record: JsonRecord): string | null {
   return city ?? fallback ?? null;
 }
 
-function mapSearchResult(raw: unknown): SearchResultDto | undefined {
+function mapSearchResult(raw: unknown, near?: NearPoint): SearchResultDto | undefined {
   const record = asRecord(raw);
   if (record === undefined) {
     return undefined;
@@ -88,6 +96,13 @@ function mapSearchResult(raw: unknown): SearchResultDto | undefined {
     // never calls Photon, so the honest registry id is `osm`.
     source_id: 'osm',
   };
+  if (near !== undefined) {
+    // Spec §10 lists a distance on every search result. It is measured from
+    // the caller's point, so it is present only when `?near=` was supplied;
+    // inventing a distance from an arbitrary (e.g. city-centre) point would be
+    // a false claim.
+    result.distanceM = Math.round(haversineM([near.lat, near.lon], [lat, lon]));
+  }
   const modes = asArray(record.modes)?.filter(
     (mode): mode is string => typeof mode === 'string' && mode.length > 0,
   );
@@ -104,14 +119,14 @@ function mapSearchResult(raw: unknown): SearchResultDto | undefined {
  * STREET, HOUSE, ...) goes to `landmarks`. `routes` and `saved` are reserved
  * groups and always empty in v1.
  */
-function mapGeocode(raw: unknown): { groups: SearchGroup; dropped: number } {
+function mapGeocode(raw: unknown, near?: NearPoint): { groups: SearchGroup; dropped: number } {
   const groups = emptyGroups();
   if (!Array.isArray(raw)) {
     return { groups, dropped: 1 };
   }
   let dropped = 0;
   for (const entry of raw) {
-    const result = mapSearchResult(entry);
+    const result = mapSearchResult(entry, near);
     if (result === undefined) {
       dropped += 1;
       continue;
@@ -129,6 +144,45 @@ function readQuery(value: unknown): string {
   const record = asRecord(value);
   const raw = record === undefined ? undefined : record.q;
   return typeof raw === 'string' ? raw.trim() : '';
+}
+
+/**
+ * Parse the optional `near=lat,lon` query parameter.
+ *
+ * Returns `undefined` when absent (so no distance is attached). A malformed
+ * value is a client error, not a silent fallback: the PWA must not receive
+ * distances measured from a different point than the one it asked about.
+ */
+function readNear(value: unknown): NearPoint | undefined {
+  const record = asRecord(value);
+  const raw = record === undefined ? undefined : record.near;
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== 'string') {
+    throw new InvalidBodyError('Invalid query parameter near: expected "lat,lon"');
+  }
+  const parts = raw.split(',').map((part) => part.trim());
+  if (parts.length !== 2) {
+    throw new InvalidBodyError('Invalid query parameter near: expected "lat,lon"');
+  }
+  const lat = Number(parts[0]);
+  const lon = Number(parts[1]);
+  if (
+    parts[0].length === 0 ||
+    parts[1].length === 0 ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    lat < -90 ||
+    lat > 90 ||
+    lon < -180 ||
+    lon > 180
+  ) {
+    throw new InvalidBodyError(
+      `Invalid query parameter near: "${raw}" is not a lat,lon pair in range`,
+    );
+  }
+  return { lat, lon };
 }
 
 /** A `[start, length]` span of one whitespace-delimited token. */
@@ -219,12 +273,16 @@ export function registerSearchRoutes(app: FastifyInstance): void {
 
   app.get('/search', async (request): Promise<SearchResponse> => {
     const query = readQuery(request.query);
+    // Validated before the fallback `catch` below: a malformed `near` is a
+    // client error (400), not a fuzzy-result fallback. Distance is measured
+    // from this point only when the caller supplied it.
+    const near = readNear(request.query);
     if (query.length < MIN_QUERY_LENGTH) {
       return partialResponse();
     }
     try {
       const raw = await client.geocode(query);
-      const { groups, dropped } = mapGeocode(raw);
+      const { groups, dropped } = mapGeocode(raw, near);
       const total = groups.stops.length + groups.landmarks.length;
       const complete = hasCompleteMatch(raw, query);
       return { partial: total === 0 || dropped > 0 || !complete, groups };

@@ -162,6 +162,9 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', { tags
           body.itineraries.length,
           `${trip.name}: itineraries >= ${trip.minItineraries}`,
         ).toBeGreaterThanOrEqual(trip.minItineraries);
+        // Spec §9 / final-review item 5: the BFF serves the best 3–5 options,
+        // never MOTIS's full 10–12, so the upper bound is part of the contract.
+        expect(body.itineraries.length, `${trip.name}: itineraries <= 5`).toBeLessThanOrEqual(5);
 
         const modes = [...new Set(body.itineraries.flatMap((itinerary) => itinerary.modes))].sort();
         for (const required of trip.requiredModes) {
@@ -265,6 +268,20 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', { tags
             .join('\n'),
       );
       expect(report.searchP95Ms, 'spec §3.2: p95 search <= 1500 ms').toBeLessThanOrEqual(1500);
+
+      // Spec §10: when the caller supplies a point, every result carries a
+      // distance. Probe from the live Cubao stop coordinate.
+      const nearResponse = await fetch(
+        `${apiUrl}/search?q=Cubao&near=14.6195,121.051`,
+      );
+      expect(nearResponse.status, 'near: GET /search status').toBe(200);
+      const nearBody = (await nearResponse.json()) as SearchResponse;
+      const nearRows = [...nearBody.groups.stops, ...nearBody.groups.landmarks];
+      expect(nearRows.length, 'near: search returned rows').toBeGreaterThan(0);
+      for (const row of nearRows) {
+        expect(typeof row.distanceM, `near: ${row.name} distanceM`).toBe('number');
+        expect(row.distanceM, `near: ${row.name} distanceM >= 0`).toBeGreaterThanOrEqual(0);
+      }
     },
     120_000,
   );

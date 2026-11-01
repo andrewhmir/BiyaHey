@@ -7,7 +7,12 @@ import type { ItineraryDto, PlanResponse } from '@biyahey/shared';
 import { resolveDataDir } from '@biyahey/shared/provenance';
 import { buildApp } from '../src/app.js';
 import { isPlausibleItinerary } from '../src/routing/map-itinerary.js';
-import { IMPLAUSIBLE_DROPPED_HEADER, MOTIS_CALLS_HEADER } from '../src/routes/plan.js';
+import {
+  IMPLAUSIBLE_DROPPED_HEADER,
+  MAX_ITINERARIES,
+  MOTIS_CALLS_HEADER,
+  UNSUPPORTED_DROPPED_HEADER,
+} from '../src/routes/plan.js';
 
 const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -332,13 +337,96 @@ describe('POST /plan', () => {
       transit.routeId = 'gtfs_rail-ss';
     }
     const app = planApp({ itineraries: [unsupported] });
-    const { statusCode, body } = await postPlan(app, {
+    const { statusCode, headers, body } = await postPlan(app, {
       origin: CUBAO,
       destination: AYALA,
       departAt: DEPART_AT,
     });
     expect(statusCode).toBe(200);
     expect(body.itineraries).toEqual([]);
+    // The mode gate is observable: one unsupported option was dropped, not
+    // silently turned into an empty corridor.
+    expect(headers[UNSUPPORTED_DROPPED_HEADER]).toBe('1');
+  });
+
+  it('drops and counts a non-PRFS ferry instead of pricing it as the free MMDA ferry', async () => {
+    const unsupported = structuredClone(planFixture.itineraries[0]);
+    const transit = unsupported.legs.find((leg) => leg.mode === 'SUBWAY');
+    expect(transit).toBeDefined();
+    if (transit !== undefined) {
+      transit.mode = 'FERRY';
+      transit.routeId = 'gtfs_ferry-manilacoron';
+      transit.routeShortName = 'Manila - Coron';
+      transit.displayName = 'Manila - Coron';
+    }
+    const app = planApp({ itineraries: [unsupported] });
+    const { statusCode, headers, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+    expect(statusCode).toBe(200);
+    expect(body.itineraries).toEqual([]);
+    expect(headers[UNSUPPORTED_DROPPED_HEADER]).toBe('1');
+    // Nothing plausible arrived, so the fan-out ran all three attempts and the
+    // same unsupported itinerary was counted once (deduped across attempts).
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('3');
+  });
+
+  it('caps a crowded corridor at five ranked itineraries', async () => {
+    // The walk-only fixture is a MOTIS `direct` entry, not an itinerary.
+    const base = (walkOnlyFixture.direct ?? walkOnlyFixture.itineraries)[0];
+    if (base === undefined) {
+      throw new Error('walk-only fixture has no entry');
+    }
+    expect(base).toBeDefined();
+    const crowded = Array.from({ length: 7 }, (_, index) => {
+      const itinerary = structuredClone(base);
+      const start = Date.parse(base.startTime) + index * 60_000;
+      const end = Date.parse(base.endTime) + index * 60_000;
+      itinerary.startTime = new Date(start).toISOString();
+      itinerary.endTime = new Date(end).toISOString();
+      return itinerary;
+    });
+
+    const app = planApp({ itineraries: crowded });
+    const { statusCode, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: { lat: 14.618, lon: 121.054 },
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    expect(MAX_ITINERARIES).toBe(5);
+    expect(body.itineraries).toHaveLength(5);
+    // The cap preserves the incoming (ETA) order: the five earliest departures.
+    expect(body.itineraries.map((itinerary) => itinerary.startTime)).toEqual(
+      crowded.slice(0, 5).map((itinerary) => itinerary.startTime),
+    );
+  });
+
+  it('marks only walk legs between two transit legs as informal transfers', async () => {
+    const start = '2026-11-02T08:00:00Z';
+    const legs = [
+      { mode: 'WALK', from: { name: 'START', lat: 14.619, lon: 121.053 }, to: { name: 'Stop A', lat: 14.62, lon: 121.054 }, startTime: start, endTime: start, duration: 300, distance: 400 },
+      { mode: 'BUS', routeId: 'gtfs_bus-1', routeShortName: '1', from: { name: 'Stop A', lat: 14.62, lon: 121.054 }, to: { name: 'Stop B', lat: 14.63, lon: 121.06 }, startTime: start, endTime: start, duration: 600, distance: 6_000 },
+      { mode: 'WALK', from: { name: 'Stop B', lat: 14.63, lon: 121.06 }, to: { name: 'Stop C', lat: 14.631, lon: 121.061 }, startTime: start, endTime: start, duration: 180, distance: 200 },
+      { mode: 'BUS', routeId: 'gtfs_bus-2', routeShortName: '2', from: { name: 'Stop C', lat: 14.631, lon: 121.061 }, to: { name: 'END', lat: 14.64, lon: 121.07 }, startTime: start, endTime: start, duration: 500, distance: 5_000 },
+    ];
+    const app = planApp({ itineraries: [{ duration: 1_580, startTime: start, endTime: start, transfers: 1, legs }] });
+    const { statusCode, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    const itinerary = body.itineraries[0];
+    expect(itinerary).toBeDefined();
+    expect(itinerary?.legs).toHaveLength(4);
+    // Access walk is not a transfer; the middle walk is the informal transfer.
+    expect(itinerary?.legs[0]?.informalTransfer).toBeUndefined();
+    expect(itinerary?.legs[2]?.informalTransfer).toBe(true);
   });
 
   it('maps a curated jeepney leg to its landmark and inventory source', async () => {
