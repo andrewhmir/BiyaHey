@@ -3,6 +3,7 @@ import { planMrt3CubaoAyalaResponse } from '../test/msw/handlers';
 import {
   RECENT_MAX_AGE_DAYS,
   RECENT_TRIPS_KEY,
+  RECENT_TRIPS_LIMIT,
   SAVED_TRIPS_KEY,
   datasetVersionFor,
   deleteSavedTrip,
@@ -141,6 +142,28 @@ describe('saved-trips store (Task 6 shape preserved)', () => {
     }
   });
 
+  it('does not let a v1 save erase a newer-schema payload (I2)', () => {
+    const newer = JSON.stringify({ v: 99, data: [{ future: true }] });
+    localStorage.setItem(SAVED_TRIPS_KEY, newer);
+
+    expect(saveTrip(ITINERARY, PLAN.sources)).toBeNull();
+    expect(localStorage.getItem(SAVED_TRIPS_KEY)).toBe(newer);
+    expect(readSavedTrips()).toEqual([]);
+  });
+
+  it('rejects a save whose read-back still shows the old snapshot (M10)', () => {
+    saveTrip(ITINERARY, PLAN.sources, new Date('2026-10-01T08:00:00.000Z'));
+    // A storage shim that silently no-ops must not look like a durable save
+    // just because an older row with the same itinerary id exists.
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {});
+    try {
+      expect(saveTrip(ITINERARY, PLAN.sources, new Date('2026-11-01T08:00:00.000Z'))).toBeNull();
+      expect(findSavedTrip(ITINERARY.id)?.savedAt).toBe('2026-10-01T08:00:00.000Z');
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it('derives the dataset label from the newest provenance check date', () => {
     expect(datasetVersionFor(PLAN.sources)).toBe('2026-11-01');
     expect(datasetVersionFor([])).toBe('unknown');
@@ -185,5 +208,22 @@ describe('recent trips', () => {
       'second-recent',
     ]);
     expect(readRecentTrips(NOW)).toHaveLength(2);
+  });
+
+  it('caps the list at the 20 most recent views (M6)', () => {
+    const base = Date.parse('2026-10-20T00:00:00.000Z');
+    for (let index = 0; index < 21; index += 1) {
+      recordRecentTrip(
+        { ...ITINERARY, id: `recent-${index}` },
+        PLAN.sources,
+        new Date(base + index * 60_000),
+      );
+    }
+
+    const rows = readRecentTrips(NOW);
+    expect(RECENT_TRIPS_LIMIT).toBe(20);
+    expect(rows).toHaveLength(20);
+    expect(rows[0]?.itinerary.id).toBe('recent-20');
+    expect(rows.map((trip) => trip.itinerary.id)).not.toContain('recent-0');
   });
 });

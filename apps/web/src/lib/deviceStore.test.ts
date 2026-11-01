@@ -58,6 +58,14 @@ describe('deviceStore', () => {
     expect(localStorage.getItem(deviceKey('demo'))).toBe(newer);
   });
 
+  it('refuses to overwrite a newer schema from an old build (I2)', () => {
+    const newer = JSON.stringify({ v: 99, data: ['from-the-future'] });
+    localStorage.setItem(deviceKey('demo'), newer);
+
+    expect(writeDeviceRecord('demo', ['from-the-past'])).toBe(false);
+    expect(localStorage.getItem(deviceKey('demo'))).toBe(newer);
+  });
+
   it('drops corrupt JSON so it cannot be re-read forever', () => {
     localStorage.setItem(deviceKey('demo'), '{not-json');
 

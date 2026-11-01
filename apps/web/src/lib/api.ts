@@ -19,6 +19,17 @@ export const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? 'http://loca
 export const REQUEST_TIMEOUT_MS = 5_000;
 
 /**
+ * Plan §Task 8's 3 s bound for `POST /plan`, enforced client-side.
+ *
+ * The service worker cannot enforce it: Workbox's NetworkFirst timeout path
+ * calls `cacheMatch(request)`, and the Cache API rejects a non-GET request, so
+ * a registered `/plan` route would turn a slow plan into a network error
+ * instead of falling back. Enforcing the budget here gives the caller an honest
+ * typed `timeout` failure it can render a retry state for (R72).
+ */
+export const PLAN_TIMEOUT_MS = 3_000;
+
+/**
  * Machine-readable failure categories.
  *
  * `network` means the request never reached the API, `timeout` means it never
@@ -112,10 +123,11 @@ function mapFailure(
 /**
  * Typed JSON fetch wrapper for the BFF.
  *
- * Every request is bounded by a 5 s timeout and cancelled when the caller's
- * `signal` aborts; both paths share one internal `AbortController`. The fetch
- * is raced against the abort signal so an aborted typeahead request can never
- * resolve late and win over a newer query.
+ * Every request is bounded by a timeout (`timeoutMs`, default 5 s — plan
+ * requests pass the 3 s {@link PLAN_TIMEOUT_MS}) and cancelled when the
+ * caller's `signal` aborts; both paths share one internal `AbortController`.
+ * The fetch is raced against the abort signal so an aborted typeahead request
+ * can never resolve late and win over a newer query.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal, timeoutMs = REQUEST_TIMEOUT_MS } = options;
@@ -226,7 +238,13 @@ export async function searchPlaces(
   return request<SearchResponse>(`/search?${params.toString()}`, { signal: options.signal });
 }
 
-/** `POST /plan`; exposed for Task 5's route-options screen. */
+/**
+ * `POST /plan`; exposed for Task 5's route-options screen.
+ *
+ * Uses the plan-specific 3 s budget rather than the generic 5 s: the service
+ * worker no longer registers a `/plan` route (it cannot cache a POST), so this
+ * per-request timeout is the only place the mandated bound can be enforced.
+ */
 export async function planTrip(
   input: PlanRequest,
   options: CallOptions = {},
@@ -235,6 +253,7 @@ export async function planTrip(
     method: 'POST',
     body: input,
     signal: options.signal,
+    timeoutMs: PLAN_TIMEOUT_MS,
   });
 }
 

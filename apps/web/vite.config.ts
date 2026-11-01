@@ -7,9 +7,11 @@ import { workboxRuntimeCaching } from './src/features/saved/offlineCache';
 export default defineConfig({
   plugins: [
     react(),
-    // Task 8: app-shell precache + the four runtime-caching rules. The rules
+    // Task 8: app-shell precache + the GET runtime-caching rules. The rules
     // live in `src/features/saved/offlineCache.ts` as pure data so they can be
     // unit-tested without a browser; this config only hands them to Workbox.
+    // `POST /plan` is intentionally absent: it cannot be cached and its 3 s
+    // bound is enforced by `planTrip`'s per-request timeout (R72).
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
@@ -58,9 +60,6 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
-        // One MapLibre chunk is larger than Workbox's 2 MiB default; the shell
-        // must still be precached for the offline saved-trip path to boot.
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: workboxRuntimeCaching(),
       },
     }),

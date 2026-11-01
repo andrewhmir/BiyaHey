@@ -307,9 +307,18 @@ export function saveTrip(
     return null;
   }
   // Read the entry back so a storage shim that silently no-ops is not
-  // mistaken for a durable save.
+  // mistaken for a durable save. `savedAt` and the fare snapshot are compared,
+  // not just the id: an older row with the same itinerary id would otherwise
+  // make a no-op write look successful (M10).
   const persisted = readSavedTrips().find((trip) => trip.itinerary.id === itinerary.id);
-  return persisted === undefined ? null : entry;
+  if (
+    persisted === undefined ||
+    persisted.savedAt !== entry.savedAt ||
+    JSON.stringify(persisted.fareSnapshot) !== JSON.stringify(entry.fareSnapshot)
+  ) {
+    return null;
+  }
+  return entry;
 }
 
 /**

@@ -50,8 +50,16 @@ export function TripDetailScreen({
   const [saved, setSaved] = useState(() => isTripSaved(itinerary.id));
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const arrival = formatClockTime(itinerary.endTime);
+  // A detail opened from the saved store *is* the stored snapshot. Saving again
+  // would replace it with the same itinerary but a new `savedAt`, restarting the
+  // 30-day staleness clock while the fare stays the old one (M1), so the CTA is
+  // deliberately disabled rather than silently re-dating the snapshot.
+  const fromSavedStore = savedSnapshotAt !== undefined;
 
   function handleSave(): void {
+    if (fromSavedStore) {
+      return;
+    }
     const entry = saveTrip(itinerary, sources);
     if (entry === null) {
       // Storage refused the write (quota, private mode): never claim a save
@@ -123,7 +131,8 @@ export function TripDetailScreen({
               type="button"
               data-testid="save-trip"
               onClick={handleSave}
-              className="flex min-h-12 flex-1 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-base font-medium text-on-surface transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              disabled={fromSavedStore}
+              className="flex min-h-12 flex-1 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-base font-medium text-on-surface transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-surface-container-lowest"
             >
               {saved ? 'Nai-save' : 'I-save'}
             </button>

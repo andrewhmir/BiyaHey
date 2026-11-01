@@ -1,9 +1,15 @@
 /**
- * Device store — the one place the PWA reads, writes or drops localStorage.
+ * Device store — the versioned localStorage wrapper for Task 8's device data.
  *
  * Every key lives in the `biyahey:v1:*` namespace and every payload is wrapped
- * in a versioned envelope (`{ v: 1, data }`). That fixes three problems the
- * Task 4/6 code had to solve ad hoc:
+ * in a versioned envelope (`{ v: 1, data }`). New device data (saved and recent
+ * trips) must go through this module; the Task 4 search cache
+ * (`features/search/searchCache.ts`) and saved places
+ * (`features/search/savedPlaces.ts`) still call `window.localStorage` directly
+ * under the same prefix. Retrofitting them is a recorded follow-up (M3), not a
+ * property this file already has.
+ *
+ * The wrapper fixes three problems the Task 4/6 code had to solve ad hoc:
  *
  * - **Schema drift.** A stored payload carries the schema version it was
  *   written with. The migration guard only reads envelopes this build
@@ -15,13 +21,13 @@
  * - **Quota/private mode.** Every `getItem`/`setItem`/`removeItem` call is
  *   wrapped. A failed write returns `false`; it never throws at the rider. A
  *   corrupt payload is dropped instead of being re-read on every render.
- * - **One writer.** Feature modules never touch `window.localStorage`
- *   directly; they call {@link readDeviceRecord} / {@link writeDeviceRecord}.
- *   The saved-trips store in `lib/savedTripsStore.ts` is the only writer for
- *   the saved/recent lists (R63/R66).
+ * - **One writer.** Saved/recent feature modules never touch
+ *   `window.localStorage` directly; they call {@link readDeviceRecord} /
+ *   {@link writeDeviceRecord}. The saved-trips store in
+ *   `lib/savedTripsStore.ts` is the only writer for those lists (R63/R66).
  */
 
-/** Namespace shared by search cache, saved trips and future device data. */
+/** Namespace shared by the Task 4 search cache, saved trips and future device data. */
 export const DEVICE_KEY_PREFIX = 'biyahey:v1';
 
 /** Schema version this build reads and writes. */
@@ -114,13 +120,39 @@ export function readDeviceRecord<T>(
   return legacy;
 }
 
-/** Write one record. Returns whether it persisted; never throws. */
+/**
+ * Write one record. Returns whether it persisted; never throws.
+ *
+ * Refuses to overwrite an envelope written by another schema version (I2): an
+ * old build that cannot read `{v: 2, …}` must not erase it when the rider saves
+ * something else. Callers already treat `false` as "the write did not persist"
+ * and surface that to the rider.
+ */
 export function writeDeviceRecord<T>(name: string, data: T): boolean {
   const store = storage();
   if (store === null) {
     return false;
   }
   try {
+    const existing = store.getItem(deviceKey(name));
+    if (existing !== null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(existing) as unknown;
+      } catch {
+        // Corrupt JSON has no owner to protect; the read path drops it and the
+        // new value replaces it.
+        parsed = undefined;
+      }
+      if (
+        isRecord(parsed) &&
+        typeof parsed.v === 'number' &&
+        parsed.v !== DEVICE_SCHEMA_VERSION
+      ) {
+        // A newer (or unknown) build owns this payload; do not downgrade it.
+        return false;
+      }
+    }
     const envelope: DeviceEnvelope = { v: DEVICE_SCHEMA_VERSION, data };
     store.setItem(deviceKey(name), JSON.stringify(envelope));
     return true;

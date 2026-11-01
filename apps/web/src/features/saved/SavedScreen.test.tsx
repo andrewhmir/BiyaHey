@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,12 +13,13 @@ import {
 } from '../../lib/savedTripsStore';
 import { AppRoutes } from '../../routes';
 import {
+  fareStatusErrorHandler,
   fareStatusPendingHandler,
   planCubaoAyalaResponse,
   planMrt3CubaoAyalaResponse,
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
-import { clearPlanCache } from '../routes/planCache';
+import { clearPlanCache, rememberPlan } from '../routes/planCache';
 import { SavedScreen } from './SavedScreen';
 
 // R52: jsdom has no canvas, so axe's colour-contrast rule is noise here.
@@ -27,6 +28,7 @@ const AXE_OPTIONS = { rules: { 'color-contrast': { enabled: false } } };
 const NOW = new Date('2026-11-02T03:00:00.000Z');
 const MRT_PLAN = planMrt3CubaoAyalaResponse;
 const MRT_ITINERARY = MRT_PLAN.itineraries[0]!;
+const PUV_ITINERARY = planCubaoAyalaResponse.itineraries[0]!;
 
 function storedRow(
   plan: PlanResponse = MRT_PLAN,
@@ -93,6 +95,58 @@ describe('SavedScreen offline snapshot', () => {
   });
 });
 
+describe('SavedScreen tabs', () => {
+  it('renders only the selected tab panel and hides the other (I1)', async () => {
+    seedSaved([storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z')]);
+    seedRecents([storedRow(MRT_PLAN, '2026-10-31T08:00:00.000Z')]);
+    const { container } = render(<SavedScreen now={NOW} />);
+
+    const savedTab = screen.getByRole('tab', { name: /^saved$/i });
+    const recentTab = screen.getByRole('tab', { name: /^recent$/i });
+    function panelFor(tab: HTMLElement): HTMLElement {
+      const panel = container.querySelector<HTMLElement>(
+        `[role="tabpanel"][aria-labelledby="${tab.id}"]`,
+      );
+      expect(panel).not.toBeNull();
+      // The tab's aria-controls must point at the panel it labels.
+      expect(tab).toHaveAttribute('aria-controls', panel?.id ?? '');
+      return panel as HTMLElement;
+    }
+
+    const savedPanel = panelFor(savedTab);
+    const recentPanel = panelFor(recentTab);
+    expect(savedPanel).toBeVisible();
+    expect(recentPanel).not.toBeVisible();
+    expect(recentPanel).toHaveAttribute('hidden');
+    // A `flex`/`block` utility on the section would beat the [hidden] UA rule
+    // in the built Tailwind CSS and show both lists at once.
+    expect(recentPanel.className).not.toMatch(
+      /\b(flex|grid|block|inline|inline-flex|table)\b/,
+    );
+
+    await user.click(recentTab);
+    expect(savedPanel).not.toBeVisible();
+    expect(recentPanel).toBeVisible();
+  });
+
+  it('supports Home and End in the tablist (M9)', async () => {
+    render(<SavedScreen now={NOW} />);
+    const savedTab = screen.getByRole('tab', { name: /saved/i });
+    const recentTab = screen.getByRole('tab', { name: /recent/i });
+
+    await user.click(savedTab);
+    await user.keyboard('{End}');
+    expect(recentTab).toHaveFocus();
+    expect(recentTab).toHaveAttribute('aria-selected', 'true');
+    expect(recentTab).toHaveAttribute('tabindex', '0');
+
+    await user.keyboard('{Home}');
+    expect(savedTab).toHaveFocus();
+    expect(savedTab).toHaveAttribute('aria-selected', 'true');
+    expect(savedTab).toHaveAttribute('tabindex', '0');
+  });
+});
+
 describe('SavedScreen delete, undo and recent expiry', () => {
   it('deletes with undo and expires recents after 30 days', async () => {
     seedSaved([storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z')]);
@@ -118,6 +172,8 @@ describe('SavedScreen delete, undo and recent expiry', () => {
     await waitFor(() => expect(screen.queryByTestId('saved-row')).not.toBeInTheDocument());
     expect(readSavedTrips()).toEqual([]);
     expect(screen.getByTestId('undo-toast')).toBeInTheDocument();
+    // Focus leaves the removed row for a deliberate target (M9).
+    await waitFor(() => expect(screen.getByRole('button', { name: /^undo$/i })).toHaveFocus());
 
     await user.click(screen.getByRole('button', { name: /^undo$/i }));
 
@@ -138,6 +194,27 @@ describe('SavedScreen delete, undo and recent expiry', () => {
 
     expect(screen.queryByTestId('saved-row')).not.toBeInTheDocument();
     expect(readSavedTrips()).toEqual([]);
+  });
+
+  it('cannot turn a release outside the row into a delete (M2)', async () => {
+    seedSaved([storedRow()]);
+    render(<SavedScreen now={NOW} />);
+
+    const row = await screen.findByTestId('saved-row');
+    fireEvent.pointerDown(row, { clientX: 220, clientY: 40, pointerId: 1 });
+    fireEvent.pointerMove(row, { clientX: 100, clientY: 40, pointerId: 1 });
+    // The pointer leaves the row and the release lands on another element: no
+    // pointerup reaches the row handler, so the offset must be reset.
+    fireEvent.pointerLeave(row, { clientX: 100, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(document.body, { clientX: 100, clientY: 40, pointerId: 1 });
+
+    // A later tap must not consume a stale ≤ −72 offset.
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 40, pointerId: 2 });
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 40, pointerId: 2 });
+
+    expect(screen.getByTestId('saved-row')).toBeInTheDocument();
+    expect(readSavedTrips()).toHaveLength(1);
+    expect(screen.queryByTestId('undo-toast')).toBeNull();
   });
 });
 
@@ -182,18 +259,64 @@ describe('SavedScreen honesty labels', () => {
     expect(screen.queryByTestId('offline-badge')).toBeNull();
   });
 
-  it('flags a changed fare matrix and never recomputes the saved fare', async () => {
-    seedSaved([storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z')]);
+  it('flags a changed PUV fare matrix and never recomputes the saved fare', async () => {
+    seedSaved([
+      storedRow(planCubaoAyalaResponse, '2026-10-30T08:00:00.000Z', {
+        fareSnapshot: { ...PUV_ITINERARY.fare, effective_from: '2026-06-01' },
+      }),
+    ]);
     render(<SavedScreen now={NOW} />);
 
-    // The MRT fixture's quote is effective 2026-03-23; the API matrix is
-    // 2026-09-28, so the snapshot must be flagged.
+    // A PUV quote effective 2026-06-01 vs the API matrix 2026-09-28 is a real
+    // matrix change (R73: only PUV quotes may use the PUV matrix comparison).
     expect(await screen.findByText(/kasalukuyang fare matrix: 2026-09-28/i)).toBeInTheDocument();
     expect(screen.getByTestId('fare-staleness')).toHaveTextContent(
       /fare may have changed since you saved this/i,
     );
     // The displayed fare is still the API-returned snapshot, not a re-quote.
-    expect(screen.getByTestId('saved-fare')).toHaveTextContent('₱10.50');
+    expect(screen.getByTestId('saved-fare')).toHaveTextContent('₱26.40');
+    expect(screen.getByTestId('saved-fare')).toHaveTextContent('2026-06-01');
+  });
+
+  it('keeps the PUV matrix date off a rail snapshot (R73)', async () => {
+    seedSaved([
+      // The PUV row's fresh note proves the matrix request has resolved.
+      storedRow(planCubaoAyalaResponse, '2026-10-30T08:00:00.000Z'),
+      storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z'),
+    ]);
+    render(<SavedScreen now={NOW} />);
+
+    expect(await screen.findByText(/pareho ang fare matrix \(2026-09-28\)/i)).toBeInTheDocument();
+
+    const railFare = screen
+      .getAllByTestId('saved-fare')
+      .find((element) => element.textContent?.includes('2026-03-23'));
+    expect(railFare).toBeDefined();
+    const railCard = railFare!.closest('li');
+    expect(railCard).not.toBeNull();
+    const rail = within(railCard as HTMLElement);
+    expect(rail.getByText(/hindi puv fare ang snapshot na ito/i)).toBeInTheDocument();
+    expect(rail.getByTestId('fare-staleness')).toHaveTextContent(
+      /fare may have changed since you saved this/i,
+    );
+    // The MRT quote's 2026-03-23 rail matrix is never compared with, or
+    // presented as, the PUV matrix date.
+    expect(rail.queryByText(/kasalukuyang fare matrix/i)).toBeNull();
+    expect(rail.queryByText(/pareho ang fare matrix/i)).toBeNull();
+    expect(rail.getByTestId('saved-fare')).toHaveTextContent('2026-03-23');
+  });
+
+  it('never certifies freshness when the matrix check fails (M7)', async () => {
+    seedSaved([storedRow(planCubaoAyalaResponse, '2026-10-30T08:00:00.000Z')]);
+    server.use(fareStatusErrorHandler);
+    render(<SavedScreen now={NOW} />);
+
+    expect(await screen.findByTestId('fare-staleness')).toHaveTextContent(
+      /fare may have changed since you saved this/i,
+    );
+    expect(screen.getByText(/hindi ma-check ang fare matrix ngayon/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pareho ang fare matrix/i)).toBeNull();
+    expect(screen.queryByText(/kasalukuyang fare matrix/i)).toBeNull();
   });
 
   it('does not claim a change when the snapshot matches the current matrix', async () => {
@@ -244,6 +367,34 @@ describe('/trip/:id saved-store fallback', () => {
     expect(screen.getByTestId('trip-summary')).toHaveTextContent('31 min');
     // A reload is served by the store, not by inventing a plan-by-id request.
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('recent trip recording (M6)', () => {
+  it('records a fresh /trip/:id view as a recent trip', async () => {
+    rememberPlan(MRT_PLAN);
+
+    render(
+      <MemoryRouter initialEntries={[`/trip/${MRT_ITINERARY.id}`]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Detalye ng biyahe')).toBeInTheDocument();
+    expect(readRecentTrips().map((trip) => trip.itinerary.id)).toEqual([MRT_ITINERARY.id]);
+  });
+
+  it('does not record a saved-snapshot deep link as a recent trip', async () => {
+    seedSaved([storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z')]);
+
+    render(
+      <MemoryRouter initialEntries={[`/trip/${MRT_ITINERARY.id}`]}>
+        <AppRoutes />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('saved-snapshot-note')).toBeInTheDocument();
+    expect(readRecentTrips()).toEqual([]);
   });
 });
 

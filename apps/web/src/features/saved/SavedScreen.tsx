@@ -12,7 +12,7 @@ import {
 import { formatLongDate, formatClockTime } from '../../lib/time';
 import type { SavedTrip } from '../../lib/savedTripsStore';
 import { formatFare } from '../routes/RouteCard';
-import { stalenessOf } from './staleness';
+import { isPuvFareSnapshot, stalenessOf } from './staleness';
 import { useSavedTrips } from './useSavedTrips';
 
 /**
@@ -93,6 +93,9 @@ function SavedTripCard({
       return;
     }
     dragStart.current = event.clientX;
+    // Capture the pointer so the release is delivered to this row even when it
+    // happens outside the row bounds (M2).
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>): void {
@@ -115,6 +118,20 @@ function SavedTripCard({
     if (shouldDelete) {
       onDelete?.(trip);
     }
+  }
+
+  /**
+   * Abandon a drag that did not finish on this row (M2).
+   *
+   * Without this, a release outside the row leaves `currentOffset` at ≤ −72 and
+   * the next tap's `pointerup` would run `endDrag` and delete the trip.
+   */
+  function cancelDrag(): void {
+    if (dragStart.current === null && currentOffset.current === 0) {
+      return;
+    }
+    dragStart.current = null;
+    moveTo(0);
   }
 
   function submitRename(): void {
@@ -145,10 +162,9 @@ function SavedTripCard({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
-        onPointerCancel={() => {
-          dragStart.current = null;
-          moveTo(0);
-        }}
+        onPointerCancel={cancelDrag}
+        onPointerLeave={cancelDrag}
+        onLostPointerCapture={cancelDrag}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -196,7 +212,9 @@ function SavedTripCard({
           {stale === 'expired'
             ? 'Mahigit 30 araw na ang snapshot na ito.'
             : stale === 'unknown'
-              ? 'Hindi ma-check ang fare matrix ngayon.'
+              ? isPuvFareSnapshot(trip)
+                ? 'Hindi ma-check ang fare matrix ngayon.'
+                : 'Hindi PUV fare ang snapshot na ito, kaya hindi maihahambing sa PUV matrix.'
               : stale === 'fare-changed' && matrixEffectiveFrom !== undefined
                 ? `Kasalukuyang fare matrix: ${matrixEffectiveFrom}.`
                 : matrixEffectiveFrom !== undefined
@@ -314,6 +332,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
   const [undo, setUndo] = useState<SavedTrip | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const undoTimer = useRef<number | null>(null);
+  const undoButtonRef = useRef<HTMLButtonElement>(null);
   const savedTabRef = useRef<HTMLButtonElement>(null);
   const recentTabRef = useRef<HTMLButtonElement>(null);
   const savedTabId = useId();
@@ -329,6 +348,14 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
     },
     [],
   );
+
+  // A deleted row's button disappears with the row, so focus would fall to
+  // <body>. Move it to the Undo action deliberately (M9).
+  useEffect(() => {
+    if (undo !== null) {
+      undoButtonRef.current?.focus();
+    }
+  }, [undo]);
 
   function clearUndoTimer(): void {
     if (undoTimer.current !== null) {
@@ -372,6 +399,13 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const next = event.key === 'Home' ? 'saved' : 'recent';
+      setTab(next);
+      (next === 'saved' ? savedTabRef : recentTabRef).current?.focus();
+      return;
+    }
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
       return;
     }
@@ -465,7 +499,10 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           id={savedPanelId}
           aria-labelledby={savedTabId}
           hidden={tab !== 'saved'}
-          className="flex flex-col gap-2"
+          // No display utility here: a `flex`/`block` class would override the
+          // `[hidden]` UA rule (same specificity, later in the compiled CSS) and
+          // both panels would render at once (I1). The child <ul> is the flex
+          // container.
         >
           <ul data-testid="saved-list" aria-label="Mga naka-save na biyahe" className="flex flex-col gap-3">
             {controller.saved.length === 0 ? (
@@ -504,9 +541,8 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
           id={recentPanelId}
           aria-labelledby={recentTabId}
           hidden={tab !== 'recent'}
-          className="flex flex-col gap-2"
         >
-          <p className="text-sm text-on-surface-variant">
+          <p className="mb-2 text-sm text-on-surface-variant">
             Awtomatikong nawawala ang mga kamakailang biyahe pagkatapos ng 30 araw.
           </p>
           <ul
@@ -541,6 +577,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
         >
           <span className="min-w-0 break-words">Nai-delete ang biyahe.</span>
           <button
+            ref={undoButtonRef}
             type="button"
             onClick={handleUndo}
             className="flex min-h-12 shrink-0 items-center justify-center rounded-pill px-4 text-sm font-semibold text-primary-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"

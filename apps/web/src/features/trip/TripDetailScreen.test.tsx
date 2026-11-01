@@ -1,6 +1,6 @@
 import type { DataSource, FareQuote } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -160,7 +160,9 @@ describe('TripDetailScreen', () => {
   it('saves a fare snapshot with dataset version and saved_at', async () => {
     renderDetail();
 
-    await user.click(screen.getByTestId('save-trip'));
+    const save = screen.getByTestId('save-trip');
+    expect(save).toBeEnabled();
+    await user.click(save);
 
     const stored = readSavedTrips();
     expect(stored).toHaveLength(1);
@@ -170,6 +172,21 @@ describe('TripDetailScreen', () => {
     expect(Number.isNaN(Date.parse(stored[0]?.savedAt ?? ''))).toBe(false);
     expect(screen.getByRole('status')).toHaveTextContent(/nai-save ang biyahe/i);
     expect(screen.getByTestId('save-trip')).toHaveTextContent('Nai-save');
+  });
+
+  it('disables Save for a detail opened from the saved store and keeps its snapshot (M1)', async () => {
+    localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify([storedRow()]));
+    renderApp(`/trip/${MRT_ITINERARY.id}`);
+
+    expect(await screen.findByTestId('saved-snapshot-note')).toBeInTheDocument();
+    const save = screen.getByTestId('save-trip');
+    expect(save).toBeDisabled();
+    expect(save).toHaveTextContent('Nai-save');
+
+    // Clicking must not re-date the snapshot and restart the 30-day clock.
+    fireEvent.click(save);
+    expect(readSavedTrips()[0]?.savedAt).toBe('2026-11-01T08:00:00.000Z');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('drops every malformed stored row whole instead of partially normalizing it', () => {

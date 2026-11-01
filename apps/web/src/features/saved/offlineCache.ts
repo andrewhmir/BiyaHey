@@ -1,31 +1,45 @@
 /**
  * Offline runtime-caching rules for the Workbox service worker (plan Task 8).
  *
- * Kept as pure data so the four rules can be unit-tested in jsdom without a
- * browser or a built service worker. `vite.config.ts` maps this list into
+ * Kept as pure data so the rules can be unit-tested in jsdom without a browser
+ * or a built service worker. `vite.config.ts` maps this list into
  * `VitePWA({ workbox: { runtimeCaching } })`; the build is the only place that
  * knows Workbox itself.
  *
- * The four rules (spec §11 performance/offline budgets):
- * 1. `POST /plan` — NetworkFirst shape with a 3 s network timeout.
- * 2. `GET /search` — NetworkFirst with the same 3 s timeout.
- * 3. OpenFreeMap tiles — CacheFirst, 7-day expiry, 40-entry cap.
- * 4. `GET /sources` — StaleWhileRevalidate, 24-hour expiry.
+ * The three service-worker rules (spec §11 performance/offline budgets):
+ * 1. `GET /search` — NetworkFirst, 3 s network timeout, 20-entry/7-day expiry.
+ * 2. OpenFreeMap tiles — CacheFirst, 7-day expiry, 40-entry cap.
+ * 3. `GET /sources` — StaleWhileRevalidate, 24-hour expiry.
  *
- * Two honest limits are documented here rather than hidden in the config:
+ * **`POST /plan` is deliberately not a service-worker rule (R72).** The Cache
+ * API cannot store a POST response, and Workbox's NetworkFirst timeout path
+ * calls `cacheMatch(request)`, which rejects for a non-GET request: a
+ * registered rule would turn a slow plan into a network error instead of the
+ * mandated 3 s bound. The 3 s plan budget is enforced client-side by
+ * `planTrip` in `lib/api.ts` (`PLAN_TIMEOUT_MS`, a per-request timeout that
+ * rejects with a typed `ApiError`).
  *
- * - **`/plan` is a POST.** The Cache API can only store GET responses, so
- *   Workbox's NetworkFirst cannot serve a cached plan body. The rule is still
- *   registered for the POST method because it buys the 3 s network bound and
- *   makes an offline plan fail fast; the offline trip path is the saved-trips
- *   store (R62/R63), never a cached plan repainted as current.
- * - **The "40 tiles per viewport" cap is a cache-entry cap.** Workbox's
- *   expiration plugin counts cached URLs, not viewports (it has no viewport
- *   concept). A 40-entry cap is roughly one viewport of Liberty vector tiles at
- *   the app's zoom range, so the service worker never hoards tiles from a long
- *   panning session. The per-viewport rendering budget itself belongs to the
- *   map layer; the SW expresses it as `expiration.maxEntries = 40`.
+ * **Every rule is anchored at index 0 of the full URL.** Workbox turns a
+ * `urlPattern: RegExp` into a `RegExpRoute`, and for a cross-origin request it
+ * only applies the route when the match starts at the first character of
+ * `url.href` (`node_modules/workbox-routing/RegExpRoute.js`). The API is a
+ * different origin from the app in the default deployment (R40), so patterns
+ * such as `/\/search(?:\?.*)?$/` would match at index 21 and never fire.
+ * `offlineCache.test.ts` proves each rule against the installed `RegExpRoute`
+ * with a foreign-origin URL. The host is not pinned, so a same-origin
+ * deployment matches too. Patterns assume the API base URL is an origin with no
+ * path prefix (the R40 contract: `http://localhost:8787`); a path-prefixed
+ * deployment would need its own anchored pattern and test.
+ *
+ * **The "40 tiles per viewport" cap is a cache-entry cap.** Workbox's
+ * expiration plugin counts cached URLs, not viewports (it has no viewport
+ * concept). A 40-entry cap is roughly one viewport of Liberty vector tiles at
+ * the app's zoom range, so the service worker never hoards tiles from a long
+ * panning session. The per-viewport rendering budget itself belongs to the
+ * map layer; the SW expresses it as `expiration.maxEntries = 40`.
  */
+
+export type OfflineCacheRuleId = 'search' | 'tiles' | 'sources';
 
 export type OfflineCacheHandler = 'NetworkFirst' | 'CacheFirst' | 'StaleWhileRevalidate';
 
@@ -44,7 +58,7 @@ export interface OfflineCacheOptions {
 
 /** A stable, renderer-free description of one Workbox runtime route. */
 export interface OfflineCacheRule {
-  id: 'plan' | 'search' | 'tiles' | 'sources';
+  id: OfflineCacheRuleId;
   urlPattern: RegExp;
   method: OfflineCacheMethod;
   handler: OfflineCacheHandler;
@@ -57,7 +71,7 @@ export const API_CACHE_NAME = 'biyahey-api-v1';
 export const TILE_CACHE_NAME = 'biyahey-tiles-v1';
 export const SOURCES_CACHE_NAME = 'biyahey-sources-v1';
 
-/** Plan §Task 8: a plan/search request must answer within 3 s or fall back. */
+/** Plan §Task 8: a search request must answer within 3 s or fall back. */
 export const API_NETWORK_TIMEOUT_SECONDS = 3;
 
 /** 7 days, in the seconds Workbox's expiration plugin expects. */
@@ -69,33 +83,36 @@ export const TILE_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
  */
 export const TILE_CACHE_MAX_ENTRIES = 40;
 
+/** Every distinct `/search?q=` URL is a cache entry; bound the cache (M11). */
+export const SEARCH_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+export const SEARCH_CACHE_MAX_ENTRIES = 20;
+
 /** 24 hours, in seconds. */
 export const SOURCES_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60;
 
+/**
+ * `^https?://<host>/<path>` anchored at index 0 for `RegExpRoute`'s
+ * cross-origin rule. See the module note; the host stays unpinned.
+ */
 export const OFFLINE_RUNTIME_CACHING_RULES: readonly OfflineCacheRule[] = [
   {
-    id: 'plan',
-    // BFF path `/plan`; the API base host is runtime-configurable (R40), so the
-    // rule matches the path, not the host.
-    urlPattern: /\/plan(?:\?.*)?$/,
-    method: 'POST',
-    handler: 'NetworkFirst',
-    options: {
-      cacheName: API_CACHE_NAME,
-      networkTimeoutSeconds: API_NETWORK_TIMEOUT_SECONDS,
-    },
-    note: 'POST /plan cannot be stored by the Cache API; this rule bounds the request to 3 s and fails fast offline. The offline trip path is the saved store (R62/R63).',
-  },
-  {
     id: 'search',
-    urlPattern: /\/search(?:\?.*)?$/,
+    // Full-URL, index-0 match: Workbox refuses a partial match for a
+    // cross-origin request, and the API is a different origin by default.
+    urlPattern: /^https?:\/\/[^/]+\/search(?:\?.*)?$/,
     method: 'GET',
     handler: 'NetworkFirst',
     options: {
       cacheName: API_CACHE_NAME,
       networkTimeoutSeconds: API_NETWORK_TIMEOUT_SECONDS,
+      // Search URLs are query-specific, so the cache must be bounded or it
+      // grows for the life of the install (one entry per query ever typed).
+      expiration: {
+        maxAgeSeconds: SEARCH_CACHE_MAX_AGE_SECONDS,
+        maxEntries: SEARCH_CACHE_MAX_ENTRIES,
+      },
     },
-    note: 'GET /search falls back to the last successful response for the same URL; the search screen also has its own per-query cache and saved-places fallback.',
+    note: 'GET /search falls back to the last successful response for the same URL for up to 7 days, capped at 20 query URLs; the search screen also has its own per-query cache and saved-places fallback.',
   },
   {
     id: 'tiles',
@@ -113,7 +130,7 @@ export const OFFLINE_RUNTIME_CACHING_RULES: readonly OfflineCacheRule[] = [
   },
   {
     id: 'sources',
-    urlPattern: /\/sources(?:\?.*)?$/,
+    urlPattern: /^https?:\/\/[^/]+\/sources(?:\?.*)?$/,
     method: 'GET',
     handler: 'StaleWhileRevalidate',
     options: {

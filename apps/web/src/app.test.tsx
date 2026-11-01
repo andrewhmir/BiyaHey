@@ -1,5 +1,8 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { App } from './app';
+import { AppRoutes } from './routes';
 
 it('renders the search pill as the app entry point', () => {
   render(<App />);
@@ -24,4 +27,19 @@ it('shows the search pill first in the peek strip', () => {
   const body = document.getElementById(bodyId ?? '');
   expect(body).not.toBeNull();
   expect(body?.querySelector('button, h1, h2, h3, p')).toBe(search);
+});
+
+it('navigates from Home to the saved screen (M9)', async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <AppRoutes />
+    </MemoryRouter>,
+  );
+
+  await user.click(screen.getByRole('button', { name: /naka-save at kamakailan/i }));
+
+  expect(
+    await screen.findByRole('heading', { name: /mga naka-save at kamakailan/i }),
+  ).toBeInTheDocument();
 });

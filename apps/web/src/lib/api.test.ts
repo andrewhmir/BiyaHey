@@ -5,6 +5,7 @@ import { server } from '../test/msw/server';
 import {
   API_BASE_URL,
   ApiError,
+  PLAN_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   fetchFareStatus,
   planTrip,
@@ -132,6 +133,29 @@ describe('planTrip', () => {
 
     expect(method).toBe('POST');
     expect(body).toEqual(input);
+  });
+
+  it('bounds POST /plan to the 3 s plan budget client-side (R72)', async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    server.use(
+      http.post('*/plan', async () => {
+        await gate.promise;
+        return HttpResponse.json({ v: 1, itineraries: [], sources: [] });
+      }),
+    );
+
+    expect(PLAN_TIMEOUT_MS).toBe(3000);
+
+    const pending = planTrip({
+      origin: { lat: 14.676, lon: 121.0437 },
+      destination: { lat: 14.5547, lon: 121.0244 },
+    });
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(PLAN_TIMEOUT_MS);
+    await rejection;
+
+    gate.resolve();
   });
 });
 
