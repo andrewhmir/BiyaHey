@@ -2,8 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { ItineraryDto, LegMode } from '@biyahey/shared';
 import {
+  MAX_TRANSIT_SPEED_KMH,
   decodePolyline,
+  implausibleTransitLegs,
+  isPlausibleItinerary,
   modeFromRouteId,
   polylineLengthM,
 } from '../src/routing/map-itinerary.js';
@@ -53,6 +57,69 @@ describe('modeFromRouteId', () => {
     expect(modeFromRouteId('rail-mnc')).toBeUndefined();
     expect(modeFromRouteId('rail-mrt9')).toBeUndefined();
     expect(modeFromRouteId('taxi-1')).toBeUndefined();
+  });
+});
+
+describe('plausibility guard', () => {
+  function transitItinerary(distanceM: number, durationMin: number, mode: LegMode = 'bus'): ItineraryDto {
+    const startTime = '2026-11-02T08:00:00+08:00';
+    const endTime = '2026-11-02T09:30:00+08:00';
+    return {
+      id: 'it-test',
+      durationMin,
+      startTime,
+      endTime,
+      transfers: 0,
+      walkDistanceM: 0,
+      modes: [mode],
+      fare: {
+        amount: 0,
+        currency: 'PHP',
+        confidence: 'official',
+        effective_from: '2026-09-28',
+        source_id: null,
+        breakdown: [],
+      },
+      sources: ['osm'],
+      legs: [
+        {
+          mode,
+          from: { name: 'A', lat: 14.6, lon: 121.0 },
+          to: { name: 'B', lat: 14.7, lon: 121.1 },
+          startTime,
+          endTime,
+          durationMin,
+          landmarkHint: null,
+          distanceM,
+          sourceIds: ['osm'],
+        },
+      ],
+    };
+  }
+
+  it('flags the live 70 km-in-2-min through-bus shape as impossible', () => {
+    const impossible = transitItinerary(70_231, 2);
+    expect(isPlausibleItinerary(impossible)).toBe(false);
+    const flagged = implausibleTransitLegs(impossible);
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0]?.impliedSpeedKmh).toBeGreaterThan(1_000);
+  });
+
+  it('does not prune a legitimate long-distance provincial bus', () => {
+    expect(MAX_TRANSIT_SPEED_KMH).toBe(120);
+    // 100 km in 90 min = 67 km/h: a real provincial run.
+    expect(isPlausibleItinerary(transitItinerary(100_000, 90))).toBe(true);
+    // The observed Cubao-Balayan shape: 40.6 km claimed in 2 min.
+    expect(isPlausibleItinerary(transitItinerary(40_625, 2))).toBe(false);
+  });
+
+  it('evaluates a sub-minute leg with a 30-second floor, not a division by zero', () => {
+    expect(isPlausibleItinerary(transitItinerary(400, 0))).toBe(true); // 48 km/h
+    expect(isPlausibleItinerary(transitItinerary(1_400, 0))).toBe(false); // 168 km/h
+  });
+
+  it('never flags a walk leg', () => {
+    expect(isPlausibleItinerary(transitItinerary(10_000, 1, 'walk'))).toBe(true);
   });
 });
 

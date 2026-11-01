@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import type { ItineraryDto, PlanResponse } from '@biyahey/shared';
 import { resolveDataDir } from '@biyahey/shared/provenance';
 import { buildApp } from '../src/app.js';
+import { isPlausibleItinerary } from '../src/routing/map-itinerary.js';
+import { IMPLAUSIBLE_DROPPED_HEADER, MOTIS_CALLS_HEADER } from '../src/routes/plan.js';
 
 const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -50,11 +52,16 @@ function planApp(fixture: unknown = planFixture) {
 async function postPlan(
   app: ReturnType<typeof buildApp>,
   payload: Record<string, unknown>,
-): Promise<{ statusCode: number; body: PlanResponse & { error?: { code: string; message: string } } }> {
+): Promise<{
+  statusCode: number;
+  body: PlanResponse & { error?: { code: string; message: string } };
+  headers: Record<string, unknown>;
+}> {
   const res = await app.inject({ method: 'POST', url: '/plan', payload });
   return {
     statusCode: res.statusCode,
     body: res.json() as PlanResponse & { error?: { code: string; message: string } },
+    headers: res.headers,
   };
 }
 
@@ -164,7 +171,27 @@ describe('POST /plan', () => {
   });
 
   it('adds bufferMin to every transfer walk leg', async () => {
-    const app = planApp();
+    // A synthetic two-transit itinerary: MRT-3 -> walk transfer -> bus. The
+    // real fixture's transfers are the through-bus options the plausibility
+    // guard now drops, so the buffer path needs a plausible transfer.
+    const synthetic = structuredClone(planFixture.itineraries[0]);
+    const mrt = synthetic.legs[1];
+    const originalWalk = synthetic.legs[2];
+    const transferWalk = { ...structuredClone(originalWalk), duration: 180, distance: 200 };
+    const bus = {
+      ...structuredClone(originalWalk),
+      mode: 'BUS',
+      routeId: 'gtfs_bus-999',
+      routeShortName: '999',
+      displayName: '999',
+      duration: 900,
+      distance: 5_000,
+    };
+    synthetic.legs = [synthetic.legs[0], mrt, transferWalk, bus];
+    delete (transferWalk as { legGeometry?: unknown }).legGeometry;
+    delete (bus as { legGeometry?: unknown }).legGeometry;
+
+    const app = planApp({ itineraries: [synthetic] });
     const base = await postPlan(app, {
       origin: CUBAO,
       destination: AYALA,
@@ -207,10 +234,12 @@ describe('POST /plan', () => {
   });
 
   it('issues up to three plan calls and dedupes sparse results', async () => {
+    // Use the plausible MRT-3 itineraries: the through-bus options in the
+    // fixture are the implausible ones the guard now drops.
     const payloads: FixturePlan[] = [
       { itineraries: [planFixture.itineraries[0]] },
-      { itineraries: [planFixture.itineraries[1]] },
-      { itineraries: [planFixture.itineraries[2]] },
+      { itineraries: [planFixture.itineraries[3]] },
+      { itineraries: [planFixture.itineraries[6]] },
     ];
     const urls: string[] = [];
     const app = buildApp({
@@ -255,6 +284,44 @@ describe('POST /plan', () => {
         expect(leg.sourceIds).not.toContain('motis');
       }
     }
+  });
+
+  it('exposes the MOTIS fan-out and implausible-drop counts as headers', async () => {
+    const app = planApp();
+    const { statusCode, headers, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    // The base fixture carries 4 MRT-3 itineraries plus 6 provincial through-bus
+    // options whose shapes claim 40–70 km in 2–4 minutes (the R10 defect). The
+    // 4 plausible options already meet the target, so no extra MOTIS call is
+    // made; the 6 impossible ones are dropped and counted.
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('1');
+    expect(headers[IMPLAUSIBLE_DROPPED_HEADER]).toBe('6');
+    expect(body.itineraries).toHaveLength(4);
+    expect(body.itineraries.every((itinerary) => isPlausibleItinerary(itinerary))).toBe(true);
+    expect(body.itineraries.map((itinerary) => itinerary.fare.amount)).toEqual([
+      10.5, 10.5, 10.5, 10.5,
+    ]);
+  });
+
+  it('drops an itinerary whose transit geometry implies an impossible speed', async () => {
+    const app = planApp({ itineraries: [planFixture.itineraries[1]] });
+    const { statusCode, headers, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    expect(body.itineraries).toEqual([]);
+    expect(headers[IMPLAUSIBLE_DROPPED_HEADER]).toBe('1');
+    // Nothing plausible arrived, so the fan-out ran all three attempts and the
+    // same bad itinerary was counted once (deduped across attempts).
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('3');
   });
 
   it('drops an itinerary whose rail line v1 cannot price', async () => {

@@ -493,6 +493,77 @@ function mapItinerary(raw: unknown, context: MapContext): ItineraryDto | undefin
 }
 
 /**
+ * Plausibility guard for mapped itineraries (R10 data-defect mitigation).
+ *
+ * The published feed carries OSM route relations whose shapes and
+ * `stop_times` disagree: `bus-61`, for example, has stops ~893 m apart with
+ * two-minute spacing, yet one leg's shape is 70,231 m long in the same two
+ * minutes. MOTIS maps that geometry onto the leg, `mapLeg` falls back to the
+ * geometry distance for transit legs, and the fare engine then prices 70 km of
+ * "travel". That is how a Cubao->Ayala plan acquired PHP 406.98 "options" that
+ * no vehicle could run — a data defect, not a provincial-bus choice.
+ *
+ * A transit leg is implausible when its implied speed exceeds
+ * {@link MAX_TRANSIT_SPEED_KMH}. 120 km/h is well above any scheduled NCR
+ * movement (the fastest expressway/PNR stretches are ~90 km/h) but far below
+ * the 2,100 km/h the bad `bus-61` shape implies. Long-distance provincial buses
+ * are not pruned by this: a genuine 100 km run in 90 minutes (67 km/h) passes.
+ *
+ * `durationMin` is rounded to whole minutes, so a 0-minute leg is evaluated
+ * with a 30-second floor: a sub-minute hop is not penalised, but a kilometre
+ * claimed in "0 minutes" still is.
+ *
+ * A geometry-to-straight-line ratio guard is deliberately NOT applied: a route
+ * that crosses the Pasig River can legitimately drive several kilometres
+ * between stops that are 1 km apart, so a ratio rule would prune valid
+ * itineraries. The speed rule catches the observed defect without that risk.
+ */
+export const MAX_TRANSIT_SPEED_KMH = 120;
+
+/** Floor for a rounded-to-zero duration; see {@link MAX_TRANSIT_SPEED_KMH}. */
+const MIN_EVALUATED_DURATION_MIN = 0.5;
+
+/** One transit leg that fails the plausibility guard. */
+export interface ImplausibleLeg {
+  legIndex: number;
+  mode: LegMode;
+  distanceM: number;
+  durationMin: number;
+  impliedSpeedKmh: number;
+}
+
+/**
+ * List the transit legs of `itinerary` whose implied speed exceeds
+ * {@link MAX_TRANSIT_SPEED_KMH}. Walk legs are never flagged: walking distance
+ * is a declared MOTIS value, not a route-shape artefact.
+ */
+export function implausibleTransitLegs(itinerary: ItineraryDto): ImplausibleLeg[] {
+  const flagged: ImplausibleLeg[] = [];
+  itinerary.legs.forEach((leg, legIndex) => {
+    if (leg.mode === 'walk') {
+      return;
+    }
+    const evaluatedDurationMin = Math.max(leg.durationMin, MIN_EVALUATED_DURATION_MIN);
+    const impliedSpeedKmh = leg.distanceM / 1000 / (evaluatedDurationMin / 60);
+    if (impliedSpeedKmh > MAX_TRANSIT_SPEED_KMH) {
+      flagged.push({
+        legIndex,
+        mode: leg.mode,
+        distanceM: leg.distanceM,
+        durationMin: leg.durationMin,
+        impliedSpeedKmh: Math.round(impliedSpeedKmh),
+      });
+    }
+  });
+  return flagged;
+}
+
+/** True when every transit leg of `itinerary` passes the plausibility guard. */
+export function isPlausibleItinerary(itinerary: ItineraryDto): boolean {
+  return implausibleTransitLegs(itinerary).length === 0;
+}
+
+/**
  * Map a MOTIS `/api/v6/plan` payload into v2 DTOs.
  *
  * Includes all-walk entries from MOTIS's separate `direct` array: a short trip
