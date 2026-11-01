@@ -88,12 +88,17 @@ describe('WCAG 2.2 axe pass over the key screens', () => {
   it('has no violations on Home', async () => {
     const { container } = renderApp('/');
     expect(await screen.findByTestId('sheet')).toBeInTheDocument();
+    // Resolve the lazy map chunk inside the query so its Suspense update is
+    // act-wrapped; the map is part of the Home screen being audited.
+    expect(await screen.findByTestId('map-canvas')).toBeInTheDocument();
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it('has no violations on Search with grouped results', async () => {
     const { container, user } = renderApp('/search');
-    await user.type(screen.getByRole('searchbox'), 'ayala');
+    // `/search` is a lazy route (Task 10): wait for its chunk before typing.
+    const searchbox = await screen.findByRole('searchbox');
+    await user.type(searchbox, 'ayala');
     // The result text waits out a 250 ms debounce; give it headroom so the suite
     // does not flake under CPU contention (m1). Real content then axe.
     expect(

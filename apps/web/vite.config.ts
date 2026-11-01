@@ -64,6 +64,13 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // `apps/web/src/perf/bundle.test.ts` reads the emitted manifest and walks
+    // the entry's static import graph to measure the first route-screen payload.
+    // Dynamic imports (the map and every non-home route) are deliberately not
+    // part of that graph, so the budget cannot hide them by accident.
+    manifest: true,
+  },
   server: {
     port: 5173,
     strictPort: true,

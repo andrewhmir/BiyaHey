@@ -1,0 +1,41 @@
+{
+  "ci": {
+    "collect": {
+      "url": ["http://localhost:5173/"],
+      "startServerCommand": "npm run preview --workspace @biyahey/web",
+      "startServerReadyPattern": "Local:",
+      "startServerReadyTimeout": 30000,
+      "numberOfRuns": 1,
+      "settings": {
+        "formFactor": "mobile",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.56,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        }
+      }
+    },
+    "assert": {
+      "assertions": {
+        "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
+        "total-blocking-time": ["error", { "maxNumericValue": 2500 }],
+        "total-byte-weight": ["error", { "maxNumericValue": 1000000 }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "apps/web/.lighthouseci"
+    }
+  }
+}

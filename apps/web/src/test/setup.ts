@@ -1,11 +1,18 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest';
 // vitest-axe 0.1.0's `extend-expect` entry is empty and its `matchers` barrel
 // is type-only, so the runtime matcher comes straight from the dist module.
 import { toHaveNoViolations } from 'vitest-axe/dist/matchers.js';
 import { resetMapLibreMock } from './mocks/maplibre';
 import { server } from './msw/server';
+
+// Task 10 split every non-home screen (and MapLibre) behind a dynamic import.
+// The default 1 s async-query window is short for the suite's parallel workers
+// to resolve a first-time chunk transform under load, so wait up to 5 s before
+// declaring a genuinely missing element. Assertions themselves are unchanged.
+configure({ asyncUtilTimeout: 5_000 });
+
 
 // jsdom has no WebGL, so every suite gets the MapLibre double (R42). Without
 // this, rendering `Home` in an unrelated test would construct a real map and

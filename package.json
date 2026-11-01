@@ -21,6 +21,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run --tagsFilter=!integration",
     "test:integration": "vitest run --tagsFilter=integration",
+    "test:e2e": "npm run e2e --workspace @biyahey/web",
+    "perf:web": "node apps/web/scripts/perf.mjs",
     "smoke:routing": "node scripts/motis-smoke.mjs",
     "stress:motis": "node scripts/motis-stress.mjs",
     "verify:phase1": "node scripts/verify-phase1.mjs",

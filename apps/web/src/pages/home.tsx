@@ -2,7 +2,7 @@ import { Search } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { AppShell } from '../components/layout/AppShell';
 import { MapSlot } from '../components/layout/MapSlot';
-import { MapCanvas } from '../components/map/MapCanvas';
+import { MapView } from '../components/map/MapView';
 import { RoutePolylines } from '../components/map/RoutePolylines';
 import { AboutDataLink } from '../components/navigation/AboutDataLink';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
@@ -33,9 +33,9 @@ export function HomePage({ onSearchClick, onSavedClick }: HomePageProps = {}) {
         <MapSlot mapPadding={mapPadding}>
           {/* The route overlay is wired into the real page tree from day one;
               its itinerary list stays empty until a plan response exists. */}
-          <MapCanvas>
+          <MapView>
             <RoutePolylines itineraries={[]} />
-          </MapCanvas>
+          </MapView>
         </MapSlot>
       }
       sheet={

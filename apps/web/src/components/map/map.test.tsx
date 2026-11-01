@@ -654,9 +654,11 @@ describe('MapCanvas', () => {
 describe('Home map integration', () => {
   it('shows the live map under the sheet and follows the detent padding', async () => {
     render(<HomePage />);
-    const map = loadMap();
 
-    expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
+    // MapLibre is a lazy chunk (Task 10), so the canvas appears after `MapView`
+    // resolves its dynamic import; the sheet is interactive throughout.
+    expect(await screen.findByTestId('map-canvas')).toBeInTheDocument();
+    const map = loadMap();
     // The real RoutePolylines overlay is mounted on the Home path (with no
     // itineraries yet), so no route source exists until a plan arrives.
     expect(map.sources.size).toBe(0);

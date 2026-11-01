@@ -42,6 +42,7 @@ const TL = {
   'common.aboutData': 'About data',
   'common.dataSources': 'Pinagmulan ng data',
   'common.offline': 'Offline',
+  'common.loading': 'Naglo-load…',
 
   // --- Home ---------------------------------------------------------------
   'home.sheetLabel': 'Home',
@@ -303,6 +304,7 @@ const EN: Record<StringKey, string> = {
   'common.aboutData': 'About data',
   'common.dataSources': 'Data sources',
   'common.offline': 'Offline',
+  'common.loading': 'Loading…',
 
   'home.sheetLabel': 'Home',
   'home.eyebrow': 'Trip planning',
