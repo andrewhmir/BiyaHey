@@ -1,18 +1,52 @@
 import { Search } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { AppShell } from '../components/layout/AppShell';
+import { MapSlot } from '../components/layout/MapSlot';
+import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 
-// Placeholder entry point for Task 1. Task 2 wraps this in the map/sheet shell;
-// the search pill remains the app's primary call to action.
+const HOME_DETENTS = [96, 'half', 'expanded'] as const;
+
+// The map is still a placeholder (Task 3); the sheet already owns the layout
+// contract: peek by default, full-bleed map behind it, and a search pill that
+// stays the app's primary call to action.
 export function HomePage() {
+  const [mapPadding, setMapPadding] = useState(0);
+  const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
+    setMapPadding(padding.bottom);
+  }, []);
+
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-slate-50 px-6 text-slate-900">
-      <h1 className="text-4xl font-bold tracking-tight">BiyaHey!</h1>
+    <AppShell
+      map={<MapSlot mapPadding={mapPadding} />}
+      sheet={
+        <BottomSheet
+          detents={HOME_DETENTS}
+          initial="peek"
+          label="Home"
+          onMapPaddingChange={handleMapPaddingChange}
+        >
+          <HomeSheetContent />
+        </BottomSheet>
+      }
+    />
+  );
+}
+
+function HomeSheetContent() {
+  return (
+    <div className="flex flex-col gap-4 pb-2">
+      <p className="text-sm font-medium text-on-surface-variant">Plano ng biyahe</p>
+      <h1 className="text-2xl font-bold tracking-tight text-on-surface">BiyaHey!</h1>
       <button
         type="button"
-        className="flex min-h-14 w-full max-w-sm items-center gap-3 rounded-full border border-slate-200 bg-white px-6 text-left text-base font-medium shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 active:shadow-none"
+        className="flex min-h-12 w-full items-center gap-3 rounded-pill border border-outline bg-surface-container-lowest px-6 text-left text-base font-medium text-on-surface shadow-elevation-1 transition hover:shadow-elevation-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:shadow-none"
       >
-        <Search aria-hidden="true" className="size-5 shrink-0 text-slate-500" />
+        <Search aria-hidden="true" className="size-5 shrink-0 text-on-surface-variant" />
         <span>Saan ka pupunta?</span>
       </button>
-    </main>
+      <p className="text-sm text-on-surface-variant">
+        Hilahin pataas ang sheet para makapag-plano ng ruta.
+      </p>
+    </div>
   );
 }

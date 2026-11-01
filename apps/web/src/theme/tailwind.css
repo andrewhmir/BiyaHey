@@ -1,5 +1,15 @@
+@import './tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* M3 tonal-role design tokens live in `src/theme/tokens.css` (Task 2). */
+@layer base {
+  body {
+    background-color: var(--surface);
+    color: var(--on-surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}

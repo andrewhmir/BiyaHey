@@ -1,0 +1,196 @@
+/*
+ * BiyaHey! design tokens — Material 3 tonal roles.
+ *
+ * Brand seed: teal #00696D. One brand accent only. Transit-line colours are
+ * deliberately NOT tokenised: they arrive from route data (`route_color`) and
+ * must stay authoritative (R45 — no fare/attribution recomputation).
+ *
+ * Layout constants sit on an 8 dp grid; interactive targets are 48 dp. Roles are
+ * scheme-neutral names so components use `bg-surface` / `text-on-surface`
+ * instead of light/dark branches. Dark roles follow `prefers-color-scheme`, with
+ * a manual `data-theme="dark" | "light"` override for tests and settings.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Type: system stack only — no webfont download on Android-Go-class devices. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --text-label: 14px;
+  --leading-label: 16px;
+  --text-body: 16px;
+  --leading-body: 24px;
+  --text-title: 24px;
+  --leading-title: 32px;
+  --text-headline: 32px;
+  --leading-headline: 40px;
+
+  /* 8 dp spacing grid. `--space-3` is 24 px, `--space-6` is 48 px, etc. */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-8: 64px;
+  --space-10: 80px;
+  --space-12: 96px;
+  --touch-target: 48px;
+  --touch-target-min: 24px;
+
+  /* Shape (8 dp grid; the sheet uses the 24 px "large" corner). */
+  --shape-small: 8px;
+  --shape-medium: 16px;
+  --shape-large: 24px;
+  --shape-full: 9999px;
+
+  /* Elevation sprites: M3 ambient key + soft key shadow pairs. */
+  --elevation-1: 0 1px 2px rgb(0 0 0 / 0.16), 0 1px 3px 1px rgb(0 0 0 / 0.08);
+  --elevation-2: 0 1px 2px rgb(0 0 0 / 0.16), 0 2px 6px 2px rgb(0 0 0 / 0.1);
+  --elevation-3: 0 1px 3px rgb(0 0 0 / 0.2), 0 4px 8px 3px rgb(0 0 0 / 0.12);
+  --elevation-4: 0 2px 3px rgb(0 0 0 / 0.2), 0 6px 10px 4px rgb(0 0 0 / 0.14);
+
+  /* Light tonal roles (default). */
+  --surface: #f7faf9;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f1f5f4;
+  --surface-container: #eaf0ef;
+  --surface-container-high: #e4eae9;
+  --surface-container-highest: #dee4e3;
+  --on-surface: #171d1d;
+  --on-surface-variant: #3f4949;
+  --outline: #6f7979;
+  --outline-variant: #bec9c8;
+  --primary: #00696d;
+  --on-primary: #ffffff;
+  --primary-container: #9cf1f5;
+  --on-primary-container: #002021;
+  --secondary: #4a6363;
+  --on-secondary: #ffffff;
+  --secondary-container: #cce8e7;
+  --on-secondary-container: #051f1f;
+  --tertiary: #7a5900;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #ffdf9e;
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #410002;
+  --inverse-surface: #2b3231;
+  --inverse-on-surface: #ecf1f0;
+  --fare-bg: #fff1c7;
+  --on-fare-bg: #402d00;
+  --fare-border: #d9b45a;
+  --fare-accent: #7a5900;
+  --focus-ring: #00696d;
+
+  /*
+   * Internal dark palette. Not component API — the two dark entry points below
+   * only map these into the public role names, so the hex values live in one
+   * place (automatic OS dark mode plus an explicit `data-theme="dark"`).
+   */
+  --_dark-surface: #0e1514;
+  --_dark-surface-container-lowest: #090f0e;
+  --_dark-surface-container-low: #171d1c;
+  --_dark-surface-container: #1b2120;
+  --_dark-surface-container-high: #252b2a;
+  --_dark-surface-container-highest: #303635;
+  --_dark-on-surface: #dfe4e3;
+  --_dark-on-surface-variant: #bec9c8;
+  --_dark-outline: #899393;
+  --_dark-outline-variant: #3f4949;
+  --_dark-primary: #80d4d8;
+  --_dark-on-primary: #003639;
+  --_dark-primary-container: #004f52;
+  --_dark-on-primary-container: #9cf1f5;
+  --_dark-secondary: #b0cccb;
+  --_dark-on-secondary: #1b3534;
+  --_dark-secondary-container: #324b4a;
+  --_dark-on-secondary-container: #cce8e7;
+  --_dark-tertiary: #f7bf3f;
+  --_dark-on-tertiary: #402d00;
+  --_dark-tertiary-container: #5c4300;
+  --_dark-error: #ffb4ab;
+  --_dark-on-error: #690005;
+  --_dark-error-container: #93000a;
+  --_dark-on-error-container: #ffdad6;
+  --_dark-inverse-surface: #dfe4e3;
+  --_dark-inverse-on-surface: #2b3231;
+  --_dark-fare-bg: #3a2d00;
+  --_dark-on-fare-bg: #ffdf9e;
+  --_dark-fare-border: #6b5518;
+  --_dark-fare-accent: #f7bf3f;
+  --_dark-focus-ring: #80d4d8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: var(--_dark-surface);
+    --surface-container-lowest: var(--_dark-surface-container-lowest);
+    --surface-container-low: var(--_dark-surface-container-low);
+    --surface-container: var(--_dark-surface-container);
+    --surface-container-high: var(--_dark-surface-container-high);
+    --surface-container-highest: var(--_dark-surface-container-highest);
+    --on-surface: var(--_dark-on-surface);
+    --on-surface-variant: var(--_dark-on-surface-variant);
+    --outline: var(--_dark-outline);
+    --outline-variant: var(--_dark-outline-variant);
+    --primary: var(--_dark-primary);
+    --on-primary: var(--_dark-on-primary);
+    --primary-container: var(--_dark-primary-container);
+    --on-primary-container: var(--_dark-on-primary-container);
+    --secondary: var(--_dark-secondary);
+    --on-secondary: var(--_dark-on-secondary);
+    --secondary-container: var(--_dark-secondary-container);
+    --on-secondary-container: var(--_dark-on-secondary-container);
+    --tertiary: var(--_dark-tertiary);
+    --on-tertiary: var(--_dark-on-tertiary);
+    --tertiary-container: var(--_dark-tertiary-container);
+    --error: var(--_dark-error);
+    --on-error: var(--_dark-on-error);
+    --error-container: var(--_dark-error-container);
+    --on-error-container: var(--_dark-on-error-container);
+    --inverse-surface: var(--_dark-inverse-surface);
+    --inverse-on-surface: var(--_dark-inverse-on-surface);
+    --fare-bg: var(--_dark-fare-bg);
+    --on-fare-bg: var(--_dark-on-fare-bg);
+    --fare-border: var(--_dark-fare-border);
+    --fare-accent: var(--_dark-fare-accent);
+    --focus-ring: var(--_dark-focus-ring);
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface: var(--_dark-surface);
+  --surface-container-lowest: var(--_dark-surface-container-lowest);
+  --surface-container-low: var(--_dark-surface-container-low);
+  --surface-container: var(--_dark-surface-container);
+  --surface-container-high: var(--_dark-surface-container-high);
+  --surface-container-highest: var(--_dark-surface-container-highest);
+  --on-surface: var(--_dark-on-surface);
+  --on-surface-variant: var(--_dark-on-surface-variant);
+  --outline: var(--_dark-outline);
+  --outline-variant: var(--_dark-outline-variant);
+  --primary: var(--_dark-primary);
+  --on-primary: var(--_dark-on-primary);
+  --primary-container: var(--_dark-primary-container);
+  --on-primary-container: var(--_dark-on-primary-container);
+  --secondary: var(--_dark-secondary);
+  --on-secondary: var(--_dark-on-secondary);
+  --secondary-container: var(--_dark-secondary-container);
+  --on-secondary-container: var(--_dark-on-secondary-container);
+  --tertiary: var(--_dark-tertiary);
+  --on-tertiary: var(--_dark-on-tertiary);
+  --tertiary-container: var(--_dark-tertiary-container);
+  --error: var(--_dark-error);
+  --on-error: var(--_dark-on-error);
+  --error-container: var(--_dark-error-container);
+  --on-error-container: var(--_dark-on-error-container);
+  --inverse-surface: var(--_dark-inverse-surface);
+  --inverse-on-surface: var(--_dark-inverse-on-surface);
+  --fare-bg: var(--_dark-fare-bg);
+  --on-fare-bg: var(--_dark-on-fare-bg);
+  --fare-border: var(--_dark-fare-border);
+  --fare-accent: var(--_dark-fare-accent);
+  --focus-ring: var(--_dark-focus-ring);
+}
