@@ -43,7 +43,8 @@ test('search → route options → trip detail → save → saved → sources', 
   for (let index = 0; index < count; index += 1) {
     const card = cards.nth(index);
     await expect(card.getByTestId('fare-amount')).toContainText('₱');
-    await expect(card).toContainText('min');
+    // m9: match the ETA element itself, not any "min" substring in the card.
+    await expect(card.getByTestId('route-eta')).toHaveText(/^\d+ min$/);
     // Every displayed fare carries its effectivity date (global constraint).
     await expect(card.getByTestId('fare-date')).toContainText(/effective \d{4}-\d{2}-\d{2}/);
   }

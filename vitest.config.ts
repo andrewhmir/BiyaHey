@@ -32,6 +32,12 @@ export default defineConfig({
           globals: true,
           include: ['apps/web/src/**/*.test.{ts,tsx}'],
           setupFiles: ['./apps/web/src/test/setup.ts'],
+          // I1/R87 fix: `apps/web/src/test/setup.ts` gives RTL 5 s to settle a
+          // lazy query, which is exactly Vitest's default test timeout, so a
+          // slow-but-valid query could time the test out before the assertions
+          // ran (observed once at 5099 ms). Keep the wait budget and give the
+          // test itself room to finish under load.
+          testTimeout: 15_000,
         },
       },
     ],

@@ -184,9 +184,14 @@ export function resetMapLibreMock(): void {
 /**
  * Shape returned by `vi.mock('maplibre-gl', ...)`. `default` mirrors the
  * namespace because MapLibre supports both default and named imports.
+ *
+ * `setWorkerUrl` is called at module scope in `MapCanvas` (the production
+ * worker asset cannot be resolved by MapLibre's own runtime `new URL()`); the
+ * double only needs the export to exist.
  */
 export const mockMapLibre = {
   Map: MockMap,
+  setWorkerUrl: (): void => undefined,
   default: undefined as unknown,
 };
 

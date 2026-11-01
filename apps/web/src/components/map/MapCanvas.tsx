@@ -1,13 +1,25 @@
-import type { DataSource } from '@biyahey/shared';
 import type { Feature, Point } from 'geojson';
 import { LocateFixed } from 'lucide-react';
-import { Map as MapLibreMap, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
+import {
+  Map as MapLibreMap,
+  setWorkerUrl,
+  type GeoJSONSource,
+  type MapMouseEvent,
+} from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../../i18n/useT';
 import { useMapPadding } from '../layout/MapSlot';
 import { MapContext } from './MapContext';
-import { MapCredit } from './MapCredit';
+
+// MapLibre v6 resolves its worker with a runtime `new URL()` that Vite cannot
+// statically follow: the production build emitted no `assets/maplibre-gl-worker.mjs`,
+// and `vite preview`'s SPA fallback answered the request with index.html, so the
+// worker never started and the built map fetched **zero** tiles (the dev server
+// happened to resolve it from `node_modules`). Importing the packaged worker as
+// a URL asset emits it with the build and points MapLibre at the emitted file.
+setWorkerUrl(maplibreWorkerUrl);
 
 /**
  * The live MapLibre canvas.
@@ -50,13 +62,7 @@ const LOCATION_FAILURE_STATUSES: ReadonlySet<LocateStatus> = new Set([
 ]);
 
 type LocateStatus =
-  | 'idle'
-  | 'locating'
-  | 'located'
-  | 'denied'
-  | 'unavailable'
-  | 'timeout'
-  | 'pinned';
+  'idle' | 'locating' | 'located' | 'denied' | 'unavailable' | 'timeout' | 'pinned';
 
 const LOCATE_MESSAGE_KEYS: Partial<Record<LocateStatus, string>> = {
   locating: 'map.locating',
@@ -68,10 +74,14 @@ const LOCATE_MESSAGE_KEYS: Partial<Record<LocateStatus, string>> = {
 };
 
 export interface MapCanvasProps {
-  /** Provenance rows from the latest plan response for the ⓘ credit detail. */
-  sources?: readonly DataSource[];
   /** Overlays that need the live map (e.g. `RoutePolylines`). */
   children?: ReactNode;
+  /**
+   * Publishes the style-ready map to `MapView`, which owns the single
+   * `MapCredit` above the lazy boundary (R85/m1). `null` while loading and on
+   * unmount. Optional so `MapCanvas` stays directly renderable in isolation.
+   */
+  onMapReady?: (map: MapLibreMap | null) => void;
 }
 
 function pointFeature(lon: number, lat: number): Feature<Point> {
@@ -120,7 +130,7 @@ function removeMarker(map: MapLibreMap, sourceId: string): void {
   if (map.getSource(sourceId)) map.removeSource(sourceId);
 }
 
-export function MapCanvas({ sources = [], children }: MapCanvasProps) {
+export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapPadding = useMapPadding();
   const { t } = useT();
@@ -187,6 +197,18 @@ export function MapCanvas({ sources = [], children }: MapCanvasProps) {
       map.off('style.load', handleStyleLoad);
     };
   }, [map]);
+
+  // Publish the style-ready map upward so the single `MapCredit` in `MapView`
+  // (rendered above the lazy boundary) can collapse on map interactions.
+  useEffect(() => {
+    onMapReady?.(styledMap);
+  }, [onMapReady, styledMap]);
+
+  // Clear the published map only when this canvas goes away, so a style-ready
+  // transition never briefly reports `null` to the credit.
+  useEffect(() => {
+    return () => onMapReady?.(null);
+  }, [onMapReady]);
 
   // The sheet owns the detent; the map only consumes the resulting padding.
   useEffect(() => {
@@ -271,7 +293,13 @@ export function MapCanvas({ sources = [], children }: MapCanvasProps) {
 
   return (
     <div role="region" aria-label={t('map.region')} className="relative size-full overflow-hidden">
-      <div ref={containerRef} data-testid="map-canvas" className="absolute inset-0" />
+      {/* `h-full w-full`, not `absolute inset-0`: MapLibre adds its own
+          `.maplibregl-map { position: relative }` rule, which wins over the
+          `absolute` utility (unlayered CSS outranks Tailwind's layered
+          utilities) and collapsed this container to 0 px height. The canvas
+          then rendered into a zero-height box — the built map was never
+          visible. Percentage sizing survives the `position` override. */}
+      <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />
 
       <MapContext.Provider value={styledMap}>
         <div className="pointer-events-none absolute inset-0">
@@ -298,13 +326,6 @@ export function MapCanvas({ sources = [], children }: MapCanvasProps) {
             >
               <LocateFixed aria-hidden="true" className="size-5" />
             </button>
-          </div>
-
-          <div
-            className="absolute inset-x-3"
-            style={{ bottom: 'calc(var(--map-padding-bottom, 0px) + 8px)' }}
-          >
-            <MapCredit sources={sources} />
           </div>
         </div>
       </MapContext.Provider>

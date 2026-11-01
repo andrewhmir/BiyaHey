@@ -31,7 +31,8 @@
       "assertions": {
         "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
         "total-blocking-time": ["error", { "maxNumericValue": 2500 }],
-        "total-byte-weight": ["error", { "maxNumericValue": 1000000 }]
+        "total-byte-weight": ["error", { "maxNumericValue": 1000000 }],
+        "interactive": ["warn", { "maxNumericValue": 3000 }]
       }
     },
     "upload": {

@@ -13,6 +13,7 @@ import {
 import { MapSlot } from '../layout/MapSlot';
 import { MapCanvas, OPENFREEMAP_LIBERTY_STYLE } from './MapCanvas';
 import { MapCredit } from './MapCredit';
+import { MapView } from './MapView';
 import { MODE_COLORS, RoutePolylines, isKnownMode } from './RoutePolylines';
 
 vi.mock('maplibre-gl', async () => {
@@ -34,7 +35,8 @@ const osmSource: DataSource = {
   licence_url: 'https://opendatacommons.org/licenses/odbl/1-0/',
   coverage: 'Philippines - Geofabrik PH extract (NCR + belt for v1)',
   last_checked: '2026-11-01',
-  attribution: '© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0',
+  attribution:
+    '© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0',
   used_for: ['roads'],
 };
 
@@ -345,7 +347,9 @@ describe('RoutePolylines', () => {
     );
     const map = loadMap();
 
-    await waitFor(() => expect(map.setPaintProperty).toHaveBeenCalledWith('route-b', 'line-opacity', 0.6));
+    await waitFor(() =>
+      expect(map.setPaintProperty).toHaveBeenCalledWith('route-b', 'line-opacity', 0.6),
+    );
     expect(map.setPaintProperty).toHaveBeenCalledWith('route-a', 'line-opacity', 1);
     expect(map.setPaintProperty).toHaveBeenCalledWith('route-a', 'line-width', 6);
     expect(map.setPaintProperty).toHaveBeenCalledWith('route-b', 'line-width', 4);
@@ -387,8 +391,43 @@ describe('RoutePolylines', () => {
   });
 });
 
+describe('MapView', () => {
+  it('renders exactly one basemap credit and keeps it mounted across the lazy boundary', async () => {
+    render(<MapView sources={[osmSource, openFreeMapSource]} />);
+
+    // The credit is required before the ~1 MB map chunk arrives (R85).
+    const credit = screen.getByTestId('map-credit');
+    expect(screen.getAllByTestId('map-credit')).toHaveLength(1);
+    expect(screen.getByText(/© OpenStreetMap contributors/)).toBeInTheDocument();
+
+    expect(await screen.findByTestId('map-canvas')).toBeInTheDocument();
+
+    // ... and the same instance survives the fallback → canvas swap, so its
+    // 5 s auto-collapse timer is never restarted (m1).
+    expect(screen.getAllByTestId('map-credit')).toHaveLength(1);
+    expect(screen.getByTestId('map-credit')).toBe(credit);
+    expect(screen.getByText(/© OpenStreetMap contributors/)).toBeInTheDocument();
+  });
+
+  it('collapses the hoisted credit on the first map interaction', async () => {
+    render(<MapView sources={[osmSource, openFreeMapSource]} />);
+    await screen.findByTestId('map-canvas');
+    const map = loadMap();
+
+    await waitFor(() => expect(map.on).toHaveBeenCalledWith('dragstart', expect.any(Function)));
+    act(() => {
+      map.emit('dragstart');
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/© OpenStreetMap contributors/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: /pinagmulan ng data/i })).toBeInTheDocument();
+  });
+});
+
 describe('MapCanvas', () => {
-  it('mounts MapLibre with the keyless OpenFreeMap Liberty style and its own credit', () => {
+  it('mounts MapLibre with the keyless OpenFreeMap Liberty style and no duplicate credit', () => {
     render(<MapCanvas />);
 
     const map = mapInstances[0]!;
@@ -396,8 +435,9 @@ describe('MapCanvas', () => {
     expect(map.options.style).toBe(OPENFREEMAP_LIBERTY_STYLE);
     expect(map.options.attributionControl).toBe(false);
     expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
-    expect(screen.getByText(/© OpenStreetMap contributors/)).toBeInTheDocument();
-    expect(screen.getByText(/OpenFreeMap/)).toBeInTheDocument();
+    // The credit is owned by `MapView` (one instance above the Suspense
+    // boundary); the canvas itself must not paint a second copy.
+    expect(screen.queryByTestId('map-credit')).not.toBeInTheDocument();
   });
 
   it('applies the map slot padding whenever the sheet detent changes', async () => {
@@ -418,21 +458,6 @@ describe('MapCanvas', () => {
 
     await waitFor(() => expect(map.setPadding).toHaveBeenLastCalledWith({ bottom: 400 }));
     expect(screen.getByTestId('map-slot')).toHaveAttribute('data-map-padding-bottom', '400');
-  });
-
-  it('collapses the credit on the first map interaction', async () => {
-    render(<MapCanvas sources={[osmSource, openFreeMapSource]} />);
-    const map = loadMap();
-
-    await waitFor(() => expect(map.on).toHaveBeenCalledWith('dragstart', expect.any(Function)));
-    act(() => {
-      map.emit('dragstart');
-    });
-
-    await waitFor(() =>
-      expect(screen.queryByText(/© OpenStreetMap contributors/)).not.toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: /pinagmulan ng data/i })).toBeInTheDocument();
   });
 
   it('falls back to a manual pin when geolocation permission is denied', async () => {
@@ -639,13 +664,15 @@ describe('MapCanvas', () => {
   it('has no axe violations with the credit and routes rendered', async () => {
     const { container } = render(
       <MapSlot mapPadding={96}>
-        <MapCanvas sources={[osmSource, openFreeMapSource]}>
+        <MapView sources={[osmSource, openFreeMapSource]}>
           <RoutePolylines itineraries={[itinA, itinB]} selectedId="a" />
-        </MapCanvas>
+        </MapView>
       </MapSlot>,
     );
+    await screen.findByTestId('map-canvas');
     const map = loadMap();
     await waitFor(() => expect(map.addSource).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByTestId('map-credit')).toHaveLength(1);
 
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });

@@ -98,13 +98,7 @@ function arrivalLabel(endTime: string): string | null {
  * Provenance chip body is owned by the shared `ProvenanceChip` (Task 7); the
  * route card only supplies the itinerary's ids and the response's rows.
  */
-export function RouteCard({
-  itinerary,
-  sources,
-  selected,
-  onSelect,
-  badge,
-}: RouteCardProps) {
+export function RouteCard({ itinerary, sources, selected, onSelect, badge }: RouteCardProps) {
   const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
 
@@ -126,7 +120,7 @@ export function RouteCard({
       >
         <span className="flex items-start justify-between gap-2">
           <span className="flex flex-col">
-            <span className="text-2xl font-bold leading-8 text-on-surface">
+            <span data-testid="route-eta" className="text-2xl font-bold leading-8 text-on-surface">
               {itinerary.durationMin} min
             </span>
             {arrival !== null ? (
@@ -180,10 +174,7 @@ export function RouteCard({
           link nested in a button would be invalid and would also select the
           card when the rider only wanted the provenance detail. */}
       <div className="px-4 pb-3">
-        <ProvenanceChip
-          sourcesFromItinerary={itinerary.sources}
-          knownSources={sources}
-        />
+        <ProvenanceChip sourcesFromItinerary={itinerary.sources} knownSources={sources} />
       </div>
     </div>
   );

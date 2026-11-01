@@ -55,8 +55,11 @@ export default defineConfig({
       },
       workbox: {
         // Precache the app shell (HTML, JS/CSS chunks, icons, manifest) so a
-        // reload offline boots the SPA and the saved-trips store renders.
-        globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // reload offline boots the SPA and the saved-trips store renders. The
+        // `mjs` pattern covers MapLibre's worker asset, which `MapCanvas`
+        // imports as `?url` (without it the offline map has no renderer even
+        // though the map chunk itself is precached).
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
