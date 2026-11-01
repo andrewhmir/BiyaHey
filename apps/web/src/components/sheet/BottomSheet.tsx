@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import {
   createContext,
   useContext,
@@ -20,9 +21,12 @@ import {
  * 48 dp target so a strip of map stays visible). There is no scrim, no focus
  * trap and no `aria-modal`: the map behind the sheet stays usable.
  *
- * Dragging and the keyboard/button alternative share one control (the drag
- * handle is a button): activating it expands from peek or collapses one detent,
+ * Dragging and the accessible controls share the same detent state: activating
+ * the drag handle expands one detent until the sheet is fully expanded, the
+ * separate collapse control lowers it one detent at every detent above peek,
  * ArrowUp/ArrowDown step through detents, and Escape collapses one detent.
+ * `aria-expanded` is only true when the sheet is fully expanded, so a screen
+ * reader is told that `half` still has more to expand.
  */
 
 export type SheetDetentName = 'peek' | 'half' | 'expanded';
@@ -151,6 +155,7 @@ export function BottomSheet({
   const detentHeight = resolveHeight(resolvedDetents[index] ?? 'peek', viewportHeight, peekHeight);
   const renderedHeight = dragHeight ?? detentHeight;
   const atPeek = index === 0;
+  const atExpanded = detentName === 'expanded';
 
   const commitDetent = (nextIndex: number) => {
     const clamped = clamp(nextIndex, 0, names.length - 1);
@@ -277,7 +282,11 @@ export function BottomSheet({
       suppressClickRef.current = false;
       return;
     }
-    commitDetent(atPeek ? index + 1 : index - 1);
+    // The handle only expands; the separate collapse control (and drag/Escape)
+    // lowers the sheet. At expanded there is nothing left to expand, and
+    // `aria-disabled` announces that to assistive technology.
+    if (atExpanded) return;
+    commitDetent(index + 1);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -311,25 +320,41 @@ export function BottomSheet({
         .join(' ')}
       style={{ height: renderedHeight }}
     >
-      <button
-        type="button"
-        aria-label={atPeek ? 'Expand sheet' : 'Collapse sheet'}
-        aria-expanded={!atPeek}
-        aria-controls={bodyId}
-        aria-keyshortcuts="ArrowUp ArrowDown"
-        className="group flex h-12 w-full shrink-0 touch-none items-center justify-center rounded-t-sheet focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={(event) => finishDrag(event, false)}
-        onPointerCancel={(event) => finishDrag(event, true)}
-      >
-        <span
-          aria-hidden="true"
-          className="h-1 w-10 rounded-pill bg-outline-variant transition-colors group-hover:bg-outline"
-        />
-      </button>
+      <div className="flex h-12 w-full shrink-0 items-center">
+        {/* Balances the collapse control so the grip stays visually centred. */}
+        {atPeek ? null : <span aria-hidden="true" className="size-12 shrink-0" />}
+        <button
+          type="button"
+          aria-label="Expand sheet"
+          aria-expanded={atExpanded}
+          aria-disabled={atExpanded || undefined}
+          aria-controls={bodyId}
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          className="group flex h-12 min-w-0 flex-1 touch-none items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
+          onClick={handleClick}
+          onKeyDown={handleKeyDown}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={(event) => finishDrag(event, false)}
+          onPointerCancel={(event) => finishDrag(event, true)}
+        >
+          <span
+            aria-hidden="true"
+            className="h-1 w-10 rounded-pill bg-outline-variant transition-colors group-hover:bg-outline"
+          />
+        </button>
+        {atPeek ? null : (
+          <button
+            type="button"
+            aria-label="Collapse sheet"
+            aria-controls={bodyId}
+            onClick={() => commitDetent(index - 1)}
+            className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
+          >
+            <ChevronDown aria-hidden="true" className="size-5" />
+          </button>
+        )}
+      </div>
       <div
         id={bodyId}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"

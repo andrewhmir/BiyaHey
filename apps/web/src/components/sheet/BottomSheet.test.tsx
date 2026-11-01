@@ -47,10 +47,13 @@ describe('BottomSheet', () => {
     await user.click(screen.getByRole('button', { name: /expand sheet/i }));
 
     expect(sheet).toHaveAttribute('data-detent', 'half');
-    expect(screen.getByRole('button', { name: /collapse sheet/i })).toHaveAttribute(
+    // `aria-expanded` means "fully expanded", not "above peek", so it stays
+    // false at half and a screen reader is told there is more to expand.
+    expect(screen.getByRole('button', { name: /expand sheet/i })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'false',
     );
+    expect(screen.getByRole('button', { name: /collapse sheet/i })).toBeInTheDocument();
   });
 
   it('expands stepwise with ArrowUp and collapses one detent per activation', async () => {
@@ -164,9 +167,53 @@ describe('BottomSheet', () => {
     expect(screen.getByTestId('sheet')).toHaveAttribute('data-detent', 'half');
   });
 
-  it('has no axe violations', async () => {
-    const { container } = render(
+  it('reaches expanded by activating the handle from half', async () => {
+    const user = userEvent.setup();
+    render(
       <BottomSheet detents={[...DETENTS]} initial="peek">
+        <p>content</p>
+      </BottomSheet>,
+    );
+
+    const sheet = screen.getByTestId('sheet');
+    const expand = () => screen.getByRole('button', { name: /expand sheet/i });
+
+    // peek -> half
+    await user.click(expand());
+    expect(sheet).toHaveAttribute('data-detent', 'half');
+    expect(expand()).toHaveAttribute('aria-expanded', 'false');
+
+    // half -> expanded: no hardware keyboard or drag required.
+    await user.click(expand());
+    expect(sheet).toHaveAttribute('data-detent', 'expanded');
+    expect(expand()).toHaveAttribute('aria-expanded', 'true');
+    expect(expand()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('collapses expanded -> half -> peek with the separate collapse control', async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet detents={[...DETENTS]} initial="expanded">
+        <p>content</p>
+      </BottomSheet>,
+    );
+
+    const sheet = screen.getByTestId('sheet');
+    expect(sheet).toHaveAttribute('data-detent', 'expanded');
+
+    const collapse = () => screen.getByRole('button', { name: /collapse sheet/i });
+    await user.click(collapse());
+    expect(sheet).toHaveAttribute('data-detent', 'half');
+
+    await user.click(collapse());
+    expect(sheet).toHaveAttribute('data-detent', 'peek');
+    // Nothing left to collapse at peek, so the control is not rendered.
+    expect(screen.queryByRole('button', { name: /collapse sheet/i })).not.toBeInTheDocument();
+  });
+
+  it.each(['peek', 'half', 'expanded'] as const)('has no axe violations at %s', async (initial) => {
+    const { container } = render(
+      <BottomSheet detents={[...DETENTS]} initial={initial}>
         <h1>Mga biyahe</h1>
         <p>content</p>
       </BottomSheet>,
