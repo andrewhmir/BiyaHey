@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { MapSlot } from './MapSlot';
 
 export interface AppShellProps {
-  /** Map layer; defaults to the Task 2 placeholder until Task 3 lands. */
+  /** Map layer; defaults to an empty full-bleed map slot. */
   map?: ReactNode;
   /** Sheet layer. `BottomSheet` re-enables pointer events on itself. */
   sheet: ReactNode;

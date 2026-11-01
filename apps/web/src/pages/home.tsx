@@ -2,13 +2,14 @@ import { Search } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { AppShell } from '../components/layout/AppShell';
 import { MapSlot } from '../components/layout/MapSlot';
+import { MapCanvas } from '../components/map/MapCanvas';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 
 const HOME_DETENTS = [96, 'half', 'expanded'] as const;
 
-// The map is still a placeholder (Task 3); the sheet already owns the layout
-// contract: peek by default, full-bleed map behind it, and a search pill that
-// stays the app's primary call to action.
+// The live map sits under the sheet; the sheet owns the layout contract: peek
+// by default, full-bleed map behind it, and a search pill that stays the app's
+// primary call to action.
 export function HomePage() {
   const [mapPadding, setMapPadding] = useState(0);
   const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
@@ -17,7 +18,11 @@ export function HomePage() {
 
   return (
     <AppShell
-      map={<MapSlot mapPadding={mapPadding} />}
+      map={
+        <MapSlot mapPadding={mapPadding}>
+          <MapCanvas />
+        </MapSlot>
+      }
       sheet={
         <BottomSheet
           detents={HOME_DETENTS}
