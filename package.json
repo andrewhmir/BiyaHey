@@ -14,6 +14,9 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "data:build": "node scripts/data-build.mjs",
+    "check:fares": "node scripts/check-fares.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run --tagsFilter=!integration",
@@ -21,7 +24,7 @@
     "smoke:routing": "node scripts/motis-smoke.mjs",
     "stress:motis": "node scripts/motis-stress.mjs",
     "verify:phase1": "node scripts/verify-phase1.mjs",
-    "ci": "npm run lint && npm run typecheck && npm test && npm run validate:data",
+    "ci": "npm run lint && npm run typecheck && npm test && npm run validate:data && npm run check:fares",
     "validate:data": "node scripts/validate-data.mjs"
   },
   "devDependencies": {

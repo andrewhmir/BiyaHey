@@ -242,17 +242,17 @@ async function main() {
     ci.code === 0 ? `lint + typecheck + vitest + validate:data green (${(ci.durationMs / 1000).toFixed(1)} s)` : `exit ${ci.code}`,
   );
 
-  // ------------------------------------------------- 3. compose: router up
+  // ------------------------------------------------- 3. compose: router + api
   const compose = await run(
-    'docker compose up -d --wait routing',
+    'docker compose up -d --wait routing api',
     isWindows ? 'docker.exe' : 'docker',
-    ['compose', 'up', '-d', '--wait', 'routing'],
+    ['compose', 'up', '-d', '--wait', 'routing', 'api'],
   );
   record(
     'compose',
     compose.code === 0 ? 'PASS' : 'FAIL',
     compose.code === 0
-      ? `routing service healthy after ${(compose.durationMs / 1000).toFixed(1)} s (warm start)`
+      ? `routing + api services healthy after ${(compose.durationMs / 1000).toFixed(1)} s (warm start)`
       : `exit ${compose.code}`,
   );
 
@@ -370,8 +370,11 @@ async function main() {
         title: 'docker compose up serves the stack in < 20 min',
         status: compose.code === 0 && smoke.code === 0 ? 'PARTIAL' : 'FAIL',
         evidence:
-          `router healthy in ${(compose.durationMs / 1000).toFixed(1)} s (warm), smoke ok; ` +
-          `API served on ${currentApi.baseUrl}. The web service is Plan 2, so the full three-service stack is not testable yet.`,
+          `docker compose up -d --wait routing api brought both services healthy in ` +
+          `${(compose.durationMs / 1000).toFixed(1)} s (warm) and smoke ok; the harness then ran the ` +
+          `same API code on ${currentApi.baseUrl} for the golden suite (/health ok), and the browser ` +
+          `origin http://localhost:5173 is CORS-allowed. The web service is Plan 2 (no apps/web yet), ` +
+          `so the full three-service stack is not testable.`,
       },
       {
         id: '2',

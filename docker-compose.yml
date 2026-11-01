@@ -18,3 +18,41 @@ services:
       # First start imports the NCR graph before the server listens.
       start_period: 600s
     restart: unless-stopped
+
+  api:
+    # The BFF (Plan 1). Build context is the repository root because the image
+    # also needs the `@biyahey/shared` workspace sources.
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    image: biyahey-api:0.1.0
+    ports:
+      - "8787:8787"
+    environment:
+      # Data is mounted whole (not just data/build): the API reads the
+      # provenance registry, fare matrix and curated inventory beside the feed.
+      BIYAHEY_DATA_DIR: /data
+      MOTIS_URL: http://routing:8080
+      PORT: "8787"
+      # Spec §7: the PWA (Vite dev server) is the only browser origin allowed by
+      # default. A deployment overrides this with its real web origin.
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      routing:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+

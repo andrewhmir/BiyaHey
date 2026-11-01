@@ -1,0 +1,16 @@
+# Docker build context for the API image (context is the repository root).
+# Keep generated data, dependencies and local scratch out of the context.
+.git
+.github
+.superpowers
+node_modules
+**/node_modules
+**/dist
+data
+pipelines
+services/routing
+apps
+docs
+*.log
+.env
+.env.*
