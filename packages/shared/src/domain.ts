@@ -115,6 +115,21 @@ export interface PlanPlaceInput {
   lon: number;
 }
 
+/**
+ * One optional intermediate stop for `POST /plan` (trip-planner R89).
+ *
+ * The router's `via` parameter accepts stop ids only, so a stop is carried as
+ * the served stop id the search response put on `SearchResultDto.id` (a
+ * `type: 'stop'` result). The coordinates stay in the request so the stop is a
+ * place a caller can display and reason about, not an opaque router id.
+ *
+ * The router accepts at most two via stops; the BFF rejects a longer list.
+ */
+export interface PlanStopInput extends PlanPlaceInput {
+  /** Served MOTIS/GTFS stop id (the `id` of a `type: 'stop'` search result). */
+  stopId: string;
+}
+
 /** Re-ranking and display preferences accepted by `POST /plan`. */
 export interface PlanPreferences {
   /** Cheapest first (fare ascending, then duration ascending). */
@@ -131,6 +146,14 @@ export interface PlanPreferences {
 export interface PlanRequest {
   origin: PlanPlaceInput;
   destination: PlanPlaceInput;
+  /**
+   * Optional intermediate stops in travel order (trip-planner R89).
+   *
+   * Additive and optional: a request without it is byte-identical to the v1
+   * contract. The BFF maps each `stopId` to the router's `via` parameter, which
+   * accepts at most two stops.
+   */
+  stops?: PlanStopInput[];
   /** ISO 8601 departure; defaults to "now" when omitted. */
   departAt?: string;
   preferences?: PlanPreferences;
