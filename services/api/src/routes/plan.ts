@@ -78,6 +78,10 @@ async function collectItineraries(
   departAt: string,
 ): Promise<CollectionResult> {
   const maxTransfers = plan.preferences?.maxTransfers;
+  // Every attempt must constrain routing to the same intermediate stops, or the
+  // enrichment calls would answer a different (origin -> destination) question.
+  // The schema already trimmed the ids; forward them verbatim.
+  const via = plan.stops?.map((stop) => stop.stopId);
   const attempts: PlanAttempt[] = [
     { time: departAt, maxTransfers },
     { time: shiftedDeparture(departAt, SHIFTED_DEPARTURE_MIN), maxTransfers },
@@ -100,6 +104,7 @@ async function collectItineraries(
         destination: plan.destination,
         time: attempt.time,
         maxTransfers: attempt.maxTransfers,
+        via,
       });
       // Drop impossible geometry before it can count toward the three-option
       // target or reach the fare engine (R10 feed defect; see map-itinerary.ts).

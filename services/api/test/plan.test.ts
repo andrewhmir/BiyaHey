@@ -50,8 +50,37 @@ const CUBAO = { lat: 14.619, lon: 121.053 };
 const AYALA = { lat: 14.554, lon: 121.024 };
 const DEPART_AT = '2026-11-02T08:00:00+08:00';
 
+// Real pinned-feed stop ids (the form MOTIS `via` accepts); coordinates are the
+// displayable pins the request contract keeps alongside them.
+const STOP_A = { lat: 14.5995, lon: 121.0321, stopId: 'gtfs_rail-3:node:5397307750' };
+const STOP_B = { lat: 14.5874, lon: 121.0369, stopId: 'gtfs_rail-1:node:4475471873' };
+
 function planApp(fixture: unknown = planFixture) {
   return buildApp({ motisFetch: async () => fixture });
+}
+
+/**
+ * Build an app whose MOTIS transport answers every call with `fixture` and
+ * records each requested URL, so a test can assert the exact `via` list the
+ * fan-out forwarded on every attempt.
+ */
+function capturingPlanApp(fixture: unknown = planFixture): {
+  app: ReturnType<typeof buildApp>;
+  urls: string[];
+} {
+  const urls: string[] = [];
+  const app = buildApp({
+    motisFetch: async (url) => {
+      urls.push(url);
+      return fixture;
+    },
+  });
+  return { app, urls };
+}
+
+/** Parse the `/plan` URLs a capturing app recorded, in call order. */
+function planCalls(urls: readonly string[]): URL[] {
+  return urls.filter((url) => url.includes('/api/v6/plan')).map((url) => new URL(url));
 }
 
 async function postPlan(
@@ -651,5 +680,110 @@ describe('POST /plan', () => {
       expect(statusCode, JSON.stringify(payload)).toBe(400);
       expect(body.error?.code, JSON.stringify(payload)).toBe('INVALID_BODY');
     }
+  });
+
+  it('forwards two stops as one comma-joined via on every plan attempt', async () => {
+    // A single plausible itinerary per response keeps the fan-out below its
+    // three-option target, so all three attempts run and each one is checked.
+    const { app, urls } = capturingPlanApp({ itineraries: [planFixture.itineraries[0]] });
+    const { statusCode } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+      stops: [STOP_A, STOP_B],
+    });
+
+    expect(statusCode).toBe(200);
+    expect(urls).toHaveLength(3);
+    const calls = planCalls(urls);
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      expect(call.searchParams.get('via')).toBe(`${STOP_A.stopId},${STOP_B.stopId}`);
+    }
+  });
+
+  it('forwards a single stop as via', async () => {
+    const { app, urls } = capturingPlanApp({ itineraries: [planFixture.itineraries[0]] });
+    const { statusCode } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+      stops: [STOP_A],
+    });
+
+    expect(statusCode).toBe(200);
+    const calls = planCalls(urls);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.searchParams.get('via')).toBe(STOP_A.stopId);
+    }
+  });
+
+  it('adds no via parameter when the request carries no stops', async () => {
+    const { app, urls } = capturingPlanApp({ itineraries: [planFixture.itineraries[0]] });
+    const { statusCode } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    expect(urls).toHaveLength(3);
+    for (const call of planCalls(urls)) {
+      expect(call.searchParams.get('via')).toBeNull();
+    }
+  });
+
+  it('rejects three stops with 400 INVALID_BODY', async () => {
+    const app = planApp();
+    const { statusCode, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+      stops: [STOP_A, STOP_B, { lat: 14.62, lon: 121.0, stopId: 'gtfs_bus-1:node:1' }],
+    });
+
+    expect(statusCode).toBe(400);
+    expect(body.error?.code).toBe('INVALID_BODY');
+  });
+
+  it('rejects malformed stops with 400 INVALID_BODY', async () => {
+    const app = planApp();
+    const invalid: Record<string, unknown>[] = [
+      { origin: CUBAO, destination: AYALA, stops: 'nope' },
+      // Missing / empty / whitespace-only stop id.
+      { origin: CUBAO, destination: AYALA, stops: [{ lat: 14.6, lon: 121.0 }] },
+      { origin: CUBAO, destination: AYALA, stops: [{ lat: 14.6, lon: 121.0, stopId: '' }] },
+      { origin: CUBAO, destination: AYALA, stops: [{ lat: 14.6, lon: 121.0, stopId: '   ' }] },
+      // Out-of-range stop coordinates.
+      { origin: CUBAO, destination: AYALA, stops: [{ lat: 95, lon: 121.0, stopId: 'a' }] },
+      { origin: CUBAO, destination: AYALA, stops: [{ lat: 14.6, lon: 181, stopId: 'a' }] },
+    ];
+    for (const payload of invalid) {
+      const { statusCode, body } = await postPlan(app, payload);
+      expect(statusCode, JSON.stringify(payload)).toBe(400);
+      expect(body.error?.code, JSON.stringify(payload)).toBe('INVALID_BODY');
+    }
+  });
+
+  it('does not change the mapped itineraries when stops are forwarded', async () => {
+    const app = planApp();
+    const base = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+    const withStops = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+      stops: [STOP_A, STOP_B],
+    });
+
+    expect(base.statusCode).toBe(200);
+    expect(withStops.statusCode).toBe(200);
+    expect(withStops.body.itineraries.map((itinerary) => itinerary.id)).toEqual(
+      base.body.itineraries.map((itinerary) => itinerary.id),
+    );
   });
 });

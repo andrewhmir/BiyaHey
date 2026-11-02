@@ -15,6 +15,16 @@ const longitude = z
 
 const placeSchema = z.object({ lat: latitude, lon: longitude });
 
+/**
+ * One optional intermediate stop (trip-planner R89).
+ *
+ * The router only routes through stop ids, so a stop carries the served id
+ * (the `id` of a `type: 'stop'` search result) next to the coordinates the
+ * caller displays. Whitespace is trimmed here so a stray space can never reach
+ * the router's comma-joined `via` list as a different stop id.
+ */
+const stopSchema = placeSchema.extend({ stopId: z.string().trim().min(1) });
+
 const preferencesSchema = z.object({
   cheapest: z.boolean().optional(),
   fewestTransfers: z.boolean().optional(),
@@ -25,6 +35,8 @@ const preferencesSchema = z.object({
 const planRequestSchema = z.object({
   origin: placeSchema,
   destination: placeSchema,
+  // MOTIS accepts at most two `via` stops; a longer list is a client error.
+  stops: z.array(stopSchema).max(2).optional(),
   departAt: z
     .string()
     .min(1)

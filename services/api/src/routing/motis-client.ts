@@ -16,6 +16,14 @@ export interface MotisPlanQuery {
   time: string;
   /** Optional cap; MOTIS maps 0 to "direct itineraries only". */
   maxTransfers?: number;
+  /**
+   * Intermediate stops to route through, in travel order (trip-planner R89).
+   *
+   * MOTIS's `via` parameter takes GTFS stop ids, never coordinates, and accepts
+   * at most two; the body schema enforces that bound. Omitted or empty leaves
+   * the request identical to a direct origin -> destination plan.
+   */
+  via?: readonly string[];
 }
 
 /** Thin, injectable client for the two MOTIS endpoints the BFF needs. */
@@ -168,11 +176,17 @@ export function createMotisClient(options: MotisClientOptions): MotisClient {
       // 2026-11-01 — default and numItineraries=1/5 all returned 10 itineraries)
       // and serves no OpenAPI document. The route widens the search with extra
       // calls instead.
+      // `via` is a comma-separated stop-id list (MOTIS explode=false), so it is
+      // joined here; an empty list must not add the parameter at all, keeping
+      // a no-stop request byte-identical to the v1 contract.
+      const via =
+        query.via !== undefined && query.via.length > 0 ? query.via.join(',') : undefined;
       return requestJson('/api/v6/plan', {
         fromPlace: `${query.origin.lat},${query.origin.lon}`,
         toPlace: `${query.destination.lat},${query.destination.lon}`,
         time: query.time,
         maxTransfers: query.maxTransfers,
+        via,
       });
     },
     geocode(text) {
