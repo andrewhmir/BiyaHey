@@ -4,13 +4,19 @@ import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { ModeChips } from './ModeChips';
 
-/** The single badge a card may show (spec §11 screen 3). */
-export type RouteBadge = 'BEST' | 'CHEAPEST' | 'FEWEST TRANSFERS';
+/**
+ * The single badge a card may show (spec §11 screen 3). `BEST` belongs to the
+ * Recommended consensus lead alone; every single-criterion chip names its own
+ * criterion, so a fare lead and the Recommended lead can never both read
+ * `BEST` (the reported contradiction).
+ */
+export type RouteBadge = 'BEST' | 'CHEAPEST' | 'FEWEST TRANSFERS' | 'LEAST WALKING';
 
 const BADGE_KEYS: Record<RouteBadge, string> = {
   BEST: 'routes.badgeBest',
   CHEAPEST: 'routes.badgeCheapest',
   'FEWEST TRANSFERS': 'routes.badgeFewestTransfers',
+  'LEAST WALKING': 'routes.badgeLeastWalking',
 };
 
 export interface RouteCardProps {
