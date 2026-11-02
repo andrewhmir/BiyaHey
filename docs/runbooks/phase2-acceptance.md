@@ -126,11 +126,7 @@ match this document.
 | # | Criterion | Status | Proof | Recorded evidence |
 |---|---|---|---|---|
 | 2 | Search returns grouped results (Stops · Landmarks · Routes · Saved) for any NCR query; p95 search ≤ 1.5 s | **PASS** | `npm test` + `npm run test:e2e` (dev project); p95 from Plan-1 acceptance (`--with-phase1` re-runs it) | Live `/search` for "Cubao" rendered the Stops and Landmarks groups and the real `10 resulta` status; SearchScreen unit + axe tests cover the four groups and idle/offline/partial states (380 root tests green). Server-side p95 search was **30–39 ms** over six NCR queries on 2026-11-01 (limit 1,500 ms). |
-| 3 | For 10 golden NCR trips the planner returns ≥ 3 itineraries with total time, fare, transfers and walk distance; p95 plan ≤ 1.5 s | **PASS** | `npm run test:e2e` + Plan-1 golden suite (`--with-phase1`); UI contract in the card tests | The live `/plan` rendered **3 options** in the screenshot capture run (E2E
-tolerates 1–5) with a `₱23.69` fare, `43 min` ETA, `direct · 1.7 km lakad`, a
-fare effectivity date and the map polyline for the selection. Plan-1 acceptance
-measured **10/10 golden trips with 4–5 itineraries** and p95 plan **185–208 ms**
-(limit 1,500 ms). |
+| 3 | For 10 golden NCR trips the planner returns ≥ 3 itineraries with total time, fare, transfers and walk distance; p95 plan ≤ 1.5 s | **PASS** | `npm run test:e2e` + Plan-1 golden suite (`--with-phase1`); UI contract in the card tests | The live `/plan` rendered **3 options** in the screenshot capture run (E2E tolerates 1–5) with a `₱23.69` fare, `43 min` ETA, `direct · 1.7 km lakad`, a fare effectivity date and the map polyline for the selection. Plan-1 acceptance measured **10/10 golden trips with 4–5 itineraries** and p95 plan **185–208 ms** (limit 1,500 ms). |
 | 4 | Fare engine passes ≥ 25 golden fare cases | **PASS** | `npm test` (root) | **45** cases in `packages/shared/src/fares.test.ts` ran green inside the 380-test offline suite: 2026-09-28 PUV matrix, 2026-03-23 LRT-2/MRT-3 50 % discount, LRT-1 exclusion, free-ride overrides, guards. Plan-1-owned; re-verified here without the live stack. |
 | 5 | Every itinerary carries `sources[]`; About-data lists every dataset with publisher, licence and last-checked date; every fare shows `effective_from` | **PASS** | `npm test` + `npm run test:e2e` (dev) + live `/sources` | `/sources` served **10 datasets**; About data rendered the OSM and OSM-Wiki rows with publisher, `ODbL-1.0` / `CC-BY-SA-2.0`, `Huling tsek 2026-11-01` and "hindi naka-publish" confidence. The E2E flow asserted an `effective YYYY-MM-DD` date on every card, the trip's fare breakdown/source rows, and the OpenStreetMap row on `/sources`. Missing-source fallback is unit-tested. |
 | 6 | PWA is installable; saved trips + fare matrix work offline with a staleness stamp | **PASS** | `npm run build --workspace @biyahey/web` + `npm run test:e2e` (preview project) | The built app links a manifest with `name`, `start_url: /`, `display: standalone` and 192/512 icons; `navigator.serviceWorker.ready` resolves, the reload is controlled, `context.setOffline(true)` then a reload of `/saved` renders the saved row, the `offline-badge`, "Saved route (no live data)" and "Fare may have changed since you saved this." — all asserted by Playwright against the production build. Build emits `sw.js` + `manifest.webmanifest`; Workbox rules are unit-tested (R72). |
@@ -232,13 +228,13 @@ are re-verifiable with `npm run verify:phase2 -- --with-phase1`:
 
 ### Performance — PARTIAL, never green (R87/R88)
 
-1. **Cold start → interactive map ≤ 3 s: NOT MET.** Median TTI **7,623 ms**
+1. **Cold start → interactive map ≤ 3 s: NOT MET.** Median TTI **7,673 ms**
    (Task 10 recorded 7,523 ms; a review run 7,884 ms). The MapCanvas chunk is
    1,060 kB raw / 288.5 kB gzip and its main long task is ~2.8 s starting ~4.9 s.
    Candidate fixes are a preloaded map chunk (breaks the 250 KB paint-only
    budget), a lighter/raster first paint, or an explicit re-scope — an open
    phase-2 decision, not waived.
-2. **TBT ≤ 2500 ms regression ceiling: FAIL** (median 3,960 ms). Lighthouse's
+2. **TBT ≤ 2500 ms regression ceiling: FAIL** (median 3,924 ms). Lighthouse's
    "good" TBT of 600 ms is not met. The ceiling was deliberately not raised.
 3. **≤ 40 map tiles per viewport: measured but NOT ENFORCED.** Task 10's probe at
    390×844, zoom 11, no pan saw **4 vector tiles** (plus 3 font ranges, 1 style,
@@ -248,8 +244,8 @@ are re-verifiable with `npm run verify:phase2 -- --with-phase1`:
 4. **`saveData` → raster fallback: NOT IMPLEMENTED.** Needs a degraded map mode
    (detect `navigator.connection.saveData` and swap to raster/low-detail or the
    no-map placeholder). Recorded as a feature decision.
-5. **LCP ≤ 3 s is a recorded-run-only pass.** This run's median is 2,046 ms and
-   Task 10's recorded run 2,014 ms, but individual runs here reached 3,842 ms
+5. **LCP ≤ 3 s is a recorded-run-only pass.** This run's median is 2,011 ms and
+   Task 10's recorded run 2,014 ms, but individual runs here reached 5,459 ms
    and a review run's median was 3,776 ms (FAIL). LCP is the required basemap
    credit text in the eager `MapView` fallback (R85), so it measures attribution
    paint, not map readiness. The CI `perf` job is authoritative.
@@ -317,6 +313,19 @@ are re-verifiable with `npm run verify:phase2 -- --with-phase1`:
       (`needs_verification: true`), PNR/non-PRFS ferries excluded, P2P deferred,
       bad OSM route shapes mitigated by the plausibility guard, coverage 12/16.
       See `docs/runbooks/phase1-acceptance.md` §8.
+
+14. **The screenshot capture script's port-taken guard is advisory.**
+    `apps/web/scripts/screenshots.mjs` requires a built `dist/` but does not
+    inspect the spawned `vite preview` exit, so a server already on `:5173` would
+    be captured instead of failing. The committed PNGs were captured from a clean
+    preview; this is a repeatability guard for future re-captures, not a defect in
+    the shipped screenshots.
+15. **The trip-live placeholder summary shows a fare without its effectivity
+    date.** `TripLiveScreen` renders `X min · ₱NN · naka-cache na plano` from the
+    cached itinerary; unlike route cards and the trip detail, it does not repeat
+    the quote's `effective_from`. Pre-existing Task 6 screen; recorded for the
+    phase-3/UI pass (it could show the date or a cached-plan caveat).
+
 
 ### What this harness does not prove
 

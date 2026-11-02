@@ -44,8 +44,9 @@ container, not Google's data.
   `effective_from` date and its source. No fare is ever shown without either.
 - **Provenance in three layers** — a map/tile credit and a route-card chip (L1),
   the About-data dataset list with publisher, SPDX licence, last-checked date and
-  coverage (L2), and a licence sheet with the full source URL (L3). Every string
-  comes from the API's `sources[]`, never from a hardcoded attribution table.
+  coverage (L2), and a licence sheet with the full source URL (L3). Every dataset
+  attribution string comes from the API's `sources[]`; the required basemap tile
+  credit is the documented exception (R42/R55).
 - **Step-by-step trips** — an expandable leg timeline (walk / jeep / bus / rail /
   ferry / wait) with the alight stop pinned, "Look for:" signage on board legs, a
   landmark line, and an itemised fare breakdown with effectivity dates.
@@ -176,7 +177,7 @@ without a reuse grant are **never shipped**.
   met**, TBT is above the Lighthouse "good" guidance, the ≤ 40 tiles/viewport
   budget is measured but not enforced, and the `saveData` raster fallback is not
   implemented. The CI `perf` job is authoritative; see
-  `docs/runbooks/phase2-acceptance.md` §5.
+  `docs/runbooks/phase2-acceptance.md` §6.
 - **Data gaps.** Coverage is 12/16 curated routes; PNR and non-PRFS ferries are
   excluded from the v1 feed and counted; P2P is formally deferred; the LRT-2 fare
   band is provisional (`needs_verification: true`); a plausibility guard mitigates
@@ -185,7 +186,7 @@ without a reuse grant are **never shipped**.
 - **UI gaps for public beta.** Home's peek sheet does not yet list recent trips
   (spec screen 1), the English-fallback toggle has no settings UI (spec §11), and
   mixed Taglish/English sentences are tagged as one primary language (R81). All
-  are listed in `docs/runbooks/phase2-acceptance.md` §5.
+  are listed in `docs/runbooks/phase2-acceptance.md` §6.
 
 ## Contributing
 

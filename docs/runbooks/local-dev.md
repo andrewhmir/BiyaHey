@@ -136,8 +136,9 @@ five-run median is designed to absorb noise, not a pegged CPU.
   Unix-oriented docs that start with `pwsh` will fail; use `powershell` or the
   `pwsh`-named command runner your harness provides, not a PowerShell 7 install.
 - Set environment variables with `$env:NAME = 'value'`; they last for the
-  session. The acceptance harnesses strip `API_URL`/`MOTIS_URL` where a check
-  must stay offline.
+  session. The Phase-1 harness strips `API_URL`/`MOTIS_URL` for its offline check;
+  Phase 2's offline suite is `--tagsFilter=!integration` instead, so it does not
+  need env stripping.
 - PowerShell does not expand wildcards for native commands (`git mv dir/* …`
   fails); enumerate files explicitly.
 - `npm run` scripts that call Node work in PowerShell 5.1, but colours/Unicode
