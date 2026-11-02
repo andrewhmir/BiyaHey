@@ -124,6 +124,17 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   placeholder icons, raw-localStorage retrofit, R78 24 px popover licence links, E2E
   lifted from live feed, "START → END" saved-row title); Plan-1 gaps unchanged
   (`gtfs-validator` R46, LRT-2 R47, P2P R48, coverage 12/16).
+- **Final whole-branch review (2026-11-02):** every task was independently reviewed
+  (fix rounds re-reviewed; no Critical/Important findings left open). The final
+  whole-branch review of Task 11 + branch integrity reproduced `verify:phase2`
+  (exit 0 / PARTIAL, §3 5/5) and returned **documentation-only** fixes: F1 (Important —
+  `phase2-acceptance.md` §6 quoted superseded run-1 Lighthouse numbers), F2 (broken
+  criterion-3 table row), F3 (README known-gap refs §5→§6), plus non-blocking F4–F7.
+  All fixed in **`5b9288c`** (docs only; no code/config/test changed); F4 (screenshot
+  script's advisory port guard) and F5 (trip-live summary misses `effective_from`) are
+  recorded as known-gap items 14–15. A scoped docs re-review returned **APPROVED — no
+  open findings**. Final HEAD `5b9288c`; branch reviewed and ready for the human's
+  merge decision (nothing pushed/merged).
 - **Next phase (not started):** Phase 3 curation & coverage (route-inventory merge
   workflow, fare-update runbook, staleness CI, community report flow) and the public-beta
   decisions above; the branch is ready for merge/review when the human decides (nothing
