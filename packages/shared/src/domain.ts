@@ -50,6 +50,22 @@ export interface LegStopDto {
   departureTime?: string;
 }
 
+/**
+ * Encoded route shape for one leg, as the router reported it.
+ *
+ * `points` is a Google-encoded polyline over `[lat, lon]` **deltas**, not
+ * GeoJSON order, scaled by `10 ** precision`. MOTIS's pinned build sends
+ * `precision: 6` for every leg (the algorithm's default is 5), so consumers
+ * must decode with the reported precision. The encoded string is carried
+ * through untouched rather than as a decoded vertex list: it is roughly an
+ * order of magnitude smaller on the wire, and both the API and the PWA already
+ * have `decodePolyline` for it.
+ */
+export interface LegGeometryDto {
+  points: string;
+  precision: number;
+}
+
 /** One leg of an itinerary. */
 export interface LegDto {
   mode: LegMode;
@@ -69,11 +85,21 @@ export interface LegDto {
   landmarkHint: string | null;
   /**
    * Leg length in metres, derived from MOTIS's declared `distance` or from its
-   * encoded polyline. The v1 DTO deliberately carries no geometry: the PWA
-   * draws routes from its own map layer and a polyline would multiply the
-   * response size without being used.
+   * encoded polyline. The encoded shape itself travels in {@link geometry}
+   * when the router sent one; this derived length stays the value every
+   * consumer can rely on, including payloads without geometry.
    */
   distanceM: number;
+  /**
+   * Encoded route shape for this leg, copied from MOTIS's `legGeometry`.
+   *
+   * Additive and optional: payloads cached or built before the PWA drew real
+   * route shapes carry no geometry, so consumers must fall back to the leg's
+   * `from`→`to` segment instead of rejecting the response. Decode `points`
+   * with {@link decodePolyline} before drawing; it is lat/lon-delta order, not
+   * GeoJSON's lon/lat order.
+   */
+  geometry?: LegGeometryDto;
   /**
    * True for a walk leg that is a transfer between two transit legs (spec §9's
    * `informal_transfer` leg type). The PWA labels it as a transfer and applies
@@ -250,4 +276,63 @@ export function joinAttributions(sources: readonly DataSource[]): string {
     .map((source) => source.attribution.trim())
     .filter((attribution) => attribution.length > 0)
     .join(' · ');
+}
+
+/** Read one signed polyline delta; returns `undefined` on malformed input. */
+function decodeValue(encoded: string, state: { index: number }): number | undefined {
+  let result = 0;
+  let shift = 0;
+  for (;;) {
+    if (state.index >= encoded.length) {
+      return undefined;
+    }
+    const byte = encoded.charCodeAt(state.index) - 63;
+    state.index += 1;
+    if (byte < 0) {
+      return undefined;
+    }
+    result |= (byte & 0x1f) << shift;
+    shift += 5;
+    if (byte < 0x20) {
+      break;
+    }
+    if (shift > 30) {
+      return undefined;
+    }
+  }
+  return (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+}
+
+/**
+ * Decode a Google-encoded polyline into `[lat, lon]` pairs.
+ *
+ * This is the encoding MOTIS uses for `legGeometry`: each vertex is a signed
+ * lat delta followed by a signed lon delta, scaled by `10 ** precision`.
+ * MOTIS's pinned build sends `precision: 6`, not the algorithm's default 5, so
+ * callers must pass the reported field through rather than assume. Truncated or
+ * malformed input ends the decode at the last complete vertex; this function
+ * never throws, so a corrupt cached payload cannot crash a render.
+ *
+ * It lives in the browser-safe shared package because the PWA draws the same
+ * `LegDto.geometry` the API measures distance from: one implementation means
+ * the plotted shape is exactly the shape the fare distance was derived from.
+ */
+export function decodePolyline(encoded: string, precision = 5): Array<[number, number]> {
+  const factor =
+    Number.isInteger(precision) && precision >= 0 && precision <= 9 ? 10 ** precision : 1e5;
+  const points: Array<[number, number]> = [];
+  const state = { index: 0 };
+  let lat = 0;
+  let lon = 0;
+  while (state.index < encoded.length) {
+    const latDelta = decodeValue(encoded, state);
+    const lonDelta = decodeValue(encoded, state);
+    if (latDelta === undefined || lonDelta === undefined) {
+      break;
+    }
+    lat += latDelta;
+    lon += lonDelta;
+    points.push([lat / factor, lon / factor]);
+  }
+  return points;
 }

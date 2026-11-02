@@ -5,12 +5,21 @@ import { vi } from 'vitest';
  *
  * jsdom has no WebGL context, so constructing a real `Map` throws and any real
  * style fetch would leave the test suite touching the network (R42). This mock
- * records sources, layers and paint changes instead, models the style-load state
- * (`loaded` / `isStyleLoaded()` / `load`), and lets tests emit the map events
- * the components subscribe to.
+ * records sources, layers, paint changes, camera padding and fits instead,
+ * models the style-load state (`loaded` / `styleDirty` / `isStyleLoaded()` /
+ * `load` / `style.load`), and lets tests emit the map events the components
+ * subscribe to.
  */
 
 export type MapEventHandler = (event: unknown) => void;
+
+/** The four-sided viewport padding MapLibre reports from `getPadding()`. */
+export interface MockMapPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
 
 interface MockMapOptions {
   container: HTMLElement;
@@ -65,6 +74,16 @@ export class MockMap {
   readonly layers = new Map<string, MockLayer>();
   /** Mirrors MapLibre: false until the style has finished loading. */
   loaded = false;
+  /**
+   * Mirrors MapLibre's style dirtiness: adding a source or layer marks the style
+   * dirty, and `isStyleLoaded()` then reports false until the map has processed
+   * the change (the next `load` / `style.load` here). Modelling this keeps
+   * effects honest that mutate the style and then re-check `isStyleLoaded()` in
+   * the same commit — they fail here exactly as they do in a browser.
+   */
+  styleDirty = false;
+  /** Viewport padding, as MapLibre remembers it across `setPadding()` calls. */
+  padding: MockMapPadding = { top: 0, right: 0, bottom: 0, left: 0 };
   private readonly handlers = new Map<string, Set<MapEventHandler>>();
 
   constructor(options: MockMapOptions) {
@@ -72,11 +91,12 @@ export class MockMap {
     mapInstances.push(this);
   }
 
-  isStyleLoaded = vi.fn((): boolean => this.loaded);
+  isStyleLoaded = vi.fn((): boolean => this.loaded && !this.styleDirty);
 
   addSource = vi.fn((id: string, source: unknown): this => {
     if (this.sources.has(id)) throw new Error(`Source "${id}" already exists.`);
     this.sources.set(id, isGeoJSONSource(source) ? new MockGeoJSONSource(source) : source);
+    this.styleDirty = true;
     return this;
   });
 
@@ -90,6 +110,7 @@ export class MockMap {
   addLayer = vi.fn((layer: MockLayer): this => {
     if (this.layers.has(layer.id)) throw new Error(`Layer "${layer.id}" already exists.`);
     this.layers.set(layer.id, layer);
+    this.styleDirty = true;
     return this;
   });
 
@@ -102,7 +123,14 @@ export class MockMap {
 
   setPaintProperty = vi.fn((): this => this);
 
-  setPadding = vi.fn((): this => this);
+  setPadding = vi.fn((padding: Partial<MockMapPadding>): this => {
+    this.padding = { ...this.padding, ...padding };
+    return this;
+  });
+
+  getPadding = vi.fn((): MockMapPadding => ({ ...this.padding }));
+
+  fitBounds = vi.fn((): this => this);
 
   flyTo = vi.fn((): this => this);
 
@@ -157,9 +185,12 @@ export class MockMap {
 
   /** Test-only: dispatch an event (optionally to a layer handler). */
   emit(type: string, event?: unknown, layerId?: string): void {
-    // The style is only usable once `load` / `style.load` has fired; handlers
-    // must therefore observe `isStyleLoaded() === true` while running.
-    if (type === 'load' || type === 'style.load') this.loaded = true;
+    // `load` / `style.load` mean the style is usable again: reset the dirtiness
+    // before dispatching so handlers observe `isStyleLoaded() === true`.
+    if (type === 'load' || type === 'style.load') {
+      this.loaded = true;
+      this.styleDirty = false;
+    }
     this.dispatch(type, event);
     if (layerId) this.dispatch(`${type}:${layerId}`, event);
   }

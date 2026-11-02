@@ -26,17 +26,106 @@ export const FILTER_OPTIONS: readonly RouteFilterOption[] = [
 ];
 
 /**
+ * The four criteria the filter chips expose, in the same fallback order the
+ * single-criterion filters already use. Recommended has no criterion of its
+ * own to show, so it has to score on exactly what the chips offer.
+ */
+const CONSENSUS_CRITERIA: readonly ((itinerary: ItineraryDto) => number)[] = [
+  (itinerary) => itinerary.durationMin,
+  (itinerary) => itinerary.fare.amount,
+  (itinerary) => itinerary.transfers,
+  (itinerary) => itinerary.walkDistanceM,
+];
+
+/**
+ * A value's competition rank within one criterion: 1 + the number of values
+ * strictly better (lower). Equal values share the best rank — `[10, 20, 20,
+ * 30]` ranks as `[1, 2, 2, 4]` — because that is what the chips themselves
+ * claim: two routes at the same fare are both "the cheapest", so a tie must not
+ * reward whichever one the API happened to list first.
+ */
+function competitionRank(value: number, values: readonly number[]): number {
+  let rank = 1;
+  for (const other of values) {
+    if (other < value) {
+      rank += 1;
+    }
+  }
+  return rank;
+}
+
+/** How an itinerary fares across the four criteria the chips expose. */
+interface ConsensusProfile {
+  /** Number of criteria on which this itinerary is outright best (rank 1). */
+  wins: number;
+  /** Sum of its competition ranks; smaller is the more balanced compromise. */
+  score: number;
+}
+
+/** Only the recommended branch builds profiles; this is an unreachable default. */
+const NO_PROFILE: ConsensusProfile = { wins: 0, score: 0 };
+
+/**
+ * The consensus profile of every itinerary: how many of the four chips it wins
+ * outright, plus the sum of its competition ranks. The wins count says which
+ * option the chips converge on; the rank-sum only separates options that win
+ * the same number of criteria. See `rankItineraries` for why wins lead.
+ */
+function consensusProfiles(
+  itineraries: readonly ItineraryDto[],
+): ReadonlyMap<ItineraryDto, ConsensusProfile> {
+  const valuesByCriterion = CONSENSUS_CRITERIA.map((read) => itineraries.map(read));
+  const profiles = new Map<ItineraryDto, ConsensusProfile>();
+  for (const itinerary of itineraries) {
+    const profile: ConsensusProfile = { wins: 0, score: 0 };
+    CONSENSUS_CRITERIA.forEach((read, criterionIndex) => {
+      const rank = competitionRank(read(itinerary), valuesByCriterion[criterionIndex] ?? []);
+      profile.score += rank;
+      if (rank === 1) {
+        profile.wins += 1;
+      }
+    });
+    profiles.set(itinerary, profile);
+  }
+  return profiles;
+}
+
+/**
  * Local re-rank of the same itinerary array (spec §9).
  *
  * Every filter is deterministic and stable: ties fall back to the next field
  * and then keep the API's ETA order. No filter changes the query, so no chip
  * can cause a refetch.
+ *
+ * Recommended is deliberately not pure ETA order: the screen offers four chips,
+ * so Recommended has to agree with what they say. It ranks by two consensus
+ * keys over the same four criteria the chips expose (durationMin, fare,
+ * transfers, walkDistanceM), each scored with a competition rank (1 + the
+ * number of strictly better values; ties share the best rank):
+ *   1. `wins` DESCENDING — the number of criteria the itinerary is outright
+ *      best on. This is primary because it is what the chips converge on: a
+ *      rider who presses Cheapest, then Less walking, must not go back to
+ *      Recommended and be told a different option is BEST.
+ *   2. rank-sum ASCENDING — among options that win the same number of
+ *      criteria, the balanced compromise leads.
+ * Then durationMin → fare → transfers → walkDistanceM, and genuine ties keep
+ * the API's original order (Array#sort is stable).
+ *
+ * The rank-sum cannot lead on its own: on a real Cubao → Manila plan the option
+ * that wins duration, fare and walking (45 min, ₱24.50, 886 m) has one
+ * transfer, and a pure rank-sum put a 60 min, 0-transfer option above it —
+ * which brought the original "Recommended disagrees with the chips" bug back.
+ * With wins first, the three-criteria option leads and the rank-sum only
+ * separates options that each win a single chip.
  */
 export function rankItineraries(
   itineraries: readonly ItineraryDto[],
   filter: RouteFilter,
 ): ItineraryDto[] {
   const ranked = [...itineraries];
+  // Only Recommended needs whole-array consensus profiles; the
+  // single-criterion filters stay one cheap comparator each.
+  const profiles = filter === 'recommended' ? consensusProfiles(ranked) : null;
   ranked.sort((a, b) => {
     switch (filter) {
       case 'cheapest':
@@ -58,18 +147,30 @@ export function rankItineraries(
           a.fare.amount - b.fare.amount
         );
       case 'recommended':
-      default:
+      default: {
+        // `profiles` is set for `recommended`; the other branches return first.
+        const profileA = profiles?.get(a) ?? NO_PROFILE;
+        const profileB = profiles?.get(b) ?? NO_PROFILE;
         return (
+          profileB.wins - profileA.wins ||
+          profileA.score - profileB.score ||
           a.durationMin - b.durationMin ||
           a.fare.amount - b.fare.amount ||
+          a.transfers - b.transfers ||
           a.walkDistanceM - b.walkDistanceM
         );
+      }
     }
   });
   return ranked;
 }
 
-/** Exactly one badge, on the lead card of the active ranking. */
+/**
+ * Exactly one badge, on the lead card of the active ranking. `BEST` is reserved
+ * for Recommended's consensus lead; every single-criterion chip names its own
+ * criterion instead, so the fare lead and the Recommended lead can never both
+ * claim `BEST`.
+ */
 function badgeFor(filter: RouteFilter, index: number): RouteBadge | undefined {
   if (index !== 0) {
     return undefined;
@@ -79,6 +180,9 @@ function badgeFor(filter: RouteFilter, index: number): RouteBadge | undefined {
   }
   if (filter === 'fewest-transfers') {
     return 'FEWEST TRANSFERS';
+  }
+  if (filter === 'less-walking') {
+    return 'LEAST WALKING';
   }
   return 'BEST';
 }

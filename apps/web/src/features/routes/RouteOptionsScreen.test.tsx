@@ -144,6 +144,164 @@ describe('RouteOptionsScreen', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('leads with the consensus winner when one option wins three of the four criteria', async () => {
+    // The reported contradiction: every single-criterion chip led with option B
+    // while Recommended still led with option A merely because A was fastest.
+    // Here A wins only ETA; B wins fare, transfers and walking; C sits between
+    // them and wins nothing — so the consensus must put B first even though the
+    // API sent it second. Fares keep their breakdown summing to the amount (R60).
+    const base = planCubaoAyalaResponse.itineraries[0];
+    const consensusPlan: PlanResponse = {
+      ...planCubaoAyalaResponse,
+      itineraries: [
+        {
+          ...base,
+          id: 'plan-consensus-fast',
+          durationMin: 22,
+          endTime: '2026-11-02T08:22:00+08:00',
+          transfers: 2,
+          walkDistanceM: 2100,
+          fare: {
+            ...base.fare,
+            amount: 60,
+            breakdown: [{ label: 'Fast option fare', amount: 60 }],
+          },
+        },
+        {
+          ...base,
+          id: 'plan-consensus-value',
+          durationMin: 35,
+          endTime: '2026-11-02T08:35:00+08:00',
+          transfers: 0,
+          walkDistanceM: 500,
+          fare: {
+            ...base.fare,
+            amount: 25,
+            breakdown: [{ label: 'Value option fare', amount: 25 }],
+          },
+        },
+        {
+          ...base,
+          id: 'plan-consensus-middle',
+          durationMin: 28,
+          endTime: '2026-11-02T08:28:00+08:00',
+          transfers: 1,
+          walkDistanceM: 1000,
+          fare: {
+            ...base.fare,
+            amount: 40,
+            breakdown: [{ label: 'Middle option fare', amount: 40 }],
+          },
+        },
+      ],
+    };
+    server.use(http.post('*/plan', () => HttpResponse.json(consensusPlan)));
+
+    const { user } = renderRouteOptions();
+    await screen.findAllByTestId('route-card');
+    const etaOrder = () => screen.getAllByTestId('route-eta').map((node) => node.textContent);
+
+    // Wins first: B wins 3 criteria, A wins only ETA (1) and C wins none, so
+    // the fare/transfer/walk winner leads; the rank-sum only orders options
+    // once their wins counts tie (B 6, C 8, A 10 before that key).
+    expect(etaOrder()).toEqual(['35 min', '22 min', '28 min']);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+
+    // Every other chip must agree on the same lead, and each names its own
+    // criterion instead of claiming the Recommended BEST badge.
+    for (const { chip, badge } of [
+      { chip: 'Cheapest', badge: 'CHEAPEST' },
+      { chip: 'Fewest transfers', badge: 'FEWEST TRANSFERS' },
+      { chip: 'Less walking', badge: 'LEAST WALKING' },
+    ]) {
+      await user.click(screen.getByRole('button', { name: chip }));
+      expect(etaOrder()).toEqual(['35 min', '28 min', '22 min']);
+      expect(screen.getAllByTestId('route-badge')).toHaveLength(1);
+      expect(screen.getByTestId('route-badge')).toHaveTextContent(badge);
+    }
+
+    // Going back to Recommended keeps that same lead — the exact complaint.
+    await user.click(screen.getByRole('button', { name: 'Recommended' }));
+    expect(etaOrder()).toEqual(['35 min', '22 min', '28 min']);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+    // Four chip presses only re-ranked locally: the plan was fetched once.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows the chips on a 5-option plan where a pure rank-sum would pick another lead', async () => {
+    // Shape of a live Cubao → Manila plan (verified on the BFF): options 4 and
+    // 5 repeat options 1 and 2's metrics, which the engine can return. Option 3
+    // wins duration, fare and walking but has one transfer; by pure rank-sum its
+    // transfer rank (5) outweighs those wins (option 2 scores 7, option 3 scores
+    // 8), so option 2 would lead Recommended while Cheapest and Less walking led
+    // option 3 — the original complaint again. The wins-count primary key must
+    // keep all three chips on option 3, with Fewest transfers on option 2.
+    const base = planCubaoAyalaResponse.itineraries[0];
+    const liveOption = (
+      id: string,
+      durationMin: number,
+      amount: number,
+      transfers: number,
+      walkDistanceM: number,
+      endTime: string,
+    ): PlanResponse['itineraries'][number] => ({
+      ...base,
+      id,
+      durationMin,
+      endTime,
+      transfers,
+      walkDistanceM,
+      // The fare breakdown keeps summing to the amount (R60).
+      fare: { ...base.fare, amount, breakdown: [{ label: `${id} fare`, amount }] },
+    });
+    const livePlan: PlanResponse = {
+      ...planCubaoAyalaResponse,
+      itineraries: [
+        liveOption('plan-consensus-live-1', 60, 26.9, 0, 1069, '2026-11-02T09:00:00+08:00'),
+        liveOption('plan-consensus-live-2', 60, 25.93, 0, 1069, '2026-11-02T09:00:00+08:00'),
+        liveOption('plan-consensus-live-3', 45, 24.5, 1, 886, '2026-11-02T08:45:00+08:00'),
+        liveOption('plan-consensus-live-4', 60, 26.9, 0, 1069, '2026-11-02T09:00:00+08:00'),
+        liveOption('plan-consensus-live-5', 60, 25.93, 0, 1069, '2026-11-02T09:00:00+08:00'),
+      ],
+    };
+    server.use(http.post('*/plan', () => HttpResponse.json(livePlan)));
+
+    const { user } = renderRouteOptions();
+    await screen.findAllByTestId('route-card');
+    const leadCard = () => screen.getAllByTestId('route-card')[0];
+    const leadFare = () => screen.getAllByTestId('fare-amount')[0].textContent;
+
+    // Recommended agrees with the chips' convergent pick: option 3.
+    expect(leadCard()).toHaveTextContent('45 min');
+    expect(leadFare()).toBe('₱24.50');
+    expect(screen.getAllByTestId('route-badge')).toHaveLength(1);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+
+    // Cheapest and Less walking both lead option 3, as they must.
+    await user.click(screen.getByRole('button', { name: 'Cheapest' }));
+    expect(leadFare()).toBe('₱24.50');
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('CHEAPEST');
+
+    await user.click(screen.getByRole('button', { name: 'Less walking' }));
+    expect(leadCard()).toHaveTextContent('45 min');
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('LEAST WALKING');
+
+    // Fewest transfers genuinely picks another option (direct, 60 min, ₱25.93)
+    // and labels its own criterion instead of claiming BEST.
+    await user.click(screen.getByRole('button', { name: 'Fewest transfers' }));
+    expect(leadCard()).toHaveTextContent('60 min');
+    expect(leadFare()).toBe('₱25.93');
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('FEWEST TRANSFERS');
+
+    // Back to Recommended: the chips' convergent pick again, and still BEST.
+    await user.click(screen.getByRole('button', { name: 'Recommended' }));
+    expect(leadCard()).toHaveTextContent('45 min');
+    expect(leadFare()).toBe('₱24.50');
+    expect(screen.getAllByTestId('route-badge')).toHaveLength(1);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('renders an unknown mode with a generic sakay chip', async () => {
     const lead = planCubaoAyalaResponse.itineraries[0];
     const planWithUnknownMode: PlanResponse = {
