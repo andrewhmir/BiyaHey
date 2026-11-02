@@ -198,3 +198,38 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   made them unreadable to UTF-8 readers. Both were byte-repaired (lone cp1252 bytes re-encoded
   to UTF-8) and the whole repo (1171 text files) now scans clean. Append to ledgers/reports
   with UTF-8 tooling only — never `Add-Content`/default-encoding appends.
+- **Post-Plan-2 bug fixes (2026-11-02, human-reported; working tree on `main`): route shape on
+  the map + Recommended ranking.** Two defects the human reported after using the app:
+  - **The map drew a straight chord between itinerary endpoints instead of the route.** The v1
+    `LegDto` deliberately carried no geometry, so `RoutePolylines` joined each leg's
+    `from` → `to`. MOTIS already sends `legGeometry` (Google-encoded polyline, precision **6**
+    on the pinned build) and the BFF decoded it only to measure distance. Fixed additively:
+    optional `LegDto.geometry { points, precision }`, one shared browser-safe `decodePolyline`
+    (moved from the API into `@biyahey/shared`), the PWA decodes each leg (lat/lon → GeoJSON
+    lon/lat), joins legs in travel order with a straight `from → to` fallback for old/cached
+    geometry-less payloads, and fits the camera to the plan bounds. **Browser-only defect
+    found by live verification (jsdom could not see it):** MapLibre v6 `isStyleLoaded()` is
+    false while the style is dirty or tiles load — including immediately after the component's
+    own `addSource`/`addLayer` — so the camera-fit and selection-emphasis effects silently
+    skipped in Chromium while the mock passed. They now gate only on the `MapContext`
+    style-ready contract, and the MapLibre mock models style dirtiness so the regression stays
+    covered. The fit passes only the 48 px margin: MapLibre already subtracts the map's own
+    sheet padding (`setPadding`), and passing it twice made `cameraForBounds` refuse the fit.
+  - **Recommended contradicted the other chips.** `rankItineraries('recommended')` sorted only
+    by ETA, so the fastest option always led and wore `BEST` even when Cheapest / Fewest
+    transfers / Less walking all led another option. Recommended now ranks by a pure consensus:
+    (1) number of the four chip criteria won, (2) sum of per-criterion competition ranks,
+    (3) duration → fare → transfers → walk, then stable API order; the less-walking lead badge
+    is now `LEAST WALKING` so `BEST` labels only the Recommended lead. Regression tests pin the
+    reported 3-option case and the live Cubao → Manila 5-option case where a pure rank-sum
+    would lead a different option.
+  - Verified 2026-11-02: `npm run lint` / `npm run typecheck` green; full
+    `npm test` **428 passed / 4 skipped** (36 files); `npm run test:e2e` **4/4 passed** (dev
+    live flow + preview offline/manifest); live `/plan` serves geometry on every leg
+    (~14–18 KB per response for 3–4 itineraries); Playwright against the dev stack shows the
+    decoded road shape, the fitted camera, no console errors, and the badge/ordering flow.
+    `docs/screenshots/route-options.png` regenerated with `node apps/web/scripts/screenshots.mjs`
+    (other screenshots left at their previous capture to avoid live-data churn). Committed on
+    `fix/map-route-and-recommended` and merged to local `main`; the API image was rebuilt
+    (`docker compose build api && docker compose up -d api`) so the local stack serves the new
+    field.
