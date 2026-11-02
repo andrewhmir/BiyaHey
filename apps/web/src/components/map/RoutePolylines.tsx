@@ -1,4 +1,5 @@
-import type { ItineraryDto, LegMode } from '@biyahey/shared';
+import { decodePolyline } from '@biyahey/shared';
+import type { ItineraryDto, LegDto, LegMode } from '@biyahey/shared';
 import type { Feature, LineString } from 'geojson';
 import { useEffect, useRef } from 'react';
 import { useMap, useMapStyleVersion } from './MapContext';
@@ -6,12 +7,18 @@ import { useMap, useMapStyleVersion } from './MapContext';
 /**
  * Route lines for the itinerary shortlist.
  *
- * R53 / v1 geometry approximation: the shared `LegDto` deliberately carries no
- * encoded polyline. Each itinerary is therefore drawn as one straight GeoJSON
- * `LineString` joining the `from` → `to` coordinates of its legs in travel
- * order (consecutive duplicate points are dropped). That is an approximation of
- * the real road alignment, not a routed shape; it is replaced when Plan 1 adds
- * leg geometry. `distanceM` and travel times still come from the router.
+ * R53: a plan must be drawn as the route it actually takes. MOTIS sends a
+ * Google-encoded `legGeometry` for every leg, the API copies it through
+ * `LegDto.geometry`, and this component decodes each leg — the encoding is
+ * lat-delta then lon-delta, so it is flipped into GeoJSON `[lon, lat]` order —
+ * and joins the legs in travel order, dropping consecutive duplicate vertices
+ * where one leg ends where the next begins.
+ *
+ * Payloads cached or built before geometry existed carry no `LegDto.geometry`,
+ * and a malformed or too-short polyline cannot be drawn. Those legs fall back
+ * to the straight `from` → `to` segment they used to be drawn as, per leg, so
+ * older responses still render and a plan can mix routed and straight parts.
+ * `distanceM` and travel times still come from the router.
  *
  * Colour is never the only carrier of meaning: the sheet must pair the line
  * with a text chip whose label comes from the translated `mode.*` keys (m5).
@@ -47,6 +54,10 @@ export function isKnownMode(mode: string): mode is LegMode {
 const DIMMED_OPACITY = 0.6;
 const SELECTED_WIDTH = 6;
 const DIMMED_WIDTH = 4;
+/** Padding around the fitted plan bounds, in CSS pixels. */
+const FIT_PADDING = 48;
+/** Never zoom closer than this when a very short plan is fitted. */
+const FIT_MAX_ZOOM = 16;
 
 export interface RoutePolylinesProps {
   itineraries: readonly ItineraryDto[];
@@ -65,8 +76,34 @@ export function routeColor(itinerary: ItineraryDto): string {
 }
 
 /**
- * Straight-line approximation of an itinerary (R53): consecutive leg endpoints,
- * deduplicated where one leg ends where the next begins.
+ * One leg's line in GeoJSON `[lon, lat]` order: the decoded router shape when
+ * the leg carries drawable geometry, else the straight `from` → `to` segment.
+ */
+function legCoordinates(leg: LegDto): [number, number][] {
+  const geometry = leg.geometry;
+  if (geometry !== undefined) {
+    // `decodePolyline` yields [lat, lon]; GeoJSON coordinates are [lon, lat].
+    const decoded: [number, number][] = [];
+    for (const [lat, lon] of decodePolyline(geometry.points, geometry.precision)) {
+      if (Number.isFinite(lon) && Number.isFinite(lat)) {
+        decoded.push([lon, lat]);
+      }
+    }
+    if (decoded.length >= 2) {
+      return decoded;
+    }
+  }
+  return [
+    [leg.from.lon, leg.from.lat],
+    [leg.to.lon, leg.to.lat],
+  ];
+}
+
+/**
+ * Drawable line for an itinerary: every leg's shape joined in travel order,
+ * with consecutive duplicate vertices dropped where one leg ends where the next
+ * begins. A leg without usable geometry contributes its straight from → to
+ * segment (see {@link legCoordinates}).
  */
 export function itineraryCoordinates(itinerary: ItineraryDto): [number, number][] {
   const coordinates: [number, number][] = [];
@@ -78,10 +115,38 @@ export function itineraryCoordinates(itinerary: ItineraryDto): [number, number][
   };
 
   for (const leg of itinerary.legs) {
-    push(leg.from.lon, leg.from.lat);
-    push(leg.to.lon, leg.to.lat);
+    for (const [lon, lat] of legCoordinates(leg)) {
+      push(lon, lat);
+    }
   }
   return coordinates;
+}
+
+/**
+ * Bounds of every plan on the map, as `[[minLon, minLat], [maxLon, maxLat]]`.
+ * `undefined` when there is nothing worth fitting: fewer than two route points,
+ * or every point identical (a degenerate walk pin, not a route).
+ */
+function routeBounds(
+  itineraries: readonly ItineraryDto[],
+): [[number, number], [number, number]] | undefined {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const itinerary of itineraries) {
+    for (const [lon, lat] of itineraryCoordinates(itinerary)) {
+      minLon = Math.min(minLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLon = Math.max(maxLon, lon);
+      maxLat = Math.max(maxLat, lat);
+    }
+  }
+  if (!(maxLon > minLon || maxLat > minLat)) return undefined;
+  return [
+    [minLon, minLat],
+    [maxLon, maxLat],
+  ];
 }
 
 export function RoutePolylines({
@@ -103,9 +168,14 @@ export function RoutePolylines({
   // Sources and layers are owned by this effect so unmount removes exactly what
   // was added, even if the map itself is being destroyed at the same time.
   useEffect(() => {
-    // `MapContext` only publishes a style-ready map, but the guard keeps the
-    // invariant local and protects the style-reload path as well.
-    if (!map || !map.isStyleLoaded()) return;
+    // `MapContext` publishes only a style-ready map, so `null` is the only
+    // local gate. Do NOT re-check `isStyleLoaded()`: MapLibre reports the style
+    // dirty while sources/layers are being added — including the
+    // `addSource`/`addLayer` below — so that check would silently skip this
+    // work in a real browser. Style reloads still re-run the effect: the
+    // `styleVersion` dependency is fed by `style.load` through
+    // `useMapStyleVersion`.
+    if (!map) return;
 
     const added: string[] = [];
     const clickHandlers: { layerId: string; handler: () => void }[] = [];
@@ -154,8 +224,33 @@ export function RoutePolylines({
     };
   }, [map, itineraries, styleVersion]);
 
+  // Fit the camera once per plan (and per style reload) so the drawn routes are
+  // actually visible: the canvas is constructed with a fixed Manila centre and
+  // zoom. MapLibre already subtracts the map's own padding (MapCanvas mirrors the
+  // bottom-sheet detent through `setPadding`) from the box it fits into, so this
+  // effect passes only the fixed margin. Adding `getPadding()` here as well would
+  // count the sheet twice and `cameraForBounds` would then refuse to fit.
+  // This effect follows the source effect above, so a fit only ever runs once the
+  // route sources exist.
   useEffect(() => {
-    if (!map || !map.isStyleLoaded()) return;
+    // Same style-ready contract as the source effect above: the sources it just
+    // added leave `isStyleLoaded()` false while MapLibre processes them, and
+    // this fit must still run for the plan to be visible.
+    if (!map) return;
+    const bounds = routeBounds(itineraries);
+    if (bounds === undefined) return;
+    map.fitBounds(bounds, {
+      padding: FIT_PADDING,
+      maxZoom: FIT_MAX_ZOOM,
+      duration: 0,
+    });
+  }, [map, itineraries, styleVersion]);
+
+  useEffect(() => {
+    // Same style-ready contract: re-checking `isStyleLoaded()` here would skip
+    // the selected/dimmed emphasis because our own `addSource` just dirtied the
+    // style.
+    if (!map) return;
     for (const itinerary of itineraries) {
       const layerId = `route-${itinerary.id}`;
       if (!map.getLayer(layerId)) continue;

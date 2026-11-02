@@ -630,3 +630,72 @@ describe('transit stop lists (R61)', () => {
     expect(railLeg?.stops?.at(-1)?.arrivalTime).toBe('2026-11-02T00:36:00Z');
   });
 });
+
+describe('leg geometry carry-through', () => {
+  const emptyContext = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+  };
+  const start = '2026-11-02T08:00:00Z';
+  const end = '2026-11-02T08:30:00Z';
+
+  function walkLeg(overrides: Record<string, unknown> = {}) {
+    return {
+      mode: 'WALK',
+      from: { name: 'START', lat: 14.555813, lon: 121.022334 },
+      to: { name: 'END', lat: 14.554013, lon: 121.023973 },
+      startTime: start,
+      endTime: end,
+      duration: 600,
+      distance: 300,
+      ...overrides,
+    };
+  }
+
+  function mapSingleLeg(legGeometry: unknown): ItineraryDto | undefined {
+    return mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs: [walkLeg({ legGeometry })] }] },
+      emptyContext,
+    )[0];
+  }
+
+  it('copies the fixture leg geometry through untouched at precision 6', () => {
+    const fixtureGeometry = planFixture.itineraries[0].legs[0].legGeometry;
+    const itinerary = mapPlanItineraries(planFixture, emptyContext)[0];
+    const geometry = itinerary?.legs[0]?.geometry;
+
+    expect(geometry).toEqual({ points: fixtureGeometry.points, precision: 6 });
+    // The copied encoding is the same drawable shape the API measured: decoding
+    // it again must yield more than the two endpoint vertices.
+    expect(decodePolyline(geometry!.points, geometry!.precision).length).toBeGreaterThan(2);
+  });
+
+  it('leaves the additive field absent when MOTIS sends no legGeometry', () => {
+    const itinerary = mapSingleLeg(undefined);
+    expect(itinerary?.legs[0]?.mode).toBe('walk');
+    expect(itinerary?.legs[0]).not.toHaveProperty('geometry');
+  });
+
+  it('leaves the additive field absent for malformed or undrawable geometry', () => {
+    const malformed: unknown[] = [
+      'not-an-object',
+      { precision: 6 }, // no points
+      { points: '', precision: 6 }, // empty encoding
+      { points: 42, precision: 6 }, // non-string encoding
+      { points: 'AA', precision: 6 }, // decodes to one vertex, not a line
+    ];
+    for (const legGeometry of malformed) {
+      const itinerary = mapSingleLeg(legGeometry);
+      expect(itinerary?.legs[0], JSON.stringify(legGeometry)).not.toHaveProperty('geometry');
+    }
+  });
+
+  it('falls back to the polyline default precision 5 when precision is invalid', () => {
+    const points = planFixture.itineraries[0].legs[0].legGeometry.points;
+    for (const precision of [undefined, 'six', 6.5, -1, 12]) {
+      const itinerary = mapSingleLeg({ points, precision });
+      expect(itinerary?.legs[0]?.geometry).toEqual({ points, precision: 5 });
+    }
+  });
+});

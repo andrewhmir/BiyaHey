@@ -283,7 +283,10 @@ describe('RoutePolylines', () => {
       map.emit('load');
     });
 
-    expect(map.isStyleLoaded()).toBe(true);
+    // Adding the route sources marks the style dirty again (MapLibre reports
+    // `isStyleLoaded()` false while it processes sources/tiles), so assert the
+    // stable signal plus the source itself, not transient truthiness.
+    expect(map.loaded).toBe(true);
     await waitFor(() =>
       expect(map.addSource).toHaveBeenCalledWith(
         'route-a',
@@ -308,8 +311,9 @@ describe('RoutePolylines', () => {
       'route-a',
       expect.objectContaining({
         type: 'geojson',
-        // R53: v1 has no leg polyline, so the line joins consecutive leg
-        // endpoints (deduplicated where a leg ends where the next begins).
+        // Old payloads carry no leg geometry, so this fixture exercises the
+        // fallback: consecutive leg endpoints, deduplicated where one leg ends
+        // where the next begins.
         data: expect.objectContaining({
           geometry: {
             type: 'LineString',
@@ -388,6 +392,227 @@ describe('RoutePolylines', () => {
     expect(map.removeSource).toHaveBeenCalledWith('route-a');
     expect(map.removeSource).toHaveBeenCalledWith('route-b');
     expect(map.remove).toHaveBeenCalledTimes(1);
+  });
+
+  // Real MOTIS geometry copied from
+  // services/api/test/fixtures/motis-plan-cubao-ayala.json (precision 6).
+  // Inlined so this suite stays offline.
+  const WALK_POLYLINE = 'iilwZ{vryeFfNeV??oBeA??fDcGtD}K??lXyd@??fHgM??|HaNtDsG??nf@vR';
+  const TINY_POLYLINE = '}kawZcj~yeFi@u@';
+
+  /** WALK_POLYLINE decoded to GeoJSON [lon, lat] order, duplicates dropped. */
+  const WALK_SHAPE: [number, number][] = [
+    [121.022334, 14.555813],
+    [121.022705, 14.555569],
+    [121.02274, 14.555625],
+    [121.02287, 14.555541],
+    [121.023077, 14.55545],
+    [121.023682, 14.555043],
+    [121.02391, 14.554895],
+    [121.024151, 14.554736],
+    [121.024289, 14.554645],
+    [121.023973, 14.554013],
+  ];
+
+  const geomFare = {
+    amount: 0,
+    currency: 'PHP' as const,
+    confidence: 'official' as const,
+    effective_from: '2026-09-28',
+    source_id: null,
+    breakdown: [],
+  };
+
+  const itinGeometry: ItineraryDto = {
+    id: 'geo',
+    durationMin: 10,
+    startTime: '2026-11-01T08:00:00+08:00',
+    endTime: '2026-11-01T08:10:00+08:00',
+    transfers: 0,
+    walkDistanceM: 300,
+    modes: ['walk'],
+    fare: geomFare,
+    sources: ['osm'],
+    legs: [
+      {
+        mode: 'walk',
+        from: { name: 'Start', lat: 14.555813, lon: 121.022334 },
+        to: { name: 'End', lat: 14.554013, lon: 121.023973 },
+        startTime: '2026-11-01T08:00:00+08:00',
+        endTime: '2026-11-01T08:10:00+08:00',
+        durationMin: 10,
+        landmarkHint: null,
+        distanceM: 300,
+        sourceIds: ['osm'],
+        geometry: { points: WALK_POLYLINE, precision: 6 },
+      },
+    ],
+  };
+
+  it('draws the decoded MOTIS road shape when a leg carries encoded geometry', async () => {
+    render(
+      <MapCanvas>
+        <RoutePolylines itineraries={[itinGeometry]} selectedId="geo" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() =>
+      expect(map.addSource).toHaveBeenCalledWith(
+        'route-geo',
+        expect.objectContaining({
+          type: 'geojson',
+          data: expect.objectContaining({
+            geometry: { type: 'LineString', coordinates: WALK_SHAPE },
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('falls back to the straight from->to segment on a leg without geometry', async () => {
+    const mixed: ItineraryDto = {
+      ...itinGeometry,
+      id: 'mixed',
+      modes: ['walk', 'jeepney'],
+      legs: [
+        {
+          ...itinGeometry.legs[0]!,
+          to: { name: 'Corner', lat: 14.550244, lon: 121.028301 },
+          geometry: { points: TINY_POLYLINE, precision: 6 },
+        },
+        {
+          mode: 'jeepney',
+          from: { name: 'Corner', lat: 14.550244, lon: 121.028301 },
+          to: { name: 'Market', lat: 14.5509, lon: 121.0247 },
+          startTime: '2026-11-01T08:10:00+08:00',
+          endTime: '2026-11-01T08:20:00+08:00',
+          durationMin: 10,
+          landmarkHint: null,
+          distanceM: 500,
+          sourceIds: ['osm'],
+        },
+      ],
+    };
+    render(
+      <MapCanvas>
+        <RoutePolylines itineraries={[mixed]} selectedId="mixed" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() =>
+      expect(map.addSource).toHaveBeenCalledWith(
+        'route-mixed',
+        expect.objectContaining({
+          data: expect.objectContaining({
+            geometry: {
+              type: 'LineString',
+              // TINY_POLYLINE, then the straight leg: its `from` duplicates the
+              // decoded end and is dropped, its `to` is the only new vertex.
+              coordinates: [
+                [121.028274, 14.550223],
+                [121.028301, 14.550244],
+                [121.0247, 14.5509],
+              ],
+            },
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('fits the camera to the plan bounds and leaves sheet clearance to map padding', async () => {
+    render(
+      <MapSlot mapPadding={96}>
+        <MapCanvas>
+          <RoutePolylines itineraries={[itinA, itinB]} selectedId="a" />
+        </MapCanvas>
+      </MapSlot>,
+    );
+    const map = loadMap();
+
+    await waitFor(() =>
+      expect(map.fitBounds).toHaveBeenCalledWith(
+        [
+          [121.0, 14.58],
+          [121.03, 14.62],
+        ],
+        {
+          // MapLibre subtracts the map's own padding (the 96 px sheet detent
+          // MapCanvas publishes) before applying this margin, so passing the
+          // detent here as well would count it twice and refuse the fit.
+          padding: 48,
+          maxZoom: 16,
+          duration: 0,
+        },
+      ),
+    );
+    expect(map.getPadding().bottom).toBe(96);
+  });
+
+  it('fits and paints after its own source mutations dirtied the style', async () => {
+    render(
+      <MapSlot mapPadding={96}>
+        <MapCanvas>
+          <RoutePolylines itineraries={[itinA, itinB]} selectedId="a" />
+        </MapCanvas>
+      </MapSlot>,
+    );
+    const map = loadMap();
+
+    await waitFor(() => expect(map.sources.has('route-a')).toBe(true));
+    // Real MapLibre reports the style dirty as soon as a source/layer is added.
+    // This is the exact state in which the old `isStyleLoaded()` guard made the
+    // fit and the paint emphasis silently skip (found by the Lead's Playwright
+    // run, not by jsdom until the mock modelled dirtiness).
+    expect(map.isStyleLoaded()).toBe(false);
+
+    await waitFor(() =>
+      expect(map.fitBounds).toHaveBeenCalledWith(
+        [
+          [121.0, 14.58],
+          [121.03, 14.62],
+        ],
+        {
+          // Only the fixed margin: the sheet detent lives in the map's own
+          // padding, which MapLibre already respects when fitting.
+          padding: 48,
+          maxZoom: 16,
+          duration: 0,
+        },
+      ),
+    );
+    // The emphasis effect runs in the same dirty window: selected 1.0, dimmed 0.6.
+    expect(map.setPaintProperty).toHaveBeenCalledWith('route-a', 'line-opacity', 1);
+    expect(map.setPaintProperty).toHaveBeenCalledWith('route-b', 'line-opacity', 0.6);
+  });
+
+  it('leaves the camera alone when the route has fewer than two distinct points', async () => {
+    const singlePoint: ItineraryDto = {
+      ...itinGeometry,
+      id: 'single',
+      legs: [
+        {
+          ...itinGeometry.legs[0]!,
+          geometry: undefined,
+          from: { name: 'Here', lat: 14.6, lon: 121.0 },
+          to: { name: 'Here', lat: 14.6, lon: 121.0 },
+        },
+      ],
+    };
+    render(
+      <MapCanvas>
+        <RoutePolylines itineraries={[singlePoint]} />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() => expect(map.isStyleLoaded()).toBe(true));
+    // A degenerate one-point leg is not drawable, so there is no source and
+    // nothing to fit the camera to.
+    expect(map.addSource).not.toHaveBeenCalled();
+    expect(map.fitBounds).not.toHaveBeenCalled();
   });
 });
 

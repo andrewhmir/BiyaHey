@@ -3,12 +3,13 @@ import type {
   FareQuote,
   ItineraryDto,
   LegDto,
+  LegGeometryDto,
   LegMode,
   LegPlaceDto,
   LegStopDto,
   SourceId,
 } from '@biyahey/shared';
-import { quoteFareForLeg, sumFares } from '@biyahey/shared';
+import { decodePolyline, quoteFareForLeg, sumFares } from '@biyahey/shared';
 import { haversineM } from '../domain/geo.js';
 
 /**
@@ -151,55 +152,15 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function decodeValue(encoded: string, state: { index: number }): number | undefined {
-  let result = 0;
-  let shift = 0;
-  for (;;) {
-    if (state.index >= encoded.length) {
-      return undefined;
-    }
-    const byte = encoded.charCodeAt(state.index) - 63;
-    state.index += 1;
-    if (byte < 0) {
-      return undefined;
-    }
-    result |= (byte & 0x1f) << shift;
-    shift += 5;
-    if (byte < 0x20) {
-      break;
-    }
-    if (shift > 30) {
-      return undefined;
-    }
-  }
-  return (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
-}
-
 /**
- * Decode a Google-encoded polyline.
+ * Re-exported from `@biyahey/shared` for API-side consumers and tests.
  *
- * MOTIS's `legGeometry.precision` is 6 on the live build, not Google's default
- * 5, so callers must pass the field through rather than assume.
+ * The decoder itself lives in the browser-safe shared package because the PWA
+ * decodes the same `LegDto.geometry` to draw the route line: one implementation
+ * means the shape the map plots is exactly the shape the fare distance was
+ * measured from. See `decodePolyline` there for the encoding contract.
  */
-export function decodePolyline(encoded: string, precision = 5): Array<[number, number]> {
-  const factor =
-    Number.isInteger(precision) && precision >= 0 && precision <= 9 ? 10 ** precision : 1e5;
-  const points: Array<[number, number]> = [];
-  const state = { index: 0 };
-  let lat = 0;
-  let lon = 0;
-  while (state.index < encoded.length) {
-    const latDelta = decodeValue(encoded, state);
-    const lonDelta = decodeValue(encoded, state);
-    if (latDelta === undefined || lonDelta === undefined) {
-      break;
-    }
-    lat += latDelta;
-    lon += lonDelta;
-    points.push([lat / factor, lon / factor]);
-  }
-  return points;
-}
+export { decodePolyline };
 
 /** Sum the great-circle length of a decoded polyline, in metres. */
 export function polylineLengthM(points: ReadonlyArray<readonly [number, number]>): number {
@@ -390,18 +351,48 @@ function declaredDistanceM(record: JsonRecord): number | undefined {
   return distance !== undefined && distance >= 0 ? distance : undefined;
 }
 
-function geometryDistanceM(record: JsonRecord): number | undefined {
+/** MOTIS polyline precision assumed when `legGeometry.precision` is unusable. */
+const DEFAULT_POLYLINE_PRECISION = 5;
+
+/**
+ * Map one raw MOTIS `legGeometry` into the additive DTO field.
+ *
+ * The encoded string is copied through untouched — consumers need the original
+ * bytes to decode at the precision it was written with — while the decoded
+ * vertices are used here to prove the shape is drawable and to keep the
+ * existing geometry-derived distance fallback. A `precision` that is missing or
+ * not an integer 0..9 falls back to the polyline algorithm's default of 5
+ * rather than silently decoding at an arbitrary scale. A shape with fewer than
+ * two finite vertices cannot be drawn as a line, so the field is left absent
+ * instead of carried as a degenerate shape.
+ */
+function decodeLegGeometry(
+  record: JsonRecord,
+): { dto: LegGeometryDto; lengthM: number } | undefined {
   const geometry = asRecord(record.legGeometry);
   if (geometry === undefined) {
     return undefined;
   }
-  const encoded = asString(geometry.points);
-  if (encoded === undefined) {
+  const points = asString(geometry.points);
+  if (points === undefined) {
     return undefined;
   }
-  const precision = asNumber(geometry.precision);
-  const points = decodePolyline(encoded, precision);
-  return points.length < 2 ? undefined : polylineLengthM(points);
+  const reportedPrecision = asNumber(geometry.precision);
+  const precision =
+    reportedPrecision !== undefined &&
+    Number.isInteger(reportedPrecision) &&
+    reportedPrecision >= 0 &&
+    reportedPrecision <= 9
+      ? reportedPrecision
+      : DEFAULT_POLYLINE_PRECISION;
+  const decoded = decodePolyline(points, precision);
+  if (
+    decoded.length < 2 ||
+    !decoded.every(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon))
+  ) {
+    return undefined;
+  }
+  return { dto: { points, precision }, lengthM: polylineLengthM(decoded) };
 }
 
 function landmarkHintFor(
@@ -488,7 +479,8 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
 
   const chooseDeclaredFirst = mode === 'walk';
   const declared = declaredDistanceM(record);
-  const fromGeometry = geometryDistanceM(record);
+  const legGeometry = decodeLegGeometry(record);
+  const fromGeometry = legGeometry?.lengthM;
   const distanceM = chooseDeclaredFirst ? (declared ?? fromGeometry) : (fromGeometry ?? declared);
   if (distanceM === undefined) {
     // No distance means no defensible fare and no walk distance; dropping the
@@ -555,6 +547,11 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
   }
   if (signageLabel !== undefined) {
     dto.signage = `Look for: ${signageLabel}`;
+  }
+  if (legGeometry !== undefined) {
+    // Additive: the PWA draws the real road shape when this is present and
+    // falls back to the leg endpoints when it is not.
+    dto.geometry = legGeometry.dto;
   }
   if (mode !== 'walk') {
     const stops = mapTransitStops(record, from, to, startTime, endTime);
