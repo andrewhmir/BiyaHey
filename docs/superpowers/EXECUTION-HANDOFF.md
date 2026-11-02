@@ -17,6 +17,7 @@ Open-source, community-built commuter route planner for the Philippines, intende
 | Research — UI & competitors | `docs/research/ui-and-competitors.md` |
 | Plan 1 — data spine + router (Phase 0–1) | `docs/superpowers/plans/2026-11-01-biyahey-data-spine.md` |
 | Plan 2 — PWA MVP (Phase 2) | `docs/superpowers/plans/2026-11-01-biyahey-pwa-mvp.md` |
+| Trip planner (R89) approved UI — Option A directions form | `.superpowers/mockups/option-1-directions-form.html` |
 | UI mockups (Option A chosen) | `.superpowers/mockups/` |
 
 ## Non-negotiable facts from research (do not re-litigate)
@@ -135,6 +136,43 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   recorded as known-gap items 14–15. A scoped docs re-review returned **APPROVED — no
   open findings**. Final HEAD `5b9288c`; branch reviewed and ready for the human's
   merge decision (nothing pushed/merged).
+- **Post-Plan-2 trip planner (R89, 2026-11-02) — implemented on `feature/trip-planner`**
+  (branched from the Plan-2 head `1d98bda`; not pushed/merged). The human reported
+  that allowing device location made every destination show *Walang ruta*, and
+  asked for a configurable start/end with optional stops. Diagnosis on the live
+  stack: routing works (Cubao→Ayala returns 3–5 options), but `/plan` took the
+  device fix as the origin with no override, so a start outside the feed's
+  coverage (or in a coverage hole such as Fairview, Valenzuela, Las Piñas,
+  Antipolo) returned zero itineraries. Human approved **Option A** — `/search`
+  becomes a Google-Maps-style directions form.
+  - `/search`: explicit From + To, up to two optional transit stops, swap, a
+    one-tap device-location shortcut (one bounded read, never automatic), and the
+    same debounced/cancelled/cached typeahead with its honest offline, partial,
+    error and no-results states. Stop pickers filter to the Stops group because
+    the router's `via` accepts stop IDs only.
+  - URL contract (`apps/web/src/features/search/tripParams.ts`):
+    `/plan?from=lat,lon&fromName=label&dest=lat,lon&name=label[&via=<encodeURIComponent(JSON [{lat,lon,stopId,name}]))>]`;
+    `/search` accepts the same params to prefill the form for edit/deep links.
+  - `POST /plan` gains additive optional `stops: [{lat,lon,stopId}]` (zod, max 2,
+    trimmed ids); the BFF forwards the ids as MOTIS `via` on every fan-out
+    attempt. Stopless requests are byte-identical to v1. Legacy `/plan?dest=…`
+    links still perform the one bounded device-geolocation read; a link with an
+    unreadable `from` reports it instead of guessing.
+  - Zero-itinerary state now names the planned trip and offers
+    "Palitan ang starting point" (prefilled form), as the announced live region.
+  - **Bug found and fixed during browser verification:** the shared typeahead
+    kept the previous field's debounced results for the 250 ms debounce window,
+    so choosing To and then typing From could pick To's stop into From and submit
+    origin === destination. `useSearch` now takes a `resetToken` and clears the
+    debounced query during render; a regression test pins it.
+  - Verified: lint/typecheck/unit green; paint-only entry payload **105.0 KB
+    gzip** ≤ 250 KB; live API via checks (1 stop → 5 options on the MRT-3
+    corridor; 2 stops → 3 options; 3 stops → 400 `INVALID_BODY`); Playwright plans
+    Guadalupe → Ortigas → Cubao end-to-end against the live stack and the
+    preview offline/service-worker project passes.
+  - Known limits: optional stops must be served stops (MOTIS stop IDs only) and
+    the cap is two (router limit). Existing feed coverage gaps still produce an
+    empty set for uncovered corridors — the UI now explains and recovers.
 - **Next phase (not started):** Phase 3 curation & coverage (route-inventory merge
   workflow, fare-update runbook, staleness CI, community report flow) and the public-beta
   decisions above; the branch is ready for merge/review when the human decides (nothing

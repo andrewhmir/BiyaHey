@@ -130,6 +130,19 @@ refuses a stale `dist/` on purpose, so rebuild after changing web sources. Do
 not run Lighthouse while another browser (including the DSH GUI) is busy — the
 five-run median is designed to absorb noise, not a pegged CPU.
 
+**Trip planner (R89).** `/search` is a directions form: From, To and up to two
+optional stops; the CTA hands the trip to `/plan` through the URL contract in
+`apps/web/src/features/search/tripParams.ts` (`from`, `fromName`, `dest`, `name`
+and an optional `via=<JSON [{lat,lon,stopId,name}]>`). The BFF maps
+`stops[].stopId` to the router's `via` (MOTIS accepts stop IDs only, max two).
+A `/plan?dest=…` link with no `from` still performs the one bounded
+device-geolocation read; a link that carries an unreadable `from` reports it
+instead of guessing. The most common cause of an empty result set is a start
+outside the feed's coverage — the empty state names the planned trip and offers
+"Palitan ang starting point", which reopens the form prefilled. After changing
+BFF code, rebuild its image before manual testing:
+`docker compose build api && docker compose up -d api`.
+
 ## 5. Windows / PowerShell notes
 
 - This machine has **Windows PowerShell 5.1**. Commands copied from

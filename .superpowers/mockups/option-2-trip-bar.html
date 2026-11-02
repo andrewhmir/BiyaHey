@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="tl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option B — Editable trip bar on route options</title>
+    <style>
+      :root {
+        --primary: #00696d;
+        --on-primary: #ffffff;
+        --surface: #f3f6f4;
+        --card: #ffffff;
+        --surface-container: #e8efec;
+        --outline: #b8c4c0;
+        --text: #1a1c1c;
+        --muted: #556360;
+        --pill: 999px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: #d9e0dd;
+        font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+        color: var(--text);
+        display: flex; flex-direction: column; align-items: center;
+        gap: 14px; padding: 20px 12px 28px;
+      }
+      .caption {
+        width: 375px; font-size: 12px; line-height: 1.45; color: #2e3a37;
+        background: #ffffffcc; border-radius: 10px; padding: 8px 10px;
+      }
+      .caption b { color: var(--primary); }
+      .phone {
+        width: 375px; min-height: 812px; border-radius: 28px; overflow: hidden;
+        box-shadow: 0 18px 44px rgba(20, 40, 35, 0.28);
+        background: var(--surface); display: flex; flex-direction: column;
+        position: relative;
+      }
+      /* map */
+      .map {
+        height: 300px; position: relative;
+        background:
+          linear-gradient(180deg, #e9efe6 0%, #dfe9e0 100%);
+        overflow: hidden;
+      }
+      .map .water {
+        position: absolute; left: -30px; top: 30px; width: 150px; height: 320px;
+        background: #b3d3e6; border-radius: 60px 40px 80px 30px; transform: rotate(8deg);
+      }
+      .map .road { position: absolute; background: #f4d98b; }
+      .map .road.r1 { left: 0; right: 0; top: 120px; height: 7px; transform: rotate(-7deg); }
+      .map .road.r2 { left: 60px; top: -20px; bottom: -20px; width: 6px; transform: rotate(12deg); }
+      .map .road.r3 { left: 130px; right: -40px; top: 190px; height: 5px; transform: rotate(4deg); }
+      .map .road.r4 { left: 240px; top: -20px; bottom: 0; width: 5px; transform: rotate(-15deg); }
+      .map .line {
+        position: absolute; left: 40px; top: 60px; width: 260px; height: 5px;
+        background: var(--primary); border-radius: 4px; transform: rotate(24deg);
+        box-shadow: 0 0 0 3px rgba(0, 105, 109, 0.18);
+      }
+      .map .chip {
+        position: absolute; left: 16px; bottom: 88px;
+        background: #ffffffdd; border-radius: var(--pill);
+        padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--muted);
+      }
+      .map .fab {
+        position: absolute; right: 14px; bottom: 96px;
+        width: 44px; height: 44px; border-radius: 999px; background: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; color: var(--primary);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+      }
+      /* sheet */
+      .sheet {
+        flex: 1; margin-top: -26px;
+        background: var(--surface);
+        border-radius: 26px 26px 0 0;
+        box-shadow: 0 -8px 24px rgba(20, 40, 35, 0.15);
+        padding: 8px 12px 20px;
+        display: flex; flex-direction: column; gap: 10px;
+      }
+      .handle { width: 40px; height: 4px; border-radius: 999px; background: #c2cdc9; margin: 2px auto 6px; }
+      .sheet-head { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+      .sheet-head .back { font-size: 18px; color: var(--muted); width: 34px; }
+      .sheet-head h1 { font-size: 17px; font-weight: 700; margin: 0; }
+      .sheet-head .route-label { font-size: 11px; color: var(--muted); }
+      /* trip bar */
+      .tripbar {
+        background: var(--card);
+        border: 1px solid var(--outline);
+        border-radius: 18px;
+        padding: 10px 12px;
+        display: flex; flex-direction: column; gap: 2px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      }
+      .tb-row { display: flex; align-items: center; gap: 9px; padding: 4px 2px; }
+      .dot { width: 12px; height: 12px; border-radius: 999px; background: var(--primary); border: 3px solid #cde7e4; flex: 0 0 auto; }
+      .pin { width: 12px; height: 12px; border-radius: 3px 3px 3px 0; transform: rotate(-45deg); background: #b3261e; border: 2px solid #f6d7d5; flex: 0 0 auto; }
+      .tb-line { width: 2px; height: 10px; background: var(--outline); margin-left: 5px; }
+      .tb-body { flex: 1; min-width: 0; }
+      .tb-label { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+      .tb-value { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tb-stop {
+        display: flex; align-items: center; gap: 8px;
+        margin: 2px 0 2px 26px;
+        background: var(--surface-container);
+        border-radius: 10px; padding: 6px 10px;
+      }
+      .tb-stop .name { flex: 1; font-size: 12px; font-weight: 600; }
+      .tb-stop .tag { font-size: 9px; font-weight: 700; color: var(--muted); }
+      .tb-stop .x { border: 0; background: transparent; color: var(--muted); font-size: 14px; }
+      .mini { border: 0; background: transparent; color: var(--primary); font-size: 15px; padding: 4px 6px; }
+      .tb-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+      .add-stop {
+        flex: 1; border: 1px dashed var(--outline); background: transparent;
+        color: var(--primary); font-size: 12px; font-weight: 700;
+        border-radius: var(--pill); padding: 7px 12px;
+      }
+      .apply {
+        border: 0; border-radius: var(--pill); background: var(--primary);
+        color: var(--on-primary); font-size: 12px; font-weight: 700;
+        padding: 9px 16px;
+      }
+      /* route cards */
+      .card {
+        background: var(--card); border: 1px solid #e2e9e6; border-radius: 16px;
+        padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+      .card.top { border: 2px solid var(--primary); }
+      .card-head { display: flex; align-items: baseline; gap: 8px; }
+      .badge { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: var(--primary); background: #d9eeec; border-radius: 6px; padding: 3px 6px; }
+      .eta { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+      .eta small { font-size: 13px; font-weight: 600; color: var(--muted); }
+      .fare { margin-left: auto; font-size: 20px; font-weight: 800; color: var(--primary); }
+      .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+      .modes { display: flex; gap: 6px; margin-top: 8px; }
+      .mode { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 4px 9px; background: var(--surface-container); color: #2e3a37; }
+      .prov { margin-top: 8px; font-size: 10px; color: var(--muted); border-top: 1px solid #eef2f0; padding-top: 7px; }
+      .footnote {
+        width: 375px; font-size: 11px; color: #2e3a37; line-height: 1.5;
+        background: #ffffffcc; border-radius: 10px; padding: 8px 10px;
+      }
+      .footnote b { color: var(--primary); }
+    </style>
+  </head>
+  <body>
+    <div class="caption">
+      <b>Option B — Editable trip bar on route options.</b> Search stays a
+      single destination field; the route-options sheet grows a compact trip bar
+      where From, optional stops and To can be edited in place.
+    </div>
+
+    <div class="phone">
+      <div class="map">
+        <div class="water"></div>
+        <div class="road r1"></div>
+        <div class="road r2"></div>
+        <div class="road r3"></div>
+        <div class="road r4"></div>
+        <div class="line"></div>
+        <div class="chip">◎ Kasalukuyang lokasyon</div>
+        <div class="fab">◎</div>
+      </div>
+
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="sheet-head">
+          <span class="back">←</span>
+          <div>
+            <h1>Mga ruta</h1>
+            <div class="route-label">Cubao, Quezon City → Ayala, Makati · 3 ruta</div>
+          </div>
+        </div>
+
+        <div class="tripbar">
+          <div class="tb-row">
+            <span class="dot"></span>
+            <div class="tb-body">
+              <div class="tb-label">Mula sa</div>
+              <div class="tb-value">Cubao, Quezon City</div>
+            </div>
+            <button class="mini" aria-label="Palitan ang simulan">✎</button>
+          </div>
+          <div class="tb-line"></div>
+          <div class="tb-stop">
+            <span class="tag">↳</span>
+            <span class="name">Guadalupe, Makati</span>
+            <span class="tag">HINTUAN 1</span>
+            <button class="x" aria-label="Alisin ang hintuan">×</button>
+          </div>
+          <div class="tb-row">
+            <span class="pin"></span>
+            <div class="tb-body">
+              <div class="tb-label">Papunta sa</div>
+              <div class="tb-value">Ayala, Makati</div>
+            </div>
+            <button class="mini" aria-label="Palitan ang papunta">✎</button>
+          </div>
+          <div class="tb-actions">
+            <button class="add-stop">＋ Magdagdag ng hintuan (1/2)</button>
+            <button class="apply">I-update</button>
+          </div>
+        </div>
+
+        <div class="card top">
+          <div class="card-head">
+            <span class="badge">BEST</span>
+            <span class="eta">48<small> min</small></span>
+            <span class="fare">₱10.50</span>
+          </div>
+          <div class="meta">Dating 8:48 AM · 2 sakay · 420 m lakad</div>
+          <div class="modes"><span class="mode">MRT-3</span><span class="mode">Lakad</span></div>
+          <div class="prov">Sources: OSM · LTFRB matrix (eff. 2026-09-28)</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <span class="eta">56<small> min</small></span>
+            <span class="fare">₱15.00</span>
+          </div>
+          <div class="meta">Dating 8:56 AM · 1 sakay · 1.1 km lakad</div>
+          <div class="modes"><span class="mode">Bus</span><span class="mode">Lakad</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <b>Why this layout:</b> it is the smallest change to the existing flow and
+      keeps the approved search screen intact. The trip bar makes the start
+      explicit and editable after a plan, including "Walang ruta" states.
+    </div>
+  </body>
+</html>

@@ -14,7 +14,9 @@ AI-assisted-work disclosure.
 > measurement, not by omission: spec §3 criteria 2–6 pass, while the §11
 > performance budget is recorded as PARTIAL — the interactive-map target and TBT
 > are not met and are documented with numbers in
-> `docs/runbooks/phase2-acceptance.md`. Nothing is pushed or merged.
+> `docs/runbooks/phase2-acceptance.md`. A post-Plan-2 trip-planner change (R89)
+> lives on `feature/trip-planner`: the start and end are now configurable, with
+> up to two optional transit stops (see Features). Nothing is pushed or merged.
 
 ## Screenshots
 
@@ -24,8 +26,8 @@ local stack. These are real screenshots, not mockups:
 
 | Home | Search | Route options |
 |:---:|:---:|:---:|
-| <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home: live map behind the bottom sheet with the search pill" width="250"></a> | <a href="docs/screenshots/search-results.png"><img src="docs/screenshots/search-results.png" alt="Search: grouped results for Cubao" width="250"></a> | <a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Route options: fare-forward cards over the map" width="250"></a> |
-| Map + sheet, search pill | Grouped stops/landmarks/routes | Fare, ETA, effectivity date |
+| <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home: live map behind the bottom sheet with the search pill" width="250"></a> | <a href="docs/screenshots/search-results.png"><img src="docs/screenshots/search-results.png" alt="Search: directions form (From/To) with grouped results for Cubao" width="250"></a> | <a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Route options: fare-forward cards over the map, planned from the current location to Cubao" width="250"></a> |
+| Map + sheet, search pill | From/To form, grouped stops | Fare, ETA, effectivity date |
 
 | Trip detail | Saved | About data |
 |:---:|:---:|:---:|
@@ -39,6 +41,13 @@ container, not Google's data.
 
 ## Features
 
+- **Configurable trip planner** — the search screen is a directions form: set an
+  explicit **From**, **To**, and up to two optional transit stops (sakayan), with
+  a one-tap "use my current location" shortcut for the start. The trip travels in
+  the URL, so route options can always send you back to change the starting
+  point; a device location outside the routing feed can no longer silently make
+  every destination say *Walang ruta*. (MOTIS `via` accepts stop IDs only, so an
+  optional stop is a real served stop, capped at two.)
 - **Fare-first route cards** — every option leads with the total time, arrival,
   **₱ fare**, transfers, walk distance and mode chips, and every fare shows its
   `effective_from` date and its source. No fare is ever shown without either.
