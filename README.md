@@ -16,7 +16,9 @@ AI-assisted-work disclosure.
 > are not met and are documented with numbers in
 > `docs/runbooks/phase2-acceptance.md`. A post-Plan-2 trip-planner change (R89)
 > lives on `feature/trip-planner`: the start and end are now configurable, with
-> up to two optional transit stops (see Features). Nothing is pushed or merged.
+> up to two optional transit stops (see Features). All of the above is merged to
+> `main` on 2026-11-02 (local only — this repository has no remote configured, so
+> nothing is pushed anywhere).
 
 ## Screenshots
 

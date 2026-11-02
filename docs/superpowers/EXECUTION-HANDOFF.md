@@ -94,8 +94,8 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   ferries excluded from the feed; 62 implausible itineraries dropped across the golden set
   (R10 feed shapes); coverage 12/16.
 - **Plan 2 (PWA MVP) COMPLETE (2026-11-02)** on branch `feature/pwa-mvp` (created from
-  Plan-1 head `6fc2b99`; **not merged/pushed**, per the goal's no-merge constraint; 35
-  commits). Ledger: `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/progress.md` (rulings
+  Plan-1 head `6fc2b99`; the session's goal forbade merging, so it stayed on the branch
+  until the human asked for the local `main` merge on 2026-11-02; 35 commits). Ledger: `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/progress.md` (rulings
   R39–R88); task reports and review files live in the same directory. The stack is
   runnable: `npm run dev` brings up `routing` + `api` (MOTIS has imported the published
   489-route feed); the PWA runs on `:5173` (CORS-allowed) via
@@ -135,9 +135,10 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   script's advisory port guard) and F5 (trip-live summary misses `effective_from`) are
   recorded as known-gap items 14–15. A scoped docs re-review returned **APPROVED — no
   open findings**. Final HEAD `5b9288c`; branch reviewed and ready for the human's
-  merge decision (nothing pushed/merged).
+  merge decision (executed later — see "Local integration" below).
 - **Post-Plan-2 trip planner (R89, 2026-11-02) — implemented on `feature/trip-planner`**
-  (branched from the Plan-2 head `1d98bda`; not pushed/merged). The human reported
+  (branched from the Plan-2 head `1d98bda`; merged to `main` locally as `aabe6ee` —
+  see "Local integration" below). The human reported
   that allowing device location made every destination show *Walang ruta*, and
   asked for a configurable start/end with optional stops. Diagnosis on the live
   stack: routing works (Cubao→Ayala returns 3–5 options), but `/plan` took the
@@ -173,6 +174,16 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   - Known limits: optional stops must be served stops (MOTIS stop IDs only) and
     the cap is two (router limit). Existing feed coverage gaps still produce an
     empty set for uncovered corridors — the UI now explains and recovers.
+- **Local integration (2026-11-02): `main` merged.** The human asked to merge the work
+  into `main`. `main`'s tip was `c2bc41f` (approved spec/research/plans only) and the
+  implementation chain is linear (`c2bc41f` → data spine → PWA → trip planner), so the
+  merge is a single `--no-ff` commit **`aabe6ee`** (`merge: bring feature/trip-planner
+  into main`) carrying 239 files / +53,895 lines. `git diff feature/trip-planner main`
+  is empty: `main`'s tree is exactly the verified branch tip (lint/typecheck clean, 417
+  unit tests passed, 105.0 KB gzip entry payload, 4/4 Playwright E2E, 4/4 integration
+  tests, live MOTIS via checks). The repository has **no remote configured**, so nothing
+  is pushed; `feature/data-spine`, `feature/pwa-mvp` and `feature/trip-planner` are
+  retained as fully-merged pointers.
 - **Next phase (not started):** Phase 3 curation & coverage (route-inventory merge
   workflow, fare-update runbook, staleness CI, community report flow) and the public-beta
   decisions above; the branch is ready for merge/review when the human decides (nothing
