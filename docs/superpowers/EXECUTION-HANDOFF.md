@@ -92,23 +92,42 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
   kept, `/plan` never emits it, no machine-readable P2P route fare exists); PNR/non-PRFS
   ferries excluded from the feed; 62 implausible itineraries dropped across the golden set
   (R10 feed shapes); coverage 12/16.
-- **Plan 2 (PWA MVP) IN PROGRESS** on branch `feature/pwa-mvp` (created from Plan-1 head
-  `6fc2b99`; not merged/pushed per the goal's no-merge constraint). Ledger:
-  `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/progress.md`; briefs for Tasks 1–11 in the
-  same directory. The stack is runnable: `npm run dev` brings up `routing` + `api` (MOTIS has
-  imported the published 489-route feed); the PWA joins on `:5173` (CORS-allowed). Run
-  `npm run data:build` before the first `npm run dev` on a fresh checkout.
-- **Plan 2 progress (2026-11-02):** Tasks 1–9 **complete and reviewed clean** — Task 1
-  scaffold; Task 2 tokens/shell/sheet (`b2baea3`); Task 3 map (`afbd7a1`); Task 4 typed API
-  client + debounced grouped search (`9942b4b`, fix round `693c5e4`); Task 5 route options
-  over the map (`673df80`, fix round `0cd528b`); Task 6 trip detail + leg stops (`23b6d4a`,
-  `f67a23b`, fix round `03f995c`); Task 7 About-data provenance L2/L3 (`2af7bbb`); Task 8
-  saved/recents/offline + installable PWA (`57efbe8`, `265c8e2`, fix round `9e1b51c`); Task 9
-  Taglish i18n + WCAG 2.2 pass (`9cb7334`, `562e0f9`, fix round `d06603e` — 211 keys/locale,
-  48 dp, focus layering per R80; root suite 378 passed / 4 skipped). **Task 10 (perf budgets +
-  Playwright E2E) is in flight.** Next per plan: 11 phase-2 acceptance. Ledger has all
-  rulings (R39–R81) and the Task 11 known-gaps list (Home-peek recent rows; English-fallback
-  toggle UI; mixed-sentence language tagging).
+- **Plan 2 (PWA MVP) COMPLETE (2026-11-02)** on branch `feature/pwa-mvp` (created from
+  Plan-1 head `6fc2b99`; **not merged/pushed**, per the goal's no-merge constraint; 35
+  commits). Ledger: `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/progress.md` (rulings
+  R39–R88); task reports and review files live in the same directory. The stack is
+  runnable: `npm run dev` brings up `routing` + `api` (MOTIS has imported the published
+  489-route feed); the PWA runs on `:5173` (CORS-allowed) via
+  `npm run dev --workspace @biyahey/web`. Run `npm run data:build` before the first
+  `npm run dev` on a fresh checkout.
+- **Phase-2 acceptance (2026-11-02): `npm run verify:phase2` exits 0 with verdict
+  PARTIAL.** Spec §3 criteria 2–6: **5/5 PASS, 0 FAIL**; recorded checks: 5 pass,
+  1 partial (`perf`), 1 skipped (`phase1`, re-runnable with `--with-phase1`), 0 fail.
+  Evidence: unit **380 passed / 4 skipped**; paint-only first payload **104.4 KB gzip
+  ≤ 250 KB**; Playwright E2E **4 passed** (dev trip flow + preview offline/manifest +
+  MapLibre worker guard); PWA installable/offline browser-verified; Lighthouse 5-run
+  medians LCP ~2.0 s (recorded-run pass, locally variable), **TBT ~3.9 s FAIL**,
+  **TTI ~7.6 s (interactive-map ≤3 s NOT MET)**, transfer ~796 KB PASS, perf score 63.
+  Runbooks: `docs/runbooks/phase2-acceptance.md`, `docs/runbooks/local-dev.md`; real
+  screenshots in `docs/screenshots/`; `README.md`/`CONTRIBUTING.md` updated.
+- **Plan-2 known gaps before public beta (recorded, never green):** performance PARTIAL —
+  TBT fails its 2500 ms ceiling (Lighthouse "good" 600 ms unmet), interactive map ≤3 s
+  NOT MET, ≤40 tiles/viewport measured (4) but unenforced, `saveData` raster fallback not
+  implemented, LCP pass is recorded-run-only; CI `perf` job is authoritative and expected
+  red on TBT until the map-cost decision (preload map chunk vs lighter/raster first paint
+  vs re-scope) is taken. Other gaps: Home-peek recent-trip rows (spec screen 1) unowned;
+  English-fallback toggle UI absent (spec §11 localisation; mechanism complete); mixed
+  mandated sentences not split into `lang` spans (R81); R41 reduced-options note blocked
+  on a Plan-1 contract field (R59); `.github/workflows/web.yml` unexecuted locally
+  (Node 24 vs 22, ~80 min data-cache first run); Task 6/7/8 carry-overs (R64 MRT-3
+  duplicate station rows, R65 back-nav plan refetch, R68 confidence field absent, R74
+  placeholder icons, raw-localStorage retrofit, R78 24 px popover licence links, E2E
+  lifted from live feed, "START → END" saved-row title); Plan-1 gaps unchanged
+  (`gtfs-validator` R46, LRT-2 R47, P2P R48, coverage 12/16).
+- **Next phase (not started):** Phase 3 curation & coverage (route-inventory merge
+  workflow, fare-update runbook, staleness CI, community report flow) and the public-beta
+  decisions above; the branch is ready for merge/review when the human decides (nothing
+  was pushed or merged in this session).
 - **Plan-2 contract addendum (R61, 2026-11-02):** MOTIS `leg.intermediateStops` is present
   (verified live: 8 stops on MRT-3 Cubao→Buendia) but the shared `LegDto` exposed no stops,
   so the trip-detail stop list (spec §11 screen 4) was impossible. Task 6 adds an **optional**
