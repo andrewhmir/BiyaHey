@@ -73,10 +73,16 @@ function ResultRow({
   // only when it adds information the name does not already show.
   const subtitle = result.locality ?? (result.label !== result.name ? result.label : '');
   const distance = typeof result.distanceM === 'number' ? formatDistance(result.distanceM) : '';
+  // R89: three adjacent inline spans compute an accessible name with no
+  // separators ("CubaoQuezon City≈ 11.8 km"), which a screen reader reads as
+  // one word. An explicit label makes the row announce as the place it is,
+  // with the same distance the row displays.
+  const accessibleName = distance.length > 0 ? `${result.label} ${distance}` : result.label;
 
   return (
     <button
       type="button"
+      aria-label={accessibleName}
       onClick={() => onSelect(result)}
       className="flex min-h-12 w-full items-center gap-3 rounded-card bg-surface-container-lowest px-3 py-2 text-left shadow-elevation-1 transition hover:shadow-elevation-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:shadow-none"
     >

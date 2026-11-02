@@ -16,11 +16,12 @@ import { defineConfig, devices } from '@playwright/test';
  *   always describes the current tree; running `npm run e2e` inside
  *   `apps/web` without that build will fail the preview server on purpose.
  *
- * Geolocation is granted at the Buendia end of the MRT-3 corridor
- * (14.5547, 121.0244), not at Cubao: `/plan` takes its origin from the device
- * and the destination from the search selection, and Cubao → Cubao returns no
- * itineraries from the live BFF. Buendia → Cubao returns the real 4-option
- * corridor (1–5 tolerated by the spec). The choice is recorded in
+ * Geolocation stays granted at the Buendia end of the MRT-3 corridor
+ * (14.5547, 121.0244) for the legacy `/plan?dest=…` deep-link path, but the
+ * acceptance flow no longer depends on it: R89 makes `/search` a directions
+ * form whose explicit From/To are carried in the URL (Guadalupe → Cubao). The
+ * permission is kept so a device-origin fallback test cannot turn into a
+ * permission prompt. The original choice is recorded in
  * `.superpowers/sdd/2026-11-01-biyahey-pwa-mvp/task-10-report.md`.
  */
 const devURL = 'http://localhost:5173';

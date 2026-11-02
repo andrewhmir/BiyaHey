@@ -31,7 +31,7 @@ function spyOnFetch() {
   return vi.spyOn(globalThis, 'fetch');
 }
 
-function renderRouteOptions() {
+function renderRouteOptions(onEditTrip?: () => void) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
   });
@@ -45,6 +45,7 @@ function renderRouteOptions() {
         destination={AYALA}
         originLabel="Cubao"
         destinationLabel="Ayala"
+        onEditTrip={onEditTrip}
       />
     </QueryClientProvider>,
   );
@@ -205,15 +206,23 @@ describe('RouteOptionsScreen', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
-  it('shows the honest empty state when the API has no routes', async () => {
+  it('shows an honest named empty state that offers to change the starting point', async () => {
     server.use(planEmptyHandler);
+    const onEditTrip = vi.fn();
 
-    renderRouteOptions();
+    const { user } = renderRouteOptions(onEditTrip);
 
     expect(
-      await screen.findByText('Walang ruta — try a nearby landmark'),
+      await screen.findByText('Walang ruta sa pagitan ng Cubao at Ayala'),
     ).toBeInTheDocument();
+    // The old dead-end copy suggested a nearby landmark; the honest message
+    // names the trip the rider actually planned and offers a way forward.
+    expect(screen.queryByText('Walang ruta — try a nearby landmark')).not.toBeInTheDocument();
+    expect(screen.getByText(/subukan ang ibang starting point/i)).toBeInTheDocument();
     expect(screen.queryByTestId('route-card')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Palitan ang starting point' }));
+    expect(onEditTrip).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error state with a retry that recovers and announces it once', async () => {
@@ -299,6 +308,60 @@ describe('/plan route wiring', () => {
     });
   });
 
+  it('plans with ordered via stops and shows them in the place line', async () => {
+    const getCurrentPosition = vi.fn();
+    vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
+    const viaStop = {
+      lat: 14.58,
+      lon: 121.04,
+      stopId: 'gtfs_bus-lx:node:6014597491',
+      name: 'Guadalupe',
+    };
+    let captured: unknown;
+    server.use(
+      http.post('*/plan', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json(planCubaoAyalaResponse);
+      }),
+    );
+
+    renderPlanRoute(
+      `/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao&via=${encodeURIComponent(JSON.stringify([viaStop]))}`,
+    );
+
+    expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
+    expect(screen.getByText('Cubao → Guadalupe → Ayala')).toBeInTheDocument();
+    // The POST body carries the stop's served id in travel order; the display
+    // name stays in the URL only.
+    expect(captured).toEqual({
+      origin: { lat: 14.619, lon: 121.053 },
+      destination: { lat: 14.554, lon: 121.024 },
+      stops: [{ lat: 14.58, lon: 121.04, stopId: 'gtfs_bus-lx:node:6014597491' }],
+    });
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+  });
+
+  it('returns to the prefilled directions form from the empty state', async () => {
+    server.use(planEmptyHandler);
+    const user = userEvent.setup();
+
+    renderPlanRoute(
+      '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao',
+    );
+
+    // The named outcome is the announced live region (the top status is silent
+    // for the empty state, so it is not read twice) — R89 review.
+    expect(
+      await screen.findByText('Walang ruta sa pagitan ng Cubao at Ayala'),
+    ).toHaveAttribute('role', 'status');
+
+    await user.click(screen.getByRole('button', { name: 'Palitan ang starting point' }));
+
+    expect(await screen.findByRole('search')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: /mula sa/i })).toHaveValue('Cubao');
+    expect(screen.getByRole('searchbox', { name: /papunta sa/i })).toHaveValue('Ayala');
+  });
+
   it('hosts the options in the map + sheet container and highlights the tapped polyline', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
@@ -361,6 +424,46 @@ describe('/plan route wiring', () => {
     expect(screen.getByRole('dialog', { name: 'Pinagmulan ng data' })).toHaveTextContent(
       'LTFRB fare matrix (transcribed)',
     );
+  });
+
+  it('plans a legacy /plan?dest link from the device location when no from is given', async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: { latitude: 14.5547, longitude: 121.0244 },
+      } as GeolocationPosition);
+    });
+    vi.stubGlobal('navigator', {
+      ...window.navigator,
+      geolocation: { getCurrentPosition },
+    });
+    let captured: unknown;
+    server.use(
+      http.post('*/plan', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json(planCubaoAyalaResponse);
+      }),
+    );
+
+    renderPlanRoute('/plan?dest=14.554,121.024&name=Ayala');
+
+    expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
+    // The legacy hand-off labels the device fix honestly instead of inventing a
+    // place, and the one bounded read supplies the request origin.
+    expect(screen.getByText('Kasalukuyang lokasyon → Ayala')).toBeInTheDocument();
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(captured).toEqual({
+      origin: { lat: 14.5547, lon: 121.0244 },
+      destination: { lat: 14.554, lon: 121.024 },
+    });
+  });
+
+  it('rejects an unreadable from instead of guessing an origin', async () => {
+    renderPlanRoute('/plan?dest=14.554,121.024&name=Ayala&from=nope');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Hindi valid ang starting point' }),
+    ).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('shows an honest origin state and offers search instead of a dead-end retry when location is unsupported', async () => {

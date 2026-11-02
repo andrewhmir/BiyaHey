@@ -135,6 +135,36 @@ describe('planTrip', () => {
 
     expect(method).toBe('POST');
     expect(body).toEqual(input);
+    // R89: a request without stops is byte-identical to the v1 contract.
+    expect(body).not.toHaveProperty('stops');
+  });
+
+  it('carries optional via stops in the POST body', async () => {
+    const stops = [
+      { lat: 14.58, lon: 121.04, stopId: 'gtfs_bus-lx:node:6014597491' },
+      { lat: 14.6, lon: 121.05, stopId: 'gtfs_rail-3:node:5397307754' },
+    ];
+    const input: PlanRequest = {
+      origin: { lat: 14.619, lon: 121.053 },
+      destination: { lat: 14.554, lon: 121.024 },
+      stops,
+    };
+    let body: unknown;
+    const planResponse = { v: 1, itineraries: [], sources: [] };
+    server.use(
+      http.post('*/plan', async ({ request: httpRequest }) => {
+        body = await httpRequest.json();
+        return HttpResponse.json(planResponse);
+      }),
+    );
+
+    await expect(planTrip(input)).resolves.toEqual(planResponse);
+
+    expect(body).toEqual({
+      origin: { lat: 14.619, lon: 121.053 },
+      destination: { lat: 14.554, lon: 121.024 },
+      stops,
+    });
   });
 
   it('bounds POST /plan to the 3 s plan budget client-side (R72)', async () => {

@@ -97,7 +97,8 @@ describe('WCAG 2.2 axe pass over the key screens', () => {
   it('has no violations on Search with grouped results', async () => {
     const { container, user } = renderApp('/search');
     // `/search` is a lazy route (Task 10): wait for its chunk before typing.
-    const searchbox = await screen.findByRole('searchbox');
+    // R89: the screen is a directions form, so target the From picker.
+    const searchbox = await screen.findByRole('searchbox', { name: /mula sa/i });
     await user.type(searchbox, 'ayala');
     // The result text waits out a 250 ms debounce; give it headroom so the suite
     // does not flake under CPU contention (m1). Real content then axe.

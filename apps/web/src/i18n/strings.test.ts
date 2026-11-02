@@ -24,6 +24,40 @@ const MANDATED_TL: Readonly<Record<string, string>> = {
   'trip.bayad': 'Bayad',
 };
 
+/**
+ * New trip-planner copy (R89). Existing pinned values above are untouched;
+ * these keys are added to both locales and pinned here so a later refactor
+ * cannot quietly change what the directions form renders.
+ */
+const TRIP_PLANNER_TL: Readonly<Record<string, string>> = {
+  'search.title': 'Plano ng biyahe',
+  'search.fromLabel': 'Mula sa',
+  'search.toLabel': 'Papunta sa',
+  'search.fromPlaceholder': 'Saan ka galing?',
+  'search.stopPlaceholder': 'Saan ka hihinto?',
+  'search.stopLabel': 'Hintuan {index}',
+  'search.addStop': 'Magdagdag ng hintuan',
+  'search.removeStop': 'Alisin ang hintuan',
+  'search.removeStopIndex': 'Alisin ang hintuan {index}',
+  'search.swap': 'Palitan ang mula at papunta',
+  'search.useMyLocation': 'Gamitin ang lokasyon ko',
+  'search.findRoute': 'Maghanap ng ruta',
+  'search.noStops': 'Walang hintuang nakita para sa “{query}”.',
+  'search.partialNoStops': 'Walang kumpletong hintuang nakita para sa “{query}”.',
+  'search.locateDenied':
+    'Hindi pinayagan ang lokasyon. Pumili ng lugar para sa “Mula sa” o subukan ulit.',
+  'search.locateUnavailable':
+    'Hindi available ang lokasyon sa device na ito. Pumili ng lugar para sa “Mula sa”.',
+  'search.locateTimeout':
+    'Matagal bago natagpuan ang lokasyon. Subukan ulit o pumili ng lugar para sa “Mula sa”.',
+  'search.locateUnsupported':
+    'Walang location sa device na ito. Pumili ng lugar para sa “Mula sa”.',
+  'routes.emptyBetween': 'Walang ruta sa pagitan ng {from} at {to}',
+  'routes.emptyHint': 'Subukan ang ibang starting point o magdagdag ng hintuan sa search.',
+  'routes.changeStart': 'Palitan ang starting point',
+  'routes.unknownPlace': 'hindi kilalang lugar',
+};
+
 describe('STRINGS', () => {
   it('covers every key in every locale', () => {
     for (const locale of LOCALES) {
@@ -40,6 +74,19 @@ describe('STRINGS', () => {
     for (const [key, value] of Object.entries(MANDATED_TL)) {
       expect(STRINGS.tl[key]).toBe(value);
     }
+  });
+
+  it('pins the trip-planner copy added for R89', () => {
+    for (const [key, value] of Object.entries(TRIP_PLANNER_TL)) {
+      expect(STRINGS.tl[key]).toBe(value);
+      expect(STRINGS.en[key]).toBeTypeOf('string');
+    }
+    expect(translate('tl', 'routes.emptyBetween', { from: 'Cubao', to: 'Ayala' })).toBe(
+      'Walang ruta sa pagitan ng Cubao at Ayala',
+    );
+    expect(translate('en', 'routes.emptyBetween', { from: 'Guadalupe', to: 'Cubao' })).toBe(
+      'No route between Guadalupe and Cubao',
+    );
   });
 
   it('defaults to Taglish', () => {

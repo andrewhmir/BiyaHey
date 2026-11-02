@@ -1,4 +1,4 @@
-import type { ItineraryDto, PlanPlaceInput } from '@biyahey/shared';
+import type { ItineraryDto, PlanPlaceInput, PlanStopInput } from '@biyahey/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useT } from '../../i18n/useT';
@@ -109,7 +109,10 @@ function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
       // silent so screen readers do not hear the sentence twice.
       return '';
     case 'success':
-      return count === 0 ? t('routes.emptyStatus') : t('routes.count', { count });
+      // The zero-itinerary block below is its own polite live region and names
+      // the planned trip, so keep this region silent to avoid a double
+      // announcement of the same outcome (R89 review).
+      return count === 0 ? '' : t('routes.count', { count });
   }
 }
 
@@ -142,8 +145,16 @@ interface RouteOptionsContentProps {
   /** Opens the trip-detail affordance without changing the selected card. */
   onOpenDetail?: (id: string) => void;
   originLabel?: string;
+  /** Names of the optional via stops, in travel order (R89). */
+  stopLabels?: readonly string[];
   destinationLabel?: string;
   onBack?: () => void;
+  /**
+   * Secondary action for the zero-itinerary state: go back to the directions
+   * form (prefilled with this trip) and change the starting point. Optional
+   * because a bare mount may not own navigation.
+   */
+  onEditTrip?: () => void;
   /** `true` inside the `/plan` bottom sheet: the sheet owns page scaffolding. */
   embedded?: boolean;
 }
@@ -156,8 +167,10 @@ function RouteOptionsContent({
   onSelect,
   onOpenDetail,
   originLabel,
+  stopLabels,
   destinationLabel,
   onBack,
+  onEditTrip,
   embedded = false,
 }: RouteOptionsContentProps) {
   const { t } = useT();
@@ -176,8 +189,12 @@ function RouteOptionsContent({
     [t],
   );
 
-  const placeLine = [originLabel, destinationLabel].filter(Boolean).join(' → ');
+  const placeLine = [originLabel, ...(stopLabels ?? []), destinationLabel]
+    .filter(Boolean)
+    .join(' → ');
   const count = plan.itineraries.length;
+  const emptyFrom = originLabel ?? t('routes.unknownPlace');
+  const emptyTo = destinationLabel ?? t('routes.unknownPlace');
 
   return (
     <>
@@ -239,9 +256,23 @@ function RouteOptionsContent({
         ) : null}
 
         {plan.status === 'success' && plan.itineraries.length === 0 ? (
-          <p className="rounded-card border border-outline-variant bg-surface-container-low px-4 py-6 text-center text-base text-on-surface">
-            {t('routes.empty')}
-          </p>
+          <div className="flex flex-col items-start gap-3 rounded-card border border-outline-variant bg-surface-container-low px-4 py-6 text-on-surface">
+            {/* R89: the dead-end "try a nearby landmark" copy is replaced by an
+                honest message that names the trip the rider actually planned. */}
+            <p role="status" aria-live="polite" className="text-base font-medium">
+              {t('routes.emptyBetween', { from: emptyFrom, to: emptyTo })}
+            </p>
+            <p className="text-sm text-on-surface-variant">{t('routes.emptyHint')}</p>
+            {onEditTrip !== undefined ? (
+              <button
+                type="button"
+                onClick={onEditTrip}
+                className="flex min-h-12 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-6 text-base font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                {t('routes.changeStart')}
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {plan.status === 'success' && plan.itineraries.length > 0 ? (
@@ -286,6 +317,8 @@ function RouteOptionsContent({
 export interface RouteOptionsLabels {
   /** Display label for the origin (e.g. "Kasalukuyang lokasyon"). */
   originLabel?: string;
+  /** Names of the optional via stops, in travel order (R89). */
+  stopLabels?: readonly string[];
   destinationLabel?: string;
   onBack?: () => void;
   /**
@@ -293,12 +326,19 @@ export interface RouteOptionsLabels {
    * card body so tapping the card still selects/highlights its polyline (R58).
    */
   onOpenDetail?: (id: string) => void;
+  /**
+   * Edit hand-off for the zero-itinerary state: reopen `/search` prefilled with
+   * this trip so the rider can change the starting point (R89).
+   */
+  onEditTrip?: () => void;
 }
 
 /** Standalone screen: fetches its own plan (tests mount this without a map). */
 export interface SelfLoadingRouteOptionsProps extends RouteOptionsLabels {
   origin: PlanPlaceInput;
   destination: PlanPlaceInput;
+  /** Optional via stops in travel order; the self-loading mount plans them too. */
+  stops?: readonly PlanStopInput[];
 }
 
 /**
@@ -334,12 +374,15 @@ export function RouteOptionsScreen(props: RouteOptionsScreenProps) {
 function SelfLoadingRouteOptionsScreen({
   origin,
   destination,
+  stops,
   originLabel,
+  stopLabels,
   destinationLabel,
   onBack,
   onOpenDetail,
+  onEditTrip,
 }: SelfLoadingRouteOptionsProps) {
-  const plan = usePlan(origin, destination);
+  const plan = usePlan(origin, destination, stops);
   const [filter, setFilter] = useState<RouteFilter>('recommended');
   const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
 
@@ -362,8 +405,10 @@ function SelfLoadingRouteOptionsScreen({
         onSelect={setExplicitSelection}
         onOpenDetail={onOpenDetail}
         originLabel={originLabel}
+        stopLabels={stopLabels}
         destinationLabel={destinationLabel}
         onBack={onBack}
+        onEditTrip={onEditTrip}
       />
     </main>
   );

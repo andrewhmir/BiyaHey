@@ -328,13 +328,17 @@ describe('About-data entry points', () => {
     fireEvent.keyDown(window, { key: '/' });
 
     expect(await screen.findByRole('search')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus());
+    // R89: `/search` is a directions form; the shortcut focuses the first
+    // `input[type="search"]`, which is the From picker.
+    await waitFor(() =>
+      expect(screen.getByRole('searchbox', { name: /mula sa/i })).toHaveFocus(),
+    );
   });
 
   it('does not hijack / while the rider is typing', async () => {
     const { user } = renderApp('/search');
 
-    const field = screen.getByRole('searchbox');
+    const field = screen.getByRole('searchbox', { name: /mula sa/i });
     await user.type(field, '/');
 
     expect(field).toHaveValue('/');

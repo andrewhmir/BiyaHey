@@ -89,7 +89,7 @@ function startPreview() {
 
 const names = [
   ['home', 'Home — map + peek/half sheet with the search pill'],
-  ['search-results', 'Search — grouped results for "Cubao"'],
+  ['search-results', 'Search — directions form with grouped results for "Cubao"'],
   ['route-options', 'Route options — fare-forward cards over the map'],
   ['trip-detail', 'Trip detail — header, timeline, save'],
   ['saved', 'Saved — the snapshot after saving the trip'],
@@ -143,16 +143,20 @@ try {
   await page.waitForTimeout(3_000);
   await capture('home');
 
-  // 2. Search — the same live /search request the E2E flow exercises.
+  // 2. Search — the directions form (R89) with the same live /search request
+  //    the E2E flow exercises: type the destination first, show grouped stops.
   await page.getByRole('button', { name: 'Saan ka pupunta?' }).click();
   await page.waitForURL(/\/search$/);
-  await page.getByRole('searchbox').fill('Cubao');
+  await page.getByRole('searchbox', { name: /papunta sa/i }).fill('Cubao');
   await page.getByTestId('search-group-stops').waitFor({ state: 'visible', timeout: 30_000 });
   await page.waitForTimeout(1_000);
   await capture('search-results');
 
-  // 3. Route options — select the first live stop, wait for the real plan.
+  // 3. Route options — pick the live stop, use the granted device location for
+  //    From (one explicit tap, never automatic), then wait for the real plan.
   await page.getByTestId('search-group-stops').getByRole('button').first().click();
+  await page.getByRole('button', { name: /gamitin ang lokasyon ko/i }).click();
+  await page.getByRole('button', { name: 'Maghanap ng ruta' }).click();
   await page.waitForURL(/\/plan\?/);
   await page.getByTestId('route-card').first().waitFor({ state: 'visible', timeout: 45_000 });
   await page.getByTestId('fare-amount').first().waitFor({ state: 'visible' });

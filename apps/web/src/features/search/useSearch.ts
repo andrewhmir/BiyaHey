@@ -26,6 +26,17 @@ export interface UseSearchOptions {
    * later screens (route options, "near me") pass the stored origin here.
    */
   near?: NearPoint;
+  /**
+   * Resetting the typeahead between picking sessions (trip-planner R89).
+   *
+   * The directions form owns one query at a time: the active field's session.
+   * When that session changes (the rider moves to another field), the debounced
+   * query must be cleared immediately, otherwise the previous field's results
+   * stay rendered under the new field for the whole 250 ms debounce window and
+   * can be selected as if they belonged to it — observed live as a To stop
+   * ("Cubao") being picked into the From field.
+   */
+  resetToken?: string;
 }
 
 export interface SearchOutcome {
@@ -63,6 +74,16 @@ export function useSearch(term: string, options: UseSearchOptions = {}): SearchO
   const near = options.near;
 
   const [debounced, setDebounced] = useState(normalized);
+  // Reset the query synchronously during render when the caller's session token
+  // changes. This is React's documented "adjust state when a prop changes"
+  // pattern: the render immediately re-runs with the cleared query, so the old
+  // session's results are gone before the browser paints or the next click can
+  // land (an effect would leave a window where they are still clickable).
+  const [trackedResetToken, setTrackedResetToken] = useState(options.resetToken);
+  if (trackedResetToken !== options.resetToken) {
+    setTrackedResetToken(options.resetToken);
+    setDebounced('');
+  }
   const [savedPlaces] = useState(readSavedPlaces);
   const [recents, setRecents] = useState(() => readRecentQueries());
   const controllerRef = useRef<AbortController | null>(null);

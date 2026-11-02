@@ -6,8 +6,9 @@ import { useNavigate } from 'react-router-dom';
  * screen is the first history entry, so `navigate(-1)` would leave the app;
  * that case falls back to `fallback` instead.
  *
- * Shared by the route wrappers and the lazy `/plan` and `/trip` pages so their
- * back behaviour cannot drift.
+ * Shared by the route wrappers and the lazy `/trip` page so their back
+ * behaviour cannot drift. `/plan` deliberately does not use it: its Back returns
+ * to the prefilled directions form (R89).
  */
 export function useBackTo(fallback: string): () => void {
   const navigate = useNavigate();

@@ -13,8 +13,12 @@ import {
   type RouteFilter,
 } from '../features/routes/RouteOptionsScreen';
 import { usePlan } from '../features/routes/usePlan';
+import {
+  buildSearchPath,
+  parseTripParams,
+  type TripStop,
+} from '../features/search/tripParams';
 import { useT } from '../i18n/useT';
-import { useBackTo } from '../lib/useBackTo';
 
 /**
  * `/plan` — the route-options screen (Task 5, R58) and its lazy chunk boundary
@@ -24,6 +28,11 @@ import { useBackTo } from '../lib/useBackTo';
  * returned itinerary and a bottom sheet carrying the route-options list. It is
  * imported dynamically by `routes.tsx`, so neither MapLibre nor the Trip
  * detail/saved/provenance screens sit in the initial route payload.
+ *
+ * The trip (origin, optional via stops, destination) is read from the URL
+ * contract in `features/search/tripParams.ts`. Back/edit reopens `/search`
+ * prefilled with the same trip, so a rider can change the starting point instead
+ * of falling into the old dead end.
  */
 
 const PLAN_SHEET_DETENTS = [96, 'half', 'expanded'] as const;
@@ -31,19 +40,30 @@ const PLAN_SHEET_DETENTS = [96, 'half', 'expanded'] as const;
 interface PlanViewProps {
   origin: PlanPlaceInput;
   destination: PlanPlaceInput;
+  /** Optional via stops in travel order (R89). */
+  stops: readonly TripStop[];
   originLabel?: string;
   destinationLabel?: string;
   onBack: () => void;
+  onEditTrip: () => void;
 }
 
 /**
  * The plan, the active filter and the selected itinerary live here so the card
  * emphasis and the highlighted line are always the same state.
  */
-function PlanView({ origin, destination, originLabel, destinationLabel, onBack }: PlanViewProps) {
+function PlanView({
+  origin,
+  destination,
+  stops,
+  originLabel,
+  destinationLabel,
+  onBack,
+  onEditTrip,
+}: PlanViewProps) {
   const navigate = useNavigate();
   const { t } = useT();
-  const plan = usePlan(origin, destination);
+  const plan = usePlan(origin, destination, stops);
   const [filter, setFilter] = useState<RouteFilter>('recommended');
   const [explicitSelection, setExplicitSelection] = useState<string | null>(null);
   const [mapPadding, setMapPadding] = useState(0);
@@ -56,6 +76,11 @@ function PlanView({ origin, destination, originLabel, destinationLabel, onBack }
     explicitSelection !== null && ranked.some((itinerary) => itinerary.id === explicitSelection)
       ? explicitSelection
       : (ranked[0]?.id ?? null);
+
+  const stopLabels = useMemo(
+    () => stops.map((stop) => stop.name).filter((name) => name.length > 0),
+    [stops],
+  );
 
   const handleMapPaddingChange = useCallback((padding: SheetMapPadding) => {
     setMapPadding(padding.bottom);
@@ -89,37 +114,15 @@ function PlanView({ origin, destination, originLabel, destinationLabel, onBack }
             onSelect={setExplicitSelection}
             onOpenDetail={(id) => navigate(`/trip/${id}`)}
             originLabel={originLabel}
+            stopLabels={stopLabels}
             destinationLabel={destinationLabel}
             onBack={onBack}
+            onEditTrip={onEditTrip}
           />
         </BottomSheet>
       }
     />
   );
-}
-
-/** Parse a `lat,lon` pair from a query string; `null` when malformed. */
-function parsePoint(value: string | null): PlanPlaceInput | null {
-  if (value === null) {
-    return null;
-  }
-  const parts = value.split(',');
-  if (parts.length !== 2) {
-    return null;
-  }
-  const [latText, lonText] = parts;
-  if (latText.trim() === '' || lonText.trim() === '') {
-    return null;
-  }
-  const lat = Number(latText);
-  const lon = Number(lonText);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return null;
-  }
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    return null;
-  }
-  return { lat, lon };
 }
 
 type OriginFailure = 'denied' | 'unavailable' | 'timeout' | 'unsupported';
@@ -138,7 +141,8 @@ const ORIGIN_TIMEOUT_MS = 8_000;
  * The Task 3 map keeps its geolocation inline in `MapCanvas`, so `/plan` cannot
  * reuse a fix from it. This hook performs a single `getCurrentPosition` when a
  * `/plan?dest=...` link carries no `from` pair, and reports every failure
- * honestly instead of substituting an invented default origin.
+ * honestly instead of substituting an invented default origin. The directions
+ * form normally sends an explicit `from`, so this is the legacy/deep-link path.
  *
  * React 19 StrictMode double-invokes effects in development, so a dev session
  * can issue two reads; a production build performs exactly one.
@@ -221,11 +225,15 @@ const ORIGIN_FAILURE_KEYS: Record<OriginFailure, { title: string; message: strin
 function LocatedPlanRoute({
   destination,
   destinationLabel,
+  stops,
   onBack,
+  onEditTrip,
 }: {
   destination: PlanPlaceInput;
   destinationLabel?: string;
+  stops: readonly TripStop[];
   onBack: () => void;
+  onEditTrip: () => void;
 }) {
   const navigate = useNavigate();
   const { t } = useT();
@@ -278,33 +286,43 @@ function LocatedPlanRoute({
     <PlanView
       origin={origin.point}
       destination={destination}
+      stops={stops}
       originLabel={t('plan.originCurrent')}
       destinationLabel={destinationLabel}
       onBack={onBack}
+      onEditTrip={onEditTrip}
     />
   );
 }
 
 /**
- * `/plan?dest=<lat>,<lon>&name=<label>[&from=<lat>,<lon>&fromName=<label>]`
+ * `/plan?from=<lat>,<lon>&fromName=<label>&dest=<lat>,<lon>&name=<label>[&via=…]`
  *
- * `SearchScreen` sends only the destination, so the origin normally comes from
- * one bounded device-geolocation read. `from`/`fromName` is the explicit
- * hand-off a future origin picker (or a shared deep link) can use. If neither
- * exists, the screen explains why no plan can be made — it never invents a
- * default origin.
+ * The directions form on `/search` always sends `from` and `dest` (plus any via
+ * stops); the same contract is what a shared/deep link can carry. The legacy
+ * device-origin path is kept only when the link has no `from` at all — a link
+ * that *has* an unreadable `from` says so instead of guessing. If there is no
+ * destination, the screen explains why no plan can be made; it never invents a
+ * default origin or destination.
  */
 export function PlanRoute() {
   const navigate = useNavigate();
   const { t } = useT();
-  const goBack = useBackTo('/search');
   const [params] = useSearchParams();
-  const destinationParam = params.get('dest');
-  const originParam = params.get('from');
-  const destination = useMemo(() => parsePoint(destinationParam), [destinationParam]);
-  const fixedOrigin = useMemo(() => parsePoint(originParam), [originParam]);
-  const destinationLabel = params.get('name') ?? undefined;
-  const originName = params.get('fromName') ?? undefined;
+  const parsed = useMemo(() => parseTripParams(params), [params]);
+  const destination = parsed.dest;
+  const fixedOrigin = parsed.from;
+  const destinationLabel = parsed.destName ?? undefined;
+  const originName = parsed.fromName ?? undefined;
+
+  // Back/edit goes to the prefilled directions form, not to a dead end. It
+  // replaces this history entry so the browser Back from the form cannot bounce
+  // straight back into the stale plan.
+  const searchPath = useMemo(() => buildSearchPath(parsed), [parsed]);
+  const editTrip = useCallback(
+    () => navigate(searchPath, { replace: true }),
+    [navigate, searchPath],
+  );
 
   if (destination === null) {
     return (
@@ -316,7 +334,7 @@ export function PlanRoute() {
     );
   }
 
-  if (originParam !== null && fixedOrigin === null) {
+  if (parsed.hasFrom && fixedOrigin === null) {
     return (
       <PageNotice
         title={t('plan.badOriginTitle')}
@@ -331,9 +349,11 @@ export function PlanRoute() {
       <PlanView
         origin={fixedOrigin}
         destination={destination}
+        stops={parsed.stops}
         originLabel={originName}
         destinationLabel={destinationLabel}
-        onBack={goBack}
+        onBack={editTrip}
+        onEditTrip={editTrip}
       />
     );
   }
@@ -342,7 +362,9 @@ export function PlanRoute() {
     <LocatedPlanRoute
       destination={destination}
       destinationLabel={destinationLabel}
-      onBack={goBack}
+      stops={parsed.stops}
+      onBack={editTrip}
+      onEditTrip={editTrip}
     />
   );
 }
