@@ -1,0 +1,42 @@
+{
+  "name": "biyahey",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source Philippine commuter route-planner PWA",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "data:build": "node scripts/data-build.mjs",
+    "check:fares": "node scripts/check-fares.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc -b",
+    "test": "vitest run --tagsFilter=!integration",
+    "test:integration": "vitest run --tagsFilter=integration",
+    "test:e2e": "npm run build --workspace @biyahey/web && npm run e2e --workspace @biyahey/web",
+    "perf:web": "node apps/web/scripts/perf.mjs",
+    "smoke:routing": "node scripts/motis-smoke.mjs",
+    "stress:motis": "node scripts/motis-stress.mjs",
+    "verify:phase1": "node scripts/verify-phase1.mjs",
+    "verify:phase2": "node scripts/verify-phase2.mjs",
+    "ci": "npm run lint && npm run typecheck && npm test && npm run validate:data && npm run check:fares",
+    "validate:data": "node scripts/validate-data.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^5.0.5",
+    "yaml": "^2.9.1"
+  }
+}

@@ -1,0 +1,299 @@
+# BiyaHey! curated jeepney / UV Express route inventory - seed (Task 7).
+#
+# PROVENANCE AND LICENCE
+# ----------------------
+# Every entry below is transcribed by hand from the OpenStreetMap Wiki list of
+# Metro Manila jeepney and UV Express routes:
+#
+#   https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes
+#
+# That page - like the OSM Wiki as a whole - is published under the Creative
+# Commons Attribution-ShareAlike 2.0 Generic licence (CC BY-SA 2.0),
+# https://creativecommons.org/licenses/by-sa/2.0/ , as stated by the site
+# footer on every wiki page. Reuse of this file must therefore keep the
+# attribution above and stay under CC BY-SA 2.0 (spec 8.1).
+#
+# The route *names*, *numbers*, *operators* and *lengths* in it are LTFRB
+# material quoted by the OSM Wiki; they are not BiyaHey! inventions.
+#
+# NOT YET CORROBORATED
+# --------------------
+# Every entry carries "needs_verification: true". That flag means: transcribed
+# from one community-maintained page, not yet checked against a second source
+# (an LTFRB memorandum circular, an operator notice, or a field observation).
+# Flip an entry to false only when someone has actually done that, and record
+# the corroborating source in the commit message.
+#
+# WHAT IS TRANSCRIBED, AND WHAT IS DELIBERATELY ABSENT
+# ---------------------------------------------------
+#   code              verbatim from the "Route number" column.
+#   name              verbatim from the "Name" column.
+#   endpoints         split out of the published name, which LTFRB formats as
+#                     "<first endpoint> - <second endpoint> via <roads>".
+#   via_roads         the name's "via ..." fragment plus any road sequence in
+#                     the "Route description" column, in source order. Empty
+#                     when the source names no road.
+#   stop_landmarks    ONLY terminals and landmarks the source names in the
+#                     route name or the "Route description" column, in travel
+#                     order. The wiki publishes no stop-level stop list for
+#                     these routes, so neither do we.
+#   typical_length_km the "Notes" column where it states a distance; null
+#                     otherwise. Never estimated from a map.
+#   operator          the "Operator" column verbatim; null when blank. Null
+#                     means "not published", not "no operator".
+#   headway_peak_min,
+#   headway_offpeak_min
+#                     ALWAYS null. The wiki publishes no headways, so none are
+#                     recorded here. The build falls back to the pinned GTFS
+#                     defaults (pipeline/gtfs.py: 4 min peak / 9 min off-peak).
+#                     Do not fill these in without a cited source.
+#   source_url        the wiki section the row appears in, so a reviewer can
+#                     re-check the transcription directly.
+#
+# Not modelled in this seed at all: LTFRB memorandum circular numbers (some are
+# mentioned in the "Notes" column, but a partial set would imply a
+# completeness we do not have), stop coordinates (the source has none), and
+# fare classes (owned by data/fares/).
+#
+# Validated by both `npm run validate:data` (schema:
+# data/routes/schema/jeepney-inventory.schema.json) and
+# pipelines/pipeline/inventory.py.
+routes:
+  # ------------------------------------------------------------------------
+  # Traditional jeepney, T1xx: Camanava and Bulacan
+  # ------------------------------------------------------------------------
+  - code: "T101"
+    name: Bagong Silang – Novaliches via Susano
+    mode: jeepney
+    endpoints: [Bagong Silang, Novaliches]
+    via_roads: [Susano]
+    stop_landmarks: [Bagong Silang, Novaliches]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 7.76
+    operator: Bagong Silang Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T1xx:_Camanava_and_Bulacan
+    needs_verification: true
+
+  - code: "T109"
+    name: Novaliches - Rizal Avenue via A. Bonifacio
+    mode: jeepney
+    endpoints: [Novaliches, Rizal Avenue]
+    via_roads: [A. Bonifacio]
+    stop_landmarks: [Novaliches, Rizal Avenue]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 13.307
+    operator: MANIBELA Nova Blue Chapter; MAPS Transport Service Cooperative; Novaliches Development Cooperative; The New Santa Quiteria Transport Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T1xx:_Camanava_and_Bulacan
+    needs_verification: true
+
+  - code: "T112"
+    name: Monumento - Paco (Obando) via M.H. del Pilar
+    mode: jeepney
+    endpoints: [Monumento, Paco (Obando)]
+    via_roads: [M.H. del Pilar]
+    stop_landmarks: [Monumento, Paco (Obando)]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 14.172
+    operator: null
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T1xx:_Camanava_and_Bulacan
+    needs_verification: true
+
+  - code: "T115"
+    name: Malabon - Monumento via Acacia
+    mode: jeepney
+    endpoints: [Malabon, Monumento]
+    via_roads:
+      - Acacia
+      - Don Basilio Bautista Blvd.
+      - L. Gutierez St.
+      - M. Naval St.
+      - A. Bonifacio St.
+      - C. Arellano St.
+      - Kalahi St.
+      - Gen. Luna St.
+      - Gov. Pascual Ave.
+      - Araneta Ave.
+      - Samson Road
+    stop_landmarks: [Malabon, Victory Mall Monumento]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 6.857
+    operator: Malabon Jeepney Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T1xx:_Camanava_and_Bulacan
+    needs_verification: true
+
+  - code: "T165"
+    name: Balintawak - Novaliches via Quirino Highway
+    mode: jeepney
+    endpoints: [Balintawak, Novaliches]
+    via_roads: [Quirino Highway, A. Bonifacio Ave., Gen. Luis, Buenamar Drive]
+    stop_landmarks: [Balintawak Cloverleaf, Novaliches]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 10.1
+    operator: null
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T1xx:_Camanava_and_Bulacan
+    needs_verification: true
+
+  # ------------------------------------------------------------------------
+  # Traditional jeepney, T4xx: Southern Metro Manila, suburban Cavite/Laguna
+  # ------------------------------------------------------------------------
+  - code: "T403"
+    name: Baclaran - NAIA/Baltao
+    mode: jeepney
+    endpoints: [Baclaran, NAIA/Baltao]
+    via_roads: [Quirino Ave., NAIA Rd.]
+    stop_landmarks: [Baclaran Rotonda, Baltao]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 3.31
+    operator: San Dionisio Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T4xx:_Southern_Metro_Manila,_suburban_Cavite_and_Laguna
+    needs_verification: true
+
+  - code: "T420"
+    name: Alabang - Biñan
+    mode: jeepney
+    endpoints: [Alabang, Biñan]
+    via_roads: [National Rd. 1]
+    stop_landmarks: [South Station, Biñan Poblacion]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 11.1
+    operator: Federation of Professional Jeepney Operators and Driver Groups of Biñan Inc.
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T4xx:_Southern_Metro_Manila,_suburban_Cavite_and_Laguna
+    needs_verification: true
+
+  - code: "T448"
+    name: Alabang - Zapote (Las Piñas)
+    mode: jeepney
+    endpoints: [Alabang, Zapote (Las Piñas)]
+    via_roads: [Northgate Ave., Civic Dr., Alabang–Zapote Rd., Diego Cera Ave.]
+    stop_landmarks: [South Station, Spectrum Midway, Zapote Kabila Terminal]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: 11.1
+    operator: Alabang Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#T4xx:_Southern_Metro_Manila,_suburban_Cavite_and_Laguna
+    needs_verification: true
+
+  # ------------------------------------------------------------------------
+  # Modern jeepney, 1xx series: Camanava area and Montalban.
+  # The wiki states no length for any of these, so typical_length_km is null.
+  # ------------------------------------------------------------------------
+  - code: "101"
+    name: Novaliches - Malinta via Paso de Blas
+    mode: jeepney
+    endpoints: [Novaliches, Malinta]
+    via_roads: [Paso de Blas]
+    stop_landmarks: [Novaliches, Malinta]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Novaliches Development Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#1xx_series_(Camanava_area_and_Montalban)
+    needs_verification: true
+
+  - code: "102"
+    name: Bagong Silang - Quezon Memorial Circle
+    mode: jeepney
+    endpoints: [Bagong Silang, Quezon Memorial Circle]
+    via_roads: []
+    stop_landmarks: [Bagong Silang, Quezon Memorial Circle]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Bagong Silang Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#1xx_series_(Camanava_area_and_Montalban)
+    needs_verification: true
+
+  - code: "110"
+    name: Quirino Highway - UP Town Center
+    mode: jeepney
+    endpoints: [Quirino Highway, UP Town Center]
+    via_roads: []
+    stop_landmarks: [Quirino Highway, UP Town Center]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Tolfetano Corporation
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#1xx_series_(Camanava_area_and_Montalban)
+    needs_verification: true
+
+  - code: "111"
+    name: SM Fairview - Commonwealth via Regalado Avenue
+    mode: jeepney
+    endpoints: [SM Fairview, Commonwealth]
+    via_roads: [Regalado Avenue]
+    stop_landmarks: [SM Fairview, Commonwealth]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Lagro Transport Service Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#1xx_series_(Camanava_area_and_Montalban)
+    needs_verification: true
+
+  # ------------------------------------------------------------------------
+  # UV Express, Cxxx series: services entering Metro Manila.
+  # UV Express routes are not length-published by the wiki, so all null.
+  # ------------------------------------------------------------------------
+  - code: "C20"
+    name: Molino - Alabang via Daang Hari
+    mode: uv-express
+    endpoints: [Molino, Alabang]
+    via_roads: [Daang Hari]
+    stop_landmarks: [Molino, Alabang]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: null
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#Cxxx_series:_services_entering_Metro_Manila
+    needs_verification: true
+
+  - code: "C50"
+    name: Antipolo - EDSA/Shaw Boulevard
+    mode: uv-express
+    endpoints: [Antipolo, EDSA/Shaw Boulevard]
+    via_roads: []
+    stop_landmarks: [Antipolo, EDSA/Shaw Boulevard]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Metro Rizal UV Transport Service and Multipurpose Cooperative
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#Cxxx_series:_services_entering_Metro_Manila
+    needs_verification: true
+
+  # ------------------------------------------------------------------------
+  # UV Express, Mxxx series: introduced under the PUV Modernization Program
+  # ------------------------------------------------------------------------
+  - code: "M01"
+    name: Buendia-SM Fairview
+    mode: uv-express
+    endpoints: [Buendia, SM Fairview]
+    via_roads: []
+    stop_landmarks: [Buendia, SM Fairview]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: null
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#Mxxx_series:_services_introduced_under_PUV_Modernization_Program
+    needs_verification: true
+
+  # ------------------------------------------------------------------------
+  # UV Express, Nxxx series: services within Metro Manila
+  # ------------------------------------------------------------------------
+  - code: "N02"
+    name: Almanza - Ayala Center via Skyway
+    mode: uv-express
+    endpoints: [Almanza, Ayala Center]
+    via_roads: [Skyway]
+    stop_landmarks: [Almanza, Ayala Center]
+    headway_peak_min: null
+    headway_offpeak_min: null
+    typical_length_km: null
+    operator: Parañaque-Manila Transport Service Cooperative (PAMATRANS)
+    source_url: https://wiki.openstreetmap.org/wiki/Metro_Manila/Jeepney_and_UV_Express_routes#Nxxx_series:_services_within_Metro_Manila
+    needs_verification: true

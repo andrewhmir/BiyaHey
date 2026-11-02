@@ -15,6 +15,7 @@ coverage/
 # generated data (regenerate with pipelines, never commit)
 data/snapshots/*
 !data/snapshots/.gitkeep
+data/build/
 services/routing/data/
 *.osm.pbf
 
@@ -27,6 +28,7 @@ __pycache__/
 # test artifacts
 playwright-report/
 test-results/
+.lighthouseci/
 
 # superpowers scratch (ledgers, briefs, review packages)
 .superpowers/sdd/

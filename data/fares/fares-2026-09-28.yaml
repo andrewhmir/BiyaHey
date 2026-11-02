@@ -1,0 +1,72 @@
+# BiyaHey! hand-curated PUV fare matrix (spec §8.3).
+#
+# This file is the pipeline-facing source of truth (GTFS fare tables in Task 8)
+# and mirrors the fares baked into `packages/shared/src/fares.ts`, which must
+# stay Node-free for the PWA. `packages/shared/src/fares.test.ts` fails if the
+# two drift apart, so change both together.
+#
+# Rows inherit `effective_from`, `source_id` and `source_url` from this header
+# unless a row overrides them. The Pasig River Ferry is an MMDA service, not an
+# LTFRB fare, so that row carries its own source id.
+#
+# Validated by schema/fares.schema.json via `npm run validate:data`.
+matrix_id: "ltfrb-puv-2026-09-28"
+effective_from: "2026-09-28"
+source_id: "ltfrb-fares"
+source_url: "https://ltfrb.gov.ph"
+currency: "PHP"
+
+fares:
+  - mode: "jeepney"
+    class: "traditional"
+    base_fare: 14
+    base_km: 4
+    per_km: 2.00
+
+  - mode: "jeepney"
+    class: "modern"
+    base_fare: 17
+    base_km: 4
+    per_km: 2.40
+
+  - mode: "city-bus"
+    class: "ordinary"
+    base_fare: 15
+    base_km: 5
+    per_km: 2.49
+
+  - mode: "city-bus"
+    class: "aircon"
+    base_fare: 18
+    base_km: 5
+    per_km: 2.98
+
+  - mode: "provincial-bus"
+    class: "ordinary"
+    base_fare: 12
+    base_km: 5
+    per_km: 2.20
+
+  # UV Express is charged purely per kilometre: no boarding/base component.
+  - mode: "uv-express"
+    class: "traditional"
+    per_km: 2.60
+
+  - mode: "uv-express"
+    class: "modern"
+    per_km: 3.00
+
+  # P2P is the operator's route fare plus a 15% premium.
+  - mode: "p2p"
+    class: "premium"
+    multiplier: 1.15
+
+  # Pasig River Ferry is free; the row overrides source_id, effective_from and
+  # source_url because MMDA, not LTFRB, publishes its terms. 2026-11-01 is the
+  # date those free-ride terms were last verified, not the LTFRB matrix date.
+  - mode: "ferry"
+    class: "pasig-river"
+    fare: 0
+    source_id: "mmda-ferry"
+    effective_from: "2026-11-01"
+    source_url: "https://mmda.gov.ph"

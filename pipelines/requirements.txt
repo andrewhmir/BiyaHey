@@ -1,0 +1,21 @@
+# BiyaHey! data pipeline — pinned Python dependencies.
+#
+# Target interpreter: Python 3.10.11 (controller ruling R2; the plan's "Python
+# 3.12" is aspirational — this machine, and therefore CI, runs 3.10.11).
+# Keep every pin 3.10-compatible: no PEP 604 runtime unions without
+# `from __future__ import annotations`, no match statements, no tomllib.
+#
+# Install:
+#   python -m venv pipelines/.venv
+#   pipelines/.venv/Scripts/python.exe -m pip install -r pipelines/requirements.txt
+#
+# pyosmium 4.0.2 installs NO `osmium` console script (only pyosmium-get-changes
+# and pyosmium-up-to-date), and this machine has no osmium-tool binary, so
+# `osmium extract --bbox` cannot run. Bbox clipping is implemented in Python
+# with pyosmium's FileProcessor in pipeline/osm.py and tested by tests/test_osm.py.
+# See docs/runbooks/data-build.md.
+osmium==4.0.2
+PyYAML==6.0.2
+jsonschema==4.23.0
+pytest==8.3.3
+requests==2.32.3

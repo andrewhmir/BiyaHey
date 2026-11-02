@@ -1,0 +1,20 @@
+# BiyaHey! data pipeline — pytest / tooling configuration.
+#
+# Run from `pipelines/` with the venv interpreter:
+#   pipelines\.venv\Scripts\python.exe -m pytest
+#
+# `pythonpath = ["."]` lets the tests import the `pipeline` package from the
+# `pipelines/` root without installing the project. Python target is 3.10.11
+# (controller ruling R2), so no 3.11+ syntax anywhere in `pipeline/`.
+
+[project]
+name = "biyahey-pipeline"
+version = "0.1.0"
+description = "BiyaHey! OSM/GTFS data pipeline (offline-capable, ODbL-aware)"
+requires-python = ">=3.10"
+# Runtime pins live in requirements.txt (single source of truth); install with
+#   pipelines\.venv\Scripts\python.exe -m pip install -r pipelines\requirements.txt
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

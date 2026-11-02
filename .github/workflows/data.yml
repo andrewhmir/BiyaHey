@@ -1,0 +1,117 @@
+name: Data (GTFS validator)
+
+# Spec §8.2 stage 04 / success criterion: the generated GTFS must pass
+# MobilityData `gtfs-validator` with **0 errors**. This workflow builds the real
+# published feed (Geofabrik PH → NCR clip → publish, the same commands as
+# `npm run data:build`) and runs the pinned validator on `data/build/gtfs/gtfs.zip`.
+#
+# Why it is not on every PR: the Geofabrik download (~612 MB) plus the NCR clip
+# take tens of minutes. Pull requests are gated by `ci.yml` (offline unit tests,
+# data schemas, fare staleness) and `licence-gate.yml` (pipeline pytest, licence
+# gate); this job runs weekly and on demand (ruling R46).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1' # Mondays 02:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  gtfs-validator:
+    name: Build published feed + gtfs-validator
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: pipelines/requirements.txt
+
+      - name: Install pinned pipeline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r pipelines/requirements.txt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download and verify the pinned gtfs-validator CLI
+        run: |
+          curl -fsSL -o /tmp/gtfs-validator.jar \
+            https://github.com/MobilityData/gtfs-validator/releases/download/v8.0.1/gtfs-validator-8.0.1-cli.jar
+          echo "19293ddd9b6f954f216d4f12054bd8a3232921751c4484339e339764a91000e2  /tmp/gtfs-validator.jar" \
+            | sha256sum -c -
+
+      - name: Build the published feed (download → osm → publish)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/pipelines
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -m pipeline.cli download --dest data/build/philippines-latest.osm.pbf
+          python -m pipeline.cli osm \
+            --pbf data/build/philippines-latest.osm.pbf \
+            --out data/build \
+            --taginfo pipelines/tests/fixtures/taginfo_philippines.json
+          python -m pipeline.cli publish \
+            --pbf data/build/osm/ncr.osm.pbf \
+            --out data/build \
+            --aliases data/routes/landmark-aliases.yaml
+
+      - name: Run gtfs-validator (0 errors required)
+        run: |
+          java -jar /tmp/gtfs-validator.jar \
+            -i data/build/gtfs/gtfs.zip \
+            -o data/build/validator-report \
+            -c ph \
+            -d "$(date -u +%F)" \
+            -t 2
+
+      - name: Gate on the validator report
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          report = json.loads(pathlib.Path('data/build/validator-report/report.json').read_text())
+          summary = report.get('summary', {})
+          counts = summary.get('counts', {})
+          notices = report.get('notices', [])
+
+          # A validator/JVM that fails to register GTFS tables reports every file
+          # as `unknown_file` with zero counts. Treat that as a failure, not as a
+          # clean feed, so this gate can never pass vacuously.
+          if int(counts.get('Routes', 0)) == 0:
+              print('validator gate: FAIL — no routes were parsed (validator did not load the feed)')
+              print(json.dumps(summary, indent=2))
+              sys.exit(1)
+
+          errors = [(n.get('code'), n.get('totalNotices')) for n in notices
+                    if str(n.get('severity', '')).upper() == 'ERROR']
+          warnings = sum(int(n.get('totalNotices', 0)) for n in notices
+                         if str(n.get('severity', '')).upper() == 'WARNING')
+          print('validator gate: routes=%s stops=%s trips=%s agencies=%s'
+                % (counts.get('Routes'), counts.get('Stops'), counts.get('Trips'), counts.get('Agencies')))
+          print('validator gate: %d error notice code(s), %d warning(s)' % (len(errors), warnings))
+          for code, total in errors:
+              print(f'  ERROR {code}: {total}')
+          if errors:
+              sys.exit(1)
+          PY
+
+      - name: Upload validator report and feed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtfs-validator-report
+          path: |
+            data/build/validator-report/
+            data/build/build-report.json
+            data/build/gtfs/gtfs.zip
+          if-no-files-found: warn

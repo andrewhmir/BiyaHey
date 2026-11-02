@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BiyaHey! free-ride route overrides",
+  "description": "Shape of data/fares/free-ride-routes.yaml (spec 8.3, ruling R25). The list ships empty because no free-ride service contract has been corroborated; every future row must cite where the zero fare was verified. Validated by `npm run validate:data`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["routes"],
+  "properties": {
+    "routes": {
+      "type": "array",
+      "description": "Route ids whose fare is overridden to a free ride. Empty by design in the unverified seed.",
+      "items": { "$ref": "#/definitions/route" }
+    }
+  },
+  "definitions": {
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "source_url", "verified_on"],
+      "properties": {
+        "route_id": {
+          "type": "string",
+          "pattern": "^(rail|bus|jeep|uv|ferry)-[a-z0-9][a-z0-9-]*$",
+          "description": "GTFS route id exactly as published in data/build/gtfs/routes.txt, lowercased and without MOTIS's `gtfs_` namespace prefix (e.g. jeep-t101, bus-23)."
+        },
+        "source_url": {
+          "type": "string",
+          "pattern": "^https://\\S+$",
+          "description": "The primary source (LTFRB/DOTr notice or operator announcement) that states the zero fare. Required so an unverified row cannot be added."
+        },
+        "verified_on": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Date the source was last checked, ISO YYYY-MM-DD."
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Free-form operator/scope context, verbatim from the source."
+        }
+      }
+    }
+  }
+}
