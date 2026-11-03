@@ -74,7 +74,7 @@ const LOCATE_MESSAGE_KEYS: Partial<Record<LocateStatus, string>> = {
 };
 
 export interface MapCanvasProps {
-  /** Overlays that need the live map (e.g. `RoutePolylines`). */
+  /** Overlays that need the live map (e.g. `RoutePathLayer`). */
   children?: ReactNode;
   /**
    * Publishes the style-ready map to `MapView`, which owns the single
@@ -82,6 +82,8 @@ export interface MapCanvasProps {
    * unmount. Optional so `MapCanvas` stays directly renderable in isolation.
    */
   onMapReady?: (map: MapLibreMap | null) => void;
+  /** Show the locate FAB + manual-pin fallback (default true). */
+  showLocate?: boolean;
 }
 
 function pointFeature(lon: number, lat: number): Feature<Point> {
@@ -130,7 +132,7 @@ function removeMarker(map: MapLibreMap, sourceId: string): void {
   if (map.getSource(sourceId)) map.removeSource(sourceId);
 }
 
-export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
+export function MapCanvas({ children, onMapReady, showLocate = true }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapPadding = useMapPadding();
   const { t } = useT();
@@ -160,9 +162,21 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
     });
     mapRef.current = instance;
     setMap(instance);
+    // Playwright needs a handle on the real map to prove what the overlays draw
+    // (layers/sources/paint) against the live stack. Dev-only: the production
+    // build has `import.meta.env.DEV === false`, so the handle is never shipped.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __biyaheyMap?: MapLibreMap }).__biyaheyMap = instance;
+    }
 
     return () => {
       if (mapRef.current === instance) mapRef.current = null;
+      if (import.meta.env.DEV) {
+        const handle = (window as unknown as { __biyaheyMap?: MapLibreMap }).__biyaheyMap;
+        if (handle === instance) {
+          delete (window as unknown as { __biyaheyMap?: MapLibreMap }).__biyaheyMap;
+        }
+      }
       instance.remove();
       setMap((current) => (current === instance ? null : current));
       setStyledMap((current) => (current === instance ? null : current));
@@ -270,10 +284,11 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
 
   // Manual pin-drop fallback: armed after geolocation fails and stays armed
   // while the pin is shown, so a second tap can correct the chosen origin.
-  // Nothing pretends it is a real fix.
+  // Nothing pretends it is a real fix. Not armed at all when the map is used as
+  // a route-only view (`showLocate={false}`), where there is no locate control.
   const manualPinArmed = locateStatus === 'pinned' || LOCATION_FAILURE_STATUSES.has(locateStatus);
   useEffect(() => {
-    if (!map || !manualPinArmed) return;
+    if (!map || !manualPinArmed || !showLocate) return;
 
     const handleMapClick = (event: MapMouseEvent) => {
       const { lng, lat } = event.lngLat;
@@ -286,7 +301,7 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [map, manualPinArmed]);
+  }, [map, manualPinArmed, showLocate]);
 
   const locateMessageKey = LOCATE_MESSAGE_KEYS[locateStatus];
   const locateMessage = locateMessageKey === undefined ? undefined : t(locateMessageKey);
@@ -299,7 +314,12 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
           utilities) and collapsed this container to 0 px height. The canvas
           then rendered into a zero-height box — the built map was never
           visible. Percentage sizing survives the `position` override. */}
-      <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />
+      <div
+        ref={containerRef}
+        data-testid="map-canvas"
+        data-map-ready={styledMap !== null ? 'true' : 'false'}
+        className="h-full w-full"
+      />
 
       <MapContext.Provider value={styledMap}>
         <div className="pointer-events-none absolute inset-0">
@@ -309,7 +329,7 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
             className="absolute right-3 flex flex-col items-end gap-2"
             style={{ bottom: 'calc(var(--map-padding-bottom, 0px) + 88px)' }}
           >
-            {locateMessage && (
+            {showLocate && locateMessage && (
               <p
                 role="status"
                 className="max-w-64 rounded-card bg-inverse-surface px-3 py-2 text-xs leading-5 text-inverse-on-surface shadow-elevation-2"
@@ -317,15 +337,17 @@ export function MapCanvas({ children, onMapReady }: MapCanvasProps) {
                 {locateMessage}
               </p>
             )}
-            <button
-              type="button"
-              onClick={requestLocation}
-              aria-label={t('map.locate')}
-              aria-busy={locateStatus === 'locating'}
-              className="pointer-events-auto flex size-12 items-center justify-center rounded-pill bg-surface-container-lowest text-primary shadow-elevation-2 transition hover:shadow-elevation-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            >
-              <LocateFixed aria-hidden="true" className="size-5" />
-            </button>
+            {showLocate ? (
+              <button
+                type="button"
+                onClick={requestLocation}
+                aria-label={t('map.locate')}
+                aria-busy={locateStatus === 'locating'}
+                className="pointer-events-auto flex size-12 items-center justify-center rounded-pill bg-surface-container-lowest text-primary shadow-elevation-2 transition hover:shadow-elevation-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                <LocateFixed aria-hidden="true" className="size-5" />
+              </button>
+            ) : null}
           </div>
         </div>
       </MapContext.Provider>

@@ -44,7 +44,8 @@ export function provenanceLabel(
 
   const attribution = joinAttributions(resolved);
   const missing = requested.length > resolved.length;
-  const prefix = attribution.length > 0 ? attribution : missing ? t('provenance.missingSource') : '';
+  const prefix =
+    attribution.length > 0 ? attribution : missing ? t('provenance.missingSource') : '';
   const missingNote =
     attribution.length > 0 && missing ? ` · ${t('provenance.missingSource')}` : '';
   return `${prefix}${missingNote}${prefix.length > 0 ? ' · ' : ''}${t('provenance.dataSources')}`;
@@ -70,7 +71,10 @@ export function ProvenanceChip({
   return (
     <span
       data-testid="provenance-chip"
-      className={className ?? 'text-[11px] leading-4 text-on-surface-variant'}
+      className={
+        className ??
+        'inline-flex max-w-full items-center rounded-pill bg-surface-container-low px-2 py-0.5 text-[11px] leading-4 text-on-surface-variant'
+      }
     >
       <AboutDataLink className="text-inherit">
         {label}

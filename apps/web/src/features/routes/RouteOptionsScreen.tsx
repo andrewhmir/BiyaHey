@@ -1,8 +1,9 @@
 import type { ItineraryDto, PlanPlaceInput, PlanStopInput } from '@biyahey/shared';
-import { ArrowLeft } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { useT } from '../../i18n/useT';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Translate } from '../../i18n/strings';
+import { useT } from '../../i18n/useT';
+import { formatClockTime } from '../../lib/time';
 import { FilterChips } from './FilterChips';
 import { RouteCard, type RouteBadge } from './RouteCard';
 import { usePlan, type PlanOutcome } from './usePlan';
@@ -171,7 +172,7 @@ export function rankItineraries(
  * criterion instead, so the fare lead and the Recommended lead can never both
  * claim `BEST`.
  */
-function badgeFor(filter: RouteFilter, index: number): RouteBadge | undefined {
+export function badgeFor(filter: RouteFilter, index: number): RouteBadge | undefined {
   if (index !== 0) {
     return undefined;
   }
@@ -220,6 +221,11 @@ function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
   }
 }
 
+/**
+ * Three v2-shaped skeletons (ETA bar, leg-strip bar, meta bar) so the delayed
+ * loading placeholder already reads as a route card. Screen readers get the
+ * polite loading message instead; the shapes are `aria-hidden`.
+ */
 function SkeletonCards() {
   return (
     <ul aria-hidden="true" data-testid="route-skeletons" className="flex flex-col gap-3">
@@ -227,11 +233,20 @@ function SkeletonCards() {
         <li
           key={index}
           data-testid="route-card-skeleton"
-          className="flex animate-pulse flex-col gap-3 rounded-card border border-outline-variant bg-surface-container p-4 motion-reduce:animate-none"
+          className="flex animate-pulse flex-col gap-3 rounded-card border border-outline-variant bg-surface-container-lowest p-4 motion-reduce:animate-none"
         >
-          <span className="h-8 w-24 rounded bg-surface-container-highest" />
-          <span className="h-16 w-full rounded bg-surface-container-highest" />
-          <span className="h-5 w-40 rounded bg-surface-container-highest" />
+          <span className="flex items-start justify-between gap-3">
+            <span className="flex flex-col gap-2">
+              <span className="h-8 w-24 rounded bg-surface-container-highest" />
+              <span className="h-4 w-28 rounded bg-surface-container-highest" />
+            </span>
+            <span className="flex flex-col items-end gap-2">
+              <span className="h-4 w-16 rounded-pill bg-surface-container-highest" />
+              <span className="h-8 w-20 rounded bg-surface-container-highest" />
+            </span>
+          </span>
+          <span className="h-2.5 w-full rounded bg-surface-container-highest" />
+          <span className="h-4 w-40 rounded bg-surface-container-highest" />
         </li>
       ))}
     </ul>
@@ -293,37 +308,106 @@ function RouteOptionsContent({
     [t],
   );
 
-  const placeLine = [originLabel, ...(stopLabels ?? []), destinationLabel]
-    .filter(Boolean)
-    .join(' → ');
+  const tripFrom = (originLabel ?? '').trim();
+  const tripTo = (destinationLabel ?? '').trim();
+  const viaLabels = (stopLabels ?? [])
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0);
+  const placeParts = [tripFrom, ...viaLabels, tripTo].filter((part) => part.length > 0);
+  const placeLine = placeParts.join(' → ');
+  // Kalsada header: the trip line is the `h1`; `routes.title` is the accessible
+  // fallback when the /plan hand-off gave no place labels at all.
+  const headingLabel = placeLine.length > 0 ? placeLine : t('routes.title');
+
   const count = plan.itineraries.length;
+  const hasPlan = plan.status === 'success' && count > 0;
+  const lead = hasPlan ? ranked[0] : undefined;
+  // "pinakamabilis" is a fact about the returned set, not about the active
+  // ranking: derive the minimum duration from the untouched API array so a
+  // Cheapest/Fewest-transfers lead can never make the headline claim the wrong
+  // route is fastest (review I3).
+  const fastestMinutes =
+    count > 0
+      ? plan.itineraries.reduce(
+          (fastest, itinerary) => Math.min(fastest, itinerary.durationMin),
+          Number.POSITIVE_INFINITY,
+        )
+      : null;
+  // The departure line is a property of the plan, not of the active ranking:
+  // it always reads the first itinerary the API returned, so re-ranking with a
+  // chip never changes the stated departure time.
+  const departureTime =
+    count > 0 ? formatClockTime(plan.itineraries[0]?.startTime) : null;
+  // The trip line in the heading already names From → To, so the sub-line only
+  // carries the departure (never the same place pair twice).
+  const subLine = departureTime !== null ? t('routes.depart', { time: departureTime }) : null;
+
   const emptyFrom = originLabel ?? t('routes.unknownPlace');
   const emptyTo = destinationLabel ?? t('routes.unknownPlace');
+
+  // A selection is announced only after the rider explicitly changed it; the
+  // initial ranked lead is the map's default, not a choice, so it is never
+  // announced (and the count message above stays the single load announcement).
+  const previousSelectedId = useRef<string | null>(null);
+  const [selectionAnnouncement, setSelectionAnnouncement] = useState<string | null>(null);
+  useEffect(() => {
+    const previous = previousSelectedId.current;
+    previousSelectedId.current = selectedId;
+    const selectedItinerary = ranked.find((itinerary) => itinerary.id === selectedId);
+    setSelectionAnnouncement(
+      previous !== null &&
+        previous !== selectedId &&
+        selectedItinerary !== undefined
+        ? t('routes.selectedAnnounce', { minutes: selectedItinerary.durationMin })
+        : null,
+    );
+  }, [selectedId, ranked, t]);
 
   return (
     <>
       <header
         className={
           embedded
-            ? 'border-b border-outline-variant pb-3'
+            ? 'pb-3'
             : 'border-b border-outline-variant bg-surface-container-lowest px-4 pb-3 pt-3'
         }
       >
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
+        <div className="mx-auto flex w-full max-w-2xl items-start gap-2">
+          {/* Back first in DOM order (and first for keyboard/SR), visually on
+              the trailing edge as in the mockup. */}
           {onBack !== undefined ? (
             <button
               type="button"
               aria-label={t('common.back')}
               onClick={onBack}
-              className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="order-last flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface transition hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               <ArrowLeft aria-hidden="true" className="size-5" />
             </button>
           ) : null}
-          <div className="flex min-w-0 flex-col">
-            <h1 className="text-lg font-semibold tracking-tight text-on-surface">{t('routes.title')}</h1>
-            {placeLine.length > 0 ? (
-              <p className="truncate text-sm text-on-surface-variant">{placeLine}</p>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.12em] text-on-surface-variant">
+              {t('search.title')}
+            </p>
+            <h1
+              aria-label={headingLabel}
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[22px] font-extrabold leading-7 tracking-tight text-on-surface"
+            >
+              {placeParts.length > 0 ? (
+                placeParts.map((part, index) => (
+                  <Fragment key={`${part}-${index}`}>
+                    {index > 0 ? (
+                      <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-primary" />
+                    ) : null}
+                    <span>{part}</span>
+                  </Fragment>
+                ))
+              ) : (
+                <span>{t('routes.title')}</span>
+              )}
+            </h1>
+            {subLine !== null ? (
+              <p className="truncate text-sm leading-5 text-on-surface-variant">{subLine}</p>
             ) : null}
           </div>
         </div>
@@ -337,16 +421,21 @@ function RouteOptionsContent({
             : 'mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-4'
         }
       >
-        <p role="status" aria-live="polite" className="text-sm text-on-surface-variant">
+        <p role="status" aria-live="polite" className="sr-only">
           {statusMessage(plan, count, t)}
         </p>
+        {selectionAnnouncement !== null ? (
+          <p role="status" aria-live="polite" className="sr-only">
+            {selectionAnnouncement}
+          </p>
+        ) : null}
 
         {plan.status === 'loading' && showSkeletons ? <SkeletonCards /> : null}
 
         {plan.status === 'error' ? (
           <div
             role="alert"
-            className="flex flex-col items-start gap-3 rounded-card border border-error-container bg-error-container px-4 py-3 text-on-error-container"
+            className="flex flex-col items-start gap-3 rounded-card border border-error bg-error-container px-4 py-3 text-on-error-container"
           >
             <p className="text-sm">{t('routes.error')}</p>
             <button
@@ -360,18 +449,18 @@ function RouteOptionsContent({
         ) : null}
 
         {plan.status === 'success' && plan.itineraries.length === 0 ? (
-          <div className="flex flex-col items-start gap-3 rounded-card border border-outline-variant bg-surface-container-low px-4 py-6 text-on-surface">
+          <div className="flex flex-col items-start gap-3 rounded-card border border-outline-variant bg-surface-container-lowest px-4 py-6 text-on-surface shadow-elevation-1">
             {/* R89: the dead-end "try a nearby landmark" copy is replaced by an
                 honest message that names the trip the rider actually planned. */}
-            <p role="status" aria-live="polite" className="text-base font-medium">
+            <p role="status" aria-live="polite" className="text-base font-semibold">
               {t('routes.emptyBetween', { from: emptyFrom, to: emptyTo })}
             </p>
-            <p className="text-sm text-on-surface-variant">{t('routes.emptyHint')}</p>
+            <p className="text-sm leading-5 text-on-surface-variant">{t('routes.emptyHint')}</p>
             {onEditTrip !== undefined ? (
               <button
                 type="button"
                 onClick={onEditTrip}
-                className="flex min-h-12 items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-6 text-base font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                className="flex min-h-12 items-center justify-center rounded-pill border border-primary bg-surface-container-lowest px-6 text-base font-semibold text-primary transition hover:bg-primary-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
                 {t('routes.changeStart')}
               </button>
@@ -379,7 +468,7 @@ function RouteOptionsContent({
           </div>
         ) : null}
 
-        {plan.status === 'success' && plan.itineraries.length > 0 ? (
+        {hasPlan && lead !== undefined ? (
           <>
             <FilterChips
               options={filterOptions}
@@ -387,29 +476,42 @@ function RouteOptionsContent({
               onChange={onFilterChange}
               label={t('routes.sortLabel')}
             />
+            <p
+              data-testid="routes-count"
+              className="text-sm font-semibold leading-5 text-on-surface"
+            >
+              {t('routes.countSummary', { count, minutes: fastestMinutes ?? 0 })}
+            </p>
             <ul aria-label={t('routes.title')} className="flex flex-col gap-3">
-              {ranked.map((itinerary, index) => (
-                <li key={itinerary.id} className="flex flex-col gap-2">
-                  <RouteCard
-                    itinerary={itinerary}
-                    sources={plan.sources}
-                    selected={itinerary.id === selectedId}
-                    onSelect={onSelect}
-                    badge={badgeFor(filter, index)}
-                  />
-                  {onOpenDetail !== undefined ? (
-                    <button
-                      type="button"
-                      data-testid="trip-open"
-                      aria-label={t('routes.detailLabel', { minutes: itinerary.durationMin })}
-                      onClick={() => onOpenDetail(itinerary.id)}
-                      className="trip-open flex min-h-12 w-full items-center justify-center rounded-pill border border-outline-variant bg-surface-container-lowest px-4 text-sm font-medium text-primary transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-                    >
-                      {t('routes.detail')}
-                    </button>
-                  ) : null}
-                </li>
-              ))}
+              {ranked.map((itinerary, index) => {
+                const selected = itinerary.id === selectedId;
+                return (
+                  <li key={itinerary.id} className="flex flex-col gap-2">
+                    <RouteCard
+                      itinerary={itinerary}
+                      sources={plan.sources}
+                      selected={selected}
+                      onSelect={onSelect}
+                      badge={badgeFor(filter, index)}
+                    />
+                    {/* Exactly one detail action, directly under the selected
+                        card, so the rider always knows which route it opens. */}
+                    {selected && onOpenDetail !== undefined ? (
+                      <button
+                        type="button"
+                        data-testid="route-detail-action"
+                        aria-label={t('routes.detailActionLabel', {
+                          minutes: itinerary.durationMin,
+                        })}
+                        onClick={() => onOpenDetail(itinerary.id)}
+                        className="flex min-h-12 w-full items-center justify-center rounded-pill border border-primary bg-surface-container-lowest px-5 text-base font-semibold text-primary transition hover:bg-primary-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:bg-primary-container"
+                      >
+                        {t('routes.detailAction')}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </>
         ) : null}
@@ -426,8 +528,9 @@ export interface RouteOptionsLabels {
   destinationLabel?: string;
   onBack?: () => void;
   /**
-   * Detail hand-off: a 48 dp `Detalye` action per card. It is separate from the
-   * card body so tapping the card still selects/highlights its polyline (R58).
+   * Detail hand-off: one 48 dp "Tingnan ang detalye" action under the selected
+   * card. It is separate from the card body so tapping the card still
+   * selects/highlights its path (R58).
    */
   onOpenDetail?: (id: string) => void;
   /**
@@ -447,7 +550,7 @@ export interface SelfLoadingRouteOptionsProps extends RouteOptionsLabels {
 
 /**
  * Controlled screen: the `/plan` route layer owns the plan, the filter and the
- * selected id (R58), so the same selection drives the map polylines.
+ * selected id (R58), so the same selection drives the map paths.
  */
 export interface ControlledRouteOptionsProps extends RouteOptionsLabels {
   plan: PlanOutcome;
@@ -460,11 +563,11 @@ export interface ControlledRouteOptionsProps extends RouteOptionsLabels {
 export type RouteOptionsScreenProps = SelfLoadingRouteOptionsProps | ControlledRouteOptionsProps;
 
 /**
- * Fare-forward route options (spec §11 screen 3).
+ * Fare-forward route options (spec §2 route options, §4.1).
  *
  * Its own plan state keeps the screen prop-driven and testable without a router
  * or map; `/plan` passes a controlled plan/selection so a card tap and the
- * highlighted polyline are the same state (R58). The screen renders only what
+ * highlighted map path are the same state (R58). The screen renders only what
  * the API returned (R45), keeps the fare and its effectivity date on every card,
  * and re-ranks the same array locally when a filter chip is pressed.
  */

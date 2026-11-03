@@ -117,13 +117,13 @@ All from the repository root.
 | `npm test` | offline Vitest: shared fares/DTOs, API unit, web unit + a11y + bundle; integration-tagged suites filtered out | no |
 | `npm test --workspace @biyahey/web -- bundle` | paint-only first-screen payload vs the 250 KB gzip budget (requires a fresh `apps/web/dist`) | no |
 | `npm run build --workspace @biyahey/web` | `tsc -b && vite build`; emits `sw.js` + `manifest.webmanifest` | no |
-| `npm run test:e2e` | builds the web app, then Playwright: dev trip flow (live `/search` + `/plan`) and preview offline/service-worker/worker-asset projects | **yes** (:8080 + :8787) |
+| `npm run test:e2e` | builds the web app, then Playwright: the v2 dev flow (directions form → route options with per-alternative map paths and leg strips → trip detail map + leg focus → live walkthrough → saved) plus map-rendering and preview offline/service-worker/worker-asset projects (11 specs) | **yes** (:8080 + :8787) |
 | `npm run perf:web` | builds, then Lighthouse CI (mobile, 4× CPU, 5-run median) against `vite preview` on :5173 | no API, but port 5173 must be free |
 | `npm run smoke:routing` | live MOTIS geocode + plan smoke | **yes** (:8080) |
 | `npm run test:integration` | live golden + MOTIS suites (`API_URL`/`MOTIS_URL` exported) | **yes** |
 | `npm run verify:phase1` | Plan-1 acceptance harness (brings compose services up itself, starts a temporary API on a free port) | **yes** (Docker) |
 | `npm run verify:phase2` | Plan-2 acceptance harness (unit, build, bundle, E2E, Lighthouse; `--with-phase1` optionally re-runs Plan 1) | **yes** (:8080 + :8787 + `data/build`) |
-| `node apps/web/scripts/screenshots.mjs` | capture the README screenshots from the built app (starts its own `vite preview` on :5173) | **yes** (:8787 for real data) |
+| `node apps/web/scripts/screenshots.mjs` | capture the seven README screenshots (incl. the live walkthrough) from the built app (starts its own `vite preview` on :5173) | **yes** (:8787 for real data) |
 
 `npm run test:e2e` and `npm run perf:web` each build first; the bundle suite
 refuses a stale `dist/` on purpose, so rebuild after changing web sources. Do
@@ -142,6 +142,16 @@ outside the feed's coverage — the empty state names the planned trip and offer
 "Palitan ang starting point", which reopens the form prefilled. After changing
 BFF code, rebuild its image before manual testing:
 `docker compose build api && docker compose up -d api`.
+
+**UX v2 (2026-11-03).** Route options draw one path per alternative and the
+selected itinerary leg-by-leg (see
+`apps/web/src/components/map/RoutePathLayer.tsx`); trip detail and the live
+walkthrough render their map through `pages/trip.tsx`'s `renderMap` prop. The
+DEV build exposes `window.__biyaheyMap` for Playwright; the built app exposes
+`data-map-ready="true"` on `[data-testid="map-canvas"]` for the screenshot
+script. Route selection lives on `[data-testid="route-card"][data-selected]`
+(the select button is `route-card-select`); trip detail uses `leg-focus` +
+`leg-strip-segment` for the map-synced leg rail.
 
 ## 5. Windows / PowerShell notes
 

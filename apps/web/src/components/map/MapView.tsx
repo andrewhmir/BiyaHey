@@ -53,11 +53,17 @@ function MapLoadingFallback() {
 export interface MapViewProps {
   /** Provenance rows from the latest plan response for the ⓘ credit detail. */
   sources?: readonly DataSource[];
-  /** Overlays that need the live map (e.g. `RoutePolylines`). */
+  /**
+   * Show the locate FAB (default true). The trip-only maps turn it off: the
+   * rider is already looking at a specific planned route and a recenter control
+   * that jumps to the device fix would fight the fitted route camera.
+   */
+  showLocate?: boolean;
+  /** Overlays that need the live map (e.g. `RoutePathLayer`). */
   children?: ReactNode;
 }
 
-export function MapView({ sources, children }: MapViewProps) {
+export function MapView({ sources, showLocate = true, children }: MapViewProps) {
   // Published by `MapCanvas` once the style is ready; `null` until then.
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
@@ -65,7 +71,9 @@ export function MapView({ sources, children }: MapViewProps) {
     <MapContext.Provider value={map}>
       <div className="relative size-full">
         <Suspense fallback={<MapLoadingFallback />}>
-          <LazyMapCanvas onMapReady={setMap}>{children}</LazyMapCanvas>
+          <LazyMapCanvas onMapReady={setMap} showLocate={showLocate}>
+            {children}
+          </LazyMapCanvas>
         </Suspense>
 
         {/* One credit for the whole map lifetime, painted before the chunk

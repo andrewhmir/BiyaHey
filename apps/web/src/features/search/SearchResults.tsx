@@ -32,7 +32,7 @@ export function SearchResults({ groups, onSelect }: SearchResultsProps) {
   const { t } = useT();
 
   return (
-    <div className="flex flex-col gap-6" data-testid="search-results">
+    <div className="flex flex-col gap-5" data-testid="search-results">
       {SEARCH_GROUP_ORDER.map((key) => {
         const results = groups[key];
         if (results.length === 0) {
@@ -43,7 +43,7 @@ export function SearchResults({ groups, onSelect }: SearchResultsProps) {
           <section key={key} aria-labelledby={headingId} data-testid={`search-group-${key}`}>
             <h2
               id={headingId}
-              className="px-1 pb-2 text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
+              className="px-1 pb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
             >
               {t(`group.${key}`)}
             </h2>

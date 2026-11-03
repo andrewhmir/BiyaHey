@@ -9,15 +9,18 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
+import { LegStrip } from '../../components/transit/LegStrip';
+import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
-import { formatLongDate, formatClockTime } from '../../lib/time';
+import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
+import { itineraryEndpoints } from '../../lib/itinerary';
 import type { SavedTrip } from '../../lib/savedTripsStore';
-import { formatFare } from '../routes/RouteCard';
+import { formatClockTime, formatLongDate } from '../../lib/time';
 import { isPuvFareSnapshot, stalenessOf } from './staleness';
 import { useSavedTrips } from './useSavedTrips';
 
 /**
- * Saved / recent (spec §11 screen 5, plan Task 8).
+ * Saved / recent (spec §11 screen 5, plan Task 8; Kalsada card v2).
  *
  * Fully offline-readable: both tabs render the stored itinerary snapshot, the
  * full provenance rows and the fare + effectivity date the API returned, with
@@ -31,32 +34,51 @@ import { useSavedTrips } from './useSavedTrips';
  * - Every fare shows its own `effective_from` date (global constraint).
  * - When the matrix date is unknown, the fare note says it *may* have changed
  *   instead of certifying freshness.
+ * - The row title comes from the stored itinerary's own endpoints
+ *   (`itineraryEndpoints`); the rider's nickname wins when one is set.
  * - Swipe-to-delete always has a visible, keyboard-reachable delete button, and
  *   every delete offers undo.
  */
 
 const UNDO_WINDOW_MS = 6_000;
 
-/** Human route name derived from the stored legs; never invented. */
-export function routeLabel(itinerary: ItineraryDto): string {
-  const first = itinerary.legs[0]?.from.name;
-  const last = itinerary.legs[itinerary.legs.length - 1]?.to.name;
-  if (first !== undefined && last !== undefined && first.length > 0 && last.length > 0) {
-    return first === last ? first : `${first} → ${last}`;
+/**
+ * Controls inside a swipeable row own their own pointer presses. Capturing the
+ * pointer on the row for a press that started on one of these retargets the
+ * click to the row and makes the control dead to pointer/touch input.
+ */
+const INTERACTIVE_SELECTOR =
+  'button, a, input, textarea, select, label, [role="button"], [role="link"]';
+
+/**
+ * Human route name derived from the stored legs; never invented.
+ *
+ * UX v2 replaces the local first/last-name logic with the shared
+ * `itineraryEndpoints` helper so Home, Saved and Trip detail label the same
+ * itinerary identically. A payload with no usable names falls back to its id.
+ */
+export function routeLabel(itinerary: ItineraryDto, t: Translate = defaultT): string {
+  const { from, to } = itineraryEndpoints(itinerary);
+  if (from.length === 0 && to.length === 0) {
+    return itinerary.id;
   }
-  return itinerary.id;
+  if (from === to) {
+    return from;
+  }
+  return t('saved.titleLabel', { from, to });
 }
 
-function tripName(trip: SavedTrip): string {
-  return trip.nickname ?? routeLabel(trip.itinerary);
+function tripName(trip: SavedTrip, t: Translate): string {
+  return trip.nickname ?? routeLabel(trip.itinerary, t);
 }
 
 interface SavedTripCardProps {
   trip: SavedTrip;
+  /** Saved tab rows offer rename; recent rows are read-only snapshots. */
+  kind: 'saved' | 'recent';
   now: Date;
   online: boolean;
   matrixEffectiveFrom: string | undefined;
-  testId: 'saved-row' | 'recent-row';
   onOpen: (id: string) => void;
   onDelete?: (trip: SavedTrip) => void;
   onRename?: (id: string, nickname: string) => boolean;
@@ -64,10 +86,10 @@ interface SavedTripCardProps {
 
 function SavedTripCard({
   trip,
+  kind,
   now,
   online,
   matrixEffectiveFrom,
-  testId,
   onOpen,
   onDelete,
   onRename,
@@ -80,11 +102,18 @@ function SavedTripCard({
   const [offset, setOffset] = useState(0);
   const dragStart = useRef<number | null>(null);
   const currentOffset = useRef(0);
-  const name = tripName(trip);
+  const name = tripName(trip, t);
+  const endpoints = routeLabel(trip.itinerary, t);
   const stale = stalenessOf(trip, matrixEffectiveFrom, now);
   const updated = formatLongDate(trip.savedAt) ?? trip.savedAt;
   const arrival = formatClockTime(trip.itinerary.endTime) ?? trip.itinerary.endTime;
   const etaLabel = online ? t('trip.savedSnapshot') : t('trip.savedRoute');
+  // The tab decides what `savedAt` honestly means: when the rider saved the
+  // trip, or when they last opened it (recents are views, not snapshots).
+  const dateLine =
+    kind === 'saved'
+      ? t('saved.savedOn', { date: updated })
+      : t('saved.recentOn', { date: updated });
 
   function moveTo(next: number): void {
     currentOffset.current = next;
@@ -93,6 +122,15 @@ function SavedTripCard({
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>): void {
     if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+    // Pointer capture retargets the following `pointerup`/`click` to this row,
+    // so capturing a press that started on a child control (Buksan, Palitan,
+    // I-delete) made every pointer click inside the row dead in Chromium. Let
+    // interactive targets handle their own press; only a press on the row body
+    // starts a swipe.
+    const target = event.target;
+    if (target instanceof Element && target.closest(INTERACTIVE_SELECTOR) !== null) {
       return;
     }
     dragStart.current = event.clientX;
@@ -150,7 +188,7 @@ function SavedTripCard({
   }
 
   return (
-    <li className="relative overflow-hidden rounded-card border border-outline-variant bg-surface-container-lowest">
+    <li className="relative overflow-hidden rounded-card border border-outline-variant bg-surface-container-lowest shadow-elevation-1">
       <div
         aria-hidden="true"
         className="absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-error-container text-sm font-semibold text-on-error-container"
@@ -159,9 +197,9 @@ function SavedTripCard({
       </div>
 
       <div
-        data-testid={testId}
+        data-testid={kind === 'saved' ? 'saved-row' : 'recent-row'}
         style={offset === 0 ? undefined : { transform: `translateX(${offset}px)` }}
-        className="relative touch-pan-y bg-surface-container-lowest px-4 py-3"
+        className="relative touch-pan-y bg-surface-container-lowest px-4 py-4"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
@@ -171,36 +209,58 @@ function SavedTripCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="break-words text-base font-semibold leading-6 text-on-surface">
+            <h2
+              data-testid="saved-title"
+              className="break-words text-base font-semibold leading-6 text-on-surface"
+            >
               {name}
             </h2>
             {trip.nickname !== undefined ? (
-              <p className="break-words text-sm text-on-surface-variant">
-                {routeLabel(trip.itinerary)}
-              </p>
+              <p className="break-words text-sm text-on-surface-variant">{endpoints}</p>
             ) : null}
+            <p
+              data-testid="saved-date"
+              className="mt-1 break-words text-xs leading-4 text-on-surface-variant"
+            >
+              {dateLine}
+            </p>
           </div>
         </div>
 
-        <p data-testid="saved-eta" className="mt-1 break-words text-sm text-on-surface-variant">
+        {/* The stored itinerary's own legs: the same ribbon as the route cards,
+            so a saved trip reads as the shape it will take. */}
+        <LegStrip
+          legs={trip.itinerary.legs}
+          size="sm"
+          label={t('saved.legStripLabel')}
+          className="mt-3"
+        />
+
+        {/* Same transfers/walk vocabulary as the route cards, from the snapshot
+            the API returned (never recomputed). */}
+        <p data-testid="saved-meta" className="mt-2 text-xs leading-4 text-on-surface-variant">
+          {transfersLabel(trip.itinerary.transfers, t)} ·{' '}
+          {walkLabel(trip.itinerary.walkDistanceM, t)}
+        </p>
+
+        <p
+          data-testid="saved-fare"
+          className="mt-2 flex w-fit max-w-full flex-wrap items-center rounded-pill border border-fare-border bg-fare-bg px-3 py-1 text-sm font-semibold text-on-fare-bg"
+        >
+          {t('saved.fareLine', {
+            amount: formatFare(trip.fareSnapshot.amount),
+            date: trip.fareSnapshot.effective_from,
+          })}
+        </p>
+
+        <p data-testid="saved-eta" className="mt-2 break-words text-sm text-on-surface-variant">
           <span lang="en" className="font-medium text-on-surface">
             {etaLabel}
           </span>
           <span>
             {' '}
-            ·{' '}
-            {t('trip.summaryArrive', {
-              minutes: trip.itinerary.durationMin,
-              arrival,
-            })}
+            · {t('trip.summaryArrive', { minutes: trip.itinerary.durationMin, arrival })}
           </span>
-        </p>
-
-        <p data-testid="saved-fare" className="mt-1 break-words text-sm text-on-surface">
-          {t('saved.fareLine', {
-            amount: formatFare(trip.fareSnapshot.amount),
-            date: trip.fareSnapshot.effective_from,
-          })}
         </p>
 
         <p
@@ -215,7 +275,7 @@ function SavedTripCard({
           <p
             data-testid="fare-staleness"
             lang="en"
-            className="mt-2 break-words rounded-field bg-tertiary-container px-3 py-2 text-sm text-on-tertiary-container"
+            className="mt-3 break-words rounded-field bg-tertiary-container px-3 py-2 text-sm text-on-tertiary-container"
           >
             {t('saved.changed')}
           </p>
@@ -239,11 +299,11 @@ function SavedTripCard({
           <button
             type="button"
             onClick={() => onOpen(trip.itinerary.id)}
-            className="flex min-h-12 items-center justify-center rounded-pill bg-primary px-4 text-sm font-medium text-on-primary transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
+            className="flex min-h-12 items-center justify-center rounded-pill bg-primary px-4 text-sm font-semibold text-on-primary shadow-elevation-1 transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring active:opacity-80"
           >
             {t('common.open')}
           </button>
-          {onRename !== undefined ? (
+          {kind === 'saved' && onRename !== undefined ? (
             <button
               type="button"
               onClick={() => {
@@ -259,7 +319,7 @@ function SavedTripCard({
               {t('saved.rename')}
             </button>
           ) : null}
-          {onDelete !== undefined ? (
+          {kind === 'saved' && onDelete !== undefined ? (
             <button
               type="button"
               onClick={() => onDelete(trip)}
@@ -288,7 +348,7 @@ function SavedTripCard({
               id={inputId}
               value={draft}
               onChange={(event) => setDraft(event.currentTarget.value)}
-              placeholder={routeLabel(trip.itinerary)}
+              placeholder={endpoints}
               className="min-h-12 w-full rounded-field border border-outline bg-surface-container-lowest px-3 text-base text-on-surface placeholder:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             />
             <div className="flex flex-wrap gap-2">
@@ -332,7 +392,7 @@ export interface SavedScreenProps {
 
 function EmptyRow({ children }: { children: ReactNode }) {
   return (
-    <li className="rounded-card border border-dashed border-outline-variant px-4 py-6 text-center text-sm text-on-surface-variant">
+    <li className="rounded-card border border-dashed border-outline-variant bg-surface-container-low px-4 py-6 text-center text-sm text-on-surface-variant">
       {children}
     </li>
   );
@@ -379,7 +439,7 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
   }
 
   function handleDelete(trip: SavedTrip): void {
-    const label = tripName(trip);
+    const label = tripName(trip, t);
     if (!controller.remove(trip.itinerary.id)) {
       setAnnouncement(t('saved.deleteFailed'));
       return;
@@ -431,9 +491,9 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
 
   const tabClass = (selected: boolean): string =>
     [
-      'flex min-h-12 flex-1 items-center justify-center rounded-pill px-4 text-sm font-medium transition',
+      'flex min-h-12 flex-1 items-center justify-center rounded-pill px-4 text-sm font-semibold transition',
       selected
-        ? 'bg-primary text-on-primary'
+        ? 'bg-inverse-surface text-inverse-on-surface shadow-elevation-1'
         : 'text-on-surface-variant hover:bg-surface-container',
       'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
     ].join(' ');
@@ -453,7 +513,10 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
             </button>
           ) : null}
           <div className="min-w-0 flex-1">
-            <h1 className="break-words text-lg font-semibold tracking-tight text-on-surface">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
+              {t('home.brand')}
+            </p>
+            <h1 className="break-words text-xl font-bold tracking-tight text-on-surface">
               {t('saved.title')}
             </h1>
             {!controller.online ? (
@@ -542,10 +605,10 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
                 <SavedTripCard
                   key={trip.itinerary.id}
                   trip={trip}
+                  kind="saved"
                   now={evaluatedAt}
                   online={controller.online}
                   matrixEffectiveFrom={controller.currentMatrixEffectiveFrom}
-                  testId="saved-row"
                   onOpen={(id) => onOpenTrip?.(id)}
                   onDelete={handleDelete}
                   onRename={handleRename}
@@ -574,10 +637,10 @@ export function SavedScreen({ now, onBack, onOpenTrip, onSearch }: SavedScreenPr
                 <SavedTripCard
                   key={trip.itinerary.id}
                   trip={trip}
+                  kind="recent"
                   now={evaluatedAt}
                   online={controller.online}
                   matrixEffectiveFrom={controller.currentMatrixEffectiveFrom}
-                  testId="recent-row"
                   onOpen={(id) => onOpenTrip?.(id)}
                 />
               ))

@@ -233,3 +233,55 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
     `fix/map-route-and-recommended` and merged to local `main`; the API image was rebuilt
     (`docker compose build api && docker compose up -d api`) so the local stack serves the new
     field.
+- **UX v2 "Kalsada" (2026-11-03) — implemented and verified on `feature/ux-v2`,
+  merged to local `main` as a `--no-ff` merge.** The human asked to take the UX
+  to production standard with Moovit-style route-path visualisation (approved
+  identity: Option A "Kalsada"; spec
+  `docs/superpowers/specs/2026-11-03-biyahey-ux-v2-design.md`, plan
+  `docs/superpowers/plans/2026-11-03-biyahey-ux-v2.md`; approved visual
+  `.superpowers/mockups/option-a-kalsada.html`). Delivered:
+  - Kalsada tokens (teal `#0E7C7B` brand, ink navy, pale sage canvas, fare
+    amber; light + dark) and a shared transit vocabulary
+    (`components/transit/modeMeta.tsx`, `LegStrip.tsx`, `lib/format.ts`,
+    `lib/itinerary.ts`; `RoutePolylines` retired).
+  - `components/map/RoutePathLayer.tsx`: selected itinerary drawn leg-by-leg in
+    mode colours over a white casing (dashed walk legs, transfer dots,
+    origin/destination pins), every alternative as its own faded path with a
+    numbered marker (duplicate fan-out geometries drawn once), card↔map
+    selection, leg focus with dim/zoom, camera fit honouring reduced motion,
+    DEV-only `window.__biyaheyMap` for Playwright.
+  - Route options rebuilt (Kalsada header, ink filter pills, one
+    `route-detail-action` under the selected card, leg-strip cards, "5 ruta ·
+    pinakamabilis 37 min" now derives the real minimum); trip detail has a
+    sticky 42 dvh map header with map↔timeline leg sync (row / leg strip /
+    map line), "Buong ruta" reset, restyled fare card; `/trip/:id/live` is a
+    leg-by-leg walkthrough (whole-route map context + active leg, honest
+    no-live-data banner); Home shows up to three recent trips with leg strips
+    and the fare's effectivity/snapshot dates; directions form, saved list and
+    About-data restyled. Clock times are 12-hour Philippine time.
+  - Independent correctness review (`review-correctness.md`) found 1 Critical
+    (Home fare without `effective_from`) + 4 Important (live screen
+    mislabelling a fresh plan as a saved snapshot; leg strip inside a `<button>`
+    losing list semantics; "pinakamabilis" using the ranked lead; map overlays
+    rebuilt on every parent render) + 13 Minor. **All Critical/Important fixed**,
+    most Minors fixed (transfer-dot paint, walk-leg focus dashes, dim opacity,
+    stop-count wording, dead `RoutePolylines` removal, `data-map-ready` signal,
+    reduced-motion / 15-leg / memo regression tests); accepted Minors: map
+    numbered badges follow API order rather than the ranked sheet order, and a
+    handful of new i18n keys remain unused. A live-E2E report also found and the
+    Lead fixed a pointer-capture bug that made every button inside a saved row
+    dead to touch/mouse (`SavedScreen.handlePointerDown` now ignores presses on
+    interactive children).
+  - **Gates (2026-11-03):** `npm run lint` / `npm run typecheck` green;
+    `npm test` **514 passed / 4 skipped** (45 files); `npm run build` green;
+    entry payload budget test PASS; `npm run test:e2e` **11 passed** (dev flow +
+    map-rendering + ux-v2 + preview offline/service-worker); `node
+    apps/web/scripts/screenshots.mjs` regenerated all 7 README screenshots
+    (live-trip.png added) from the built app. Lighthouse was **not** re-run in
+    this pass — the phase-2 performance verdict remains PARTIAL (TBT known to
+    fail), not green-washed.
+  - **Known limits:** Home recents opened from a coordinate-only plan show the
+    API's synthetic `START → END` endpoint names (search-stop plans show the real
+    stop names); the independent UX/a11y reviewer did not return a report, so
+    that pass is the Lead's screenshot/source review + the axe suites and the
+    Playwright browser checks; no new API/BFF/data behaviour was added.

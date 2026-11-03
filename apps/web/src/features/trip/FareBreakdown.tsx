@@ -2,7 +2,7 @@ import type { DataSource, FareQuote } from '@biyahey/shared';
 import { AboutDataLink } from '../../components/navigation/AboutDataLink';
 import { useT } from '../../i18n/useT';
 import { sourceHost, sourceUrls } from '../../lib/sourceUrls';
-import { formatFare } from '../routes/RouteCard';
+import { formatFare } from '../../lib/format';
 
 /**
  * Fare footer (spec §11 screen 4, spec §8.3, R45/R57).
@@ -26,6 +26,10 @@ import { formatFare } from '../routes/RouteCard';
  * LRTA and LRMC). The shared `sourceUrls()` helper splits the field and every
  * URL is rendered, so the second publisher is never silently dropped. Task 9
  * (M1) also gives each link a 48 dp target.
+ *
+ * UX v2 restyles the card on the Kalsada fare tokens only: the heading moves to
+ * `trip.fareHeading` and the total becomes the card's right-hand hero amount.
+ * No fare fact, date, source link or test id changed.
  */
 export function fareSourceRows(fare: FareQuote, sources: readonly DataSource[]): DataSource[] {
   if (fare.source_id !== null) {
@@ -48,31 +52,45 @@ export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
     <footer
       data-testid="fare-breakdown"
       aria-labelledby="fare-breakdown-heading"
-      className="rounded-card border border-fare-border bg-fare-bg px-4 py-4 text-on-fare-bg"
+      className="rounded-card border border-fare-border bg-fare-bg px-5 py-4 text-on-fare-bg shadow-elevation-1"
     >
       <div className="flex items-start justify-between gap-3">
-        <h2 id="fare-breakdown-heading" className="text-lg font-semibold tracking-tight">
-          {t('common.fare')}
-        </h2>
-        {fare.confidence === 'estimated' ? (
-          <span
-            data-testid="fare-estimate"
-            className="rounded-pill border border-fare-border px-2 py-0.5 text-xs font-medium leading-4"
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2
+            id="fare-breakdown-heading"
+            className="text-[11px] font-bold uppercase tracking-[0.12em]"
           >
-            {t('common.estimate')}
-          </span>
-        ) : null}
+            {t('trip.fareHeading')}
+          </h2>
+          {fare.confidence === 'estimated' ? (
+            <span
+              data-testid="fare-estimate"
+              className="rounded-pill border border-fare-border bg-surface-container-lowest/60 px-2 py-0.5 text-xs font-medium leading-4"
+            >
+              {t('common.estimate')}
+            </span>
+          ) : null}
+        </div>
+        <p
+          data-testid="fare-breakdown-total"
+          className="shrink-0 text-2xl font-extrabold leading-8 tracking-tight tabular-nums"
+        >
+          {t('fare.total', { amount: formatFare(fare.amount) })}
+        </p>
       </div>
 
       {fare.breakdown.length === 0 ? (
         <p className="mt-2 text-sm">{t('fare.empty')}</p>
       ) : (
-        <ul aria-label={t('fare.breakdownLabel')} className="mt-2 flex flex-col gap-1">
+        <ul
+          aria-label={t('fare.breakdownLabel')}
+          className="mt-3 flex flex-col divide-y divide-fare-border"
+        >
           {fare.breakdown.map((line, index) => (
             <li
               key={`${line.label}-${index}`}
               data-testid="fare-line"
-              className="flex items-start justify-between gap-3 text-sm leading-5"
+              className="flex items-start justify-between gap-3 py-1.5 text-sm leading-5"
             >
               <span className="min-w-0 break-words">{line.label}</span>
               <span className="shrink-0 tabular-nums">
@@ -83,11 +101,7 @@ export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
         </ul>
       )}
 
-      <p data-testid="fare-breakdown-total" className="mt-2 text-base font-semibold">
-        {t('fare.total', { amount: formatFare(fare.amount) })}
-      </p>
-
-      <p className="mt-1 text-xs leading-4">
+      <p className="mt-2 text-xs leading-4">
         {t('fare.effective', { date: fare.effective_from })}
         {fare.source_id === null && fare.breakdown.length > 0
           ? ` · ${t('routes.fareMixed')}`

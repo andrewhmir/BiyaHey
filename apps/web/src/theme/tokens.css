@@ -1,14 +1,19 @@
 /*
- * BiyaHey! design tokens — Material 3 tonal roles.
+ * BiyaHey! design tokens — "Kalsada" (civic-modern) identity.
  *
- * Brand seed: teal #00696D. One brand accent only. Transit-line colours are
- * deliberately NOT tokenised: they arrive from route data (`route_color`) and
- * must stay authoritative (R45 — no fare/attribution recomputation).
+ * Brand seed: teal #0E7C7B on an ink-navy text palette and a pale sage canvas;
+ * fare amber is reserved for money. Transit-line colours are deliberately NOT
+ * tokenised here: they arrive from route data (`route_color` in the API contract)
+ * and must stay authoritative (R45 — no fare/attribution recomputation). The
+ * documented mode palette lives in `components/transit/modeMeta.tsx`.
  *
  * Layout constants sit on an 8 dp grid; interactive targets are 48 dp. Roles are
  * scheme-neutral names so components use `bg-surface` / `text-on-surface`
  * instead of light/dark branches. Dark roles follow `prefers-color-scheme`, with
  * a manual `data-theme="dark" | "light"` override for tests and settings.
+ *
+ * Token names are frozen: `theme/tokens.test.ts` couples every colour role here
+ * with its Tailwind colour mapping, so adding a role without mapping it fails.
  */
 :root {
   color-scheme: light dark;
@@ -17,13 +22,13 @@
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --text-label: 14px;
-  --leading-label: 16px;
+  --leading-label: 18px;
   --text-body: 16px;
   --leading-body: 24px;
-  --text-title: 24px;
-  --leading-title: 32px;
-  --text-headline: 32px;
-  --leading-headline: 40px;
+  --text-title: 20px;
+  --leading-title: 26px;
+  --text-headline: 28px;
+  --leading-headline: 34px;
 
   /* 8 dp spacing grid. `--space-3` is 24 px, `--space-6` is 48 px, etc. */
   --space-1: 8px;
@@ -38,97 +43,96 @@
   --touch-target: 48px;
   --touch-target-min: 24px;
 
-  /* Shape (8 dp grid; the sheet uses the 24 px "large" corner). */
-  --shape-small: 8px;
-  --shape-medium: 16px;
-  --shape-large: 24px;
+  /* Shape (8 dp grid; cards are 20 px, the sheet uses the 28 px "large" corner). */
+  --shape-small: 10px;
+  --shape-medium: 20px;
+  --shape-large: 28px;
   --shape-full: 9999px;
 
-  /* Elevation sprites: M3 ambient key + soft key shadow pairs. */
-  --elevation-1: 0 1px 2px rgb(0 0 0 / 0.16), 0 1px 3px 1px rgb(0 0 0 / 0.08);
-  --elevation-2: 0 1px 2px rgb(0 0 0 / 0.16), 0 2px 6px 2px rgb(0 0 0 / 0.1);
-  --elevation-3: 0 1px 3px rgb(0 0 0 / 0.2), 0 4px 8px 3px rgb(0 0 0 / 0.12);
-  --elevation-4: 0 2px 3px rgb(0 0 0 / 0.2), 0 6px 10px 4px rgb(0 0 0 / 0.14);
+  /* Elevation sprites: Kalsada card/sheet shadow pairs (ink-tinted, soft). */
+  --elevation-1: 0 1px 2px rgb(9 29 36 / 0.08), 0 1px 3px 1px rgb(9 29 36 / 0.06);
+  --elevation-2: 0 1px 2px rgb(9 29 36 / 0.08), 0 8px 24px -12px rgb(9 29 36 / 0.28);
+  --elevation-3: 0 1px 3px rgb(9 29 36 / 0.1), 0 12px 32px -12px rgb(9 29 36 / 0.3);
+  --elevation-4: 0 2px 4px rgb(9 29 36 / 0.12), 0 18px 44px -14px rgb(9 29 36 / 0.32);
 
   /* Light tonal roles (default). */
-  --surface: #f7faf9;
+  --surface: #f4f6f3;
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #f1f5f4;
-  --surface-container: #eaf0ef;
-  --surface-container-high: #e4eae9;
-  --surface-container-highest: #dee4e3;
-  --on-surface: #171d1d;
-  --on-surface-variant: #3f4949;
-  --outline: #6f7979;
-  --outline-variant: #bec9c8;
-  --primary: #00696d;
+  --surface-container-low: #f0f4f0;
+  --surface-container: #eaf0eb;
+  --surface-container-high: #e3eae5;
+  --surface-container-highest: #dce4de;
+  --on-surface: #0b1d24;
+  --on-surface-variant: #54656c;
+  --outline: #6b7c7b;
+  --outline-variant: #dae2df;
+  --primary: #0e7c7b;
   --on-primary: #ffffff;
-  --primary-container: #9cf1f5;
-  --on-primary-container: #002021;
-  --secondary: #4a6363;
+  --primary-container: #d9efee;
+  --on-primary-container: #043b3a;
+  --secondary: #4c5b62;
   --on-secondary: #ffffff;
-  --secondary-container: #cce8e7;
-  --on-secondary-container: #051f1f;
-  --tertiary: #7a5900;
+  --secondary-container: #dde6e7;
+  --on-secondary-container: #101f26;
+  --tertiary: #b45309;
   --on-tertiary: #ffffff;
-  --tertiary-container: #ffdf9e;
-  /* Task 9 contrast-token gap: `on-tertiary-container` is consumed by the
-     status/staleness banners (`text-on-tertiary-container`) and must stay
-     mapped in `tailwind.config.js` — it was once defined here without that
-     mapping, so Tailwind emitted no utility and the banners silently inherited
-     body colour. `src/theme/tokens.test.ts` pins the token/colour-map pairing.
-     Pinned here (light + dark) as a real 4.5:1+ pair. */
-  --on-tertiary-container: #2a1700;
+  --tertiary-container: #ffe6c9;
+  /* `on-tertiary-container` is consumed by the status/staleness banners
+     (`text-on-tertiary-container`) and must stay mapped in `tailwind.config.js`
+     — it was once defined here without that mapping, so Tailwind emitted no
+     utility and the banners silently inherited body colour.
+     `src/theme/tokens.test.ts` pins the token/colour-map pairing. */
+  --on-tertiary-container: #3b1f00;
   --error: #ba1a1a;
   --on-error: #ffffff;
   --error-container: #ffdad6;
   --on-error-container: #410002;
-  --inverse-surface: #2b3231;
-  --inverse-on-surface: #ecf1f0;
-  --fare-bg: #fff1c7;
-  --on-fare-bg: #402d00;
-  --fare-border: #d9b45a;
+  --inverse-surface: #0b1d24;
+  --inverse-on-surface: #f4f6f3;
+  --fare-bg: #fff1c9;
+  --on-fare-bg: #4f3400;
+  --fare-border: #e7c265;
   --fare-accent: #7a5900;
-  --focus-ring: #00696d;
+  --focus-ring: #0e7c7b;
 
   /*
    * Internal dark palette. Not component API — the two dark entry points below
    * only map these into the public role names, so the hex values live in one
    * place (automatic OS dark mode plus an explicit `data-theme="dark"`).
    */
-  --_dark-surface: #0e1514;
-  --_dark-surface-container-lowest: #090f0e;
-  --_dark-surface-container-low: #171d1c;
-  --_dark-surface-container: #1b2120;
-  --_dark-surface-container-high: #252b2a;
-  --_dark-surface-container-highest: #303635;
-  --_dark-on-surface: #dfe4e3;
-  --_dark-on-surface-variant: #bec9c8;
-  --_dark-outline: #899393;
-  --_dark-outline-variant: #3f4949;
-  --_dark-primary: #80d4d8;
-  --_dark-on-primary: #003639;
-  --_dark-primary-container: #004f52;
-  --_dark-on-primary-container: #9cf1f5;
-  --_dark-secondary: #b0cccb;
-  --_dark-on-secondary: #1b3534;
-  --_dark-secondary-container: #324b4a;
-  --_dark-on-secondary-container: #cce8e7;
-  --_dark-tertiary: #f7bf3f;
-  --_dark-on-tertiary: #402d00;
-  --_dark-tertiary-container: #5c4300;
-  --_dark-on-tertiary-container: #ffdf9e;
+  --_dark-surface: #0c1415;
+  --_dark-surface-container-lowest: #070d0e;
+  --_dark-surface-container-low: #141c1d;
+  --_dark-surface-container: #182022;
+  --_dark-surface-container-high: #232c2e;
+  --_dark-surface-container-highest: #2e383a;
+  --_dark-on-surface: #e2e9e8;
+  --_dark-on-surface-variant: #b9c6c4;
+  --_dark-outline: #859493;
+  --_dark-outline-variant: #3a4749;
+  --_dark-primary: #7fd4d2;
+  --_dark-on-primary: #003736;
+  --_dark-primary-container: #00504f;
+  --_dark-on-primary-container: #9ff0ee;
+  --_dark-secondary: #b5c9ca;
+  --_dark-on-secondary: #1b3537;
+  --_dark-secondary-container: #33494b;
+  --_dark-on-secondary-container: #d2e7e8;
+  --_dark-tertiary: #f0b35e;
+  --_dark-on-tertiary: #40290a;
+  --_dark-tertiary-container: #5a3a0e;
+  --_dark-on-tertiary-container: #ffddb4;
   --_dark-error: #ffb4ab;
   --_dark-on-error: #690005;
   --_dark-error-container: #93000a;
   --_dark-on-error-container: #ffdad6;
-  --_dark-inverse-surface: #dfe4e3;
-  --_dark-inverse-on-surface: #2b3231;
+  --_dark-inverse-surface: #e2e9e8;
+  --_dark-inverse-on-surface: #0c1415;
   --_dark-fare-bg: #3a2d00;
-  --_dark-on-fare-bg: #ffdf9e;
+  --_dark-on-fare-bg: #ffe1a8;
   --_dark-fare-border: #6b5518;
-  --_dark-fare-accent: #f7bf3f;
-  --_dark-focus-ring: #80d4d8;
+  --_dark-fare-accent: #f0b35e;
+  --_dark-focus-ring: #7fd4d2;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -1,23 +1,11 @@
 import type { SearchGroup, SearchResultDto } from '@biyahey/shared';
-import {
-  ArrowLeft,
-  ArrowUpDown,
-  LocateFixed,
-  Plus,
-  Search as SearchIcon,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, LocateFixed, Plus, Search as SearchIcon, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { SearchResults } from './SearchResults';
-import {
-  MAX_TRIP_STOPS,
-  buildPlanPath,
-  parseTripParams,
-  type TripPoint,
-} from './tripParams';
+import { MAX_TRIP_STOPS, buildPlanPath, parseTripParams, type TripPoint } from './tripParams';
 import { useSearch, type SearchOutcome } from './useSearch';
 
 /**
@@ -52,9 +40,7 @@ type Field = { kind: 'from' } | { kind: 'to' } | { kind: 'stop'; index: number }
 type LocateFailure = 'denied' | 'unavailable' | 'timeout' | 'unsupported';
 
 type LocateState =
-  | { status: 'idle' }
-  | { status: 'locating' }
-  | { status: 'failed'; reason: LocateFailure };
+  { status: 'idle' } | { status: 'locating' } | { status: 'failed'; reason: LocateFailure };
 
 const LOCATE_FAILURE_KEYS: Record<LocateFailure, string> = {
   denied: 'search.locateDenied',
@@ -136,9 +122,7 @@ function onlyStops(groups: SearchGroup): SearchGroup {
 }
 
 function countGroups(groups: SearchGroup): number {
-  return (
-    groups.stops.length + groups.landmarks.length + groups.routes.length + groups.saved.length
-  );
+  return groups.stops.length + groups.landmarks.length + groups.routes.length + groups.saved.length;
 }
 
 function locateMessage(locate: LocateState, t: Translate): string {
@@ -192,9 +176,16 @@ interface PlaceFieldProps {
   inputRef: (element: HTMLInputElement | null) => void;
   onFocus: () => void;
   onChange: (value: string) => void;
+  /** Removes the picked value; the caller reports it through `onChange('')`. */
+  onClear?: () => void;
 }
 
-/** One labelled picker input; the visible micro-label doubles as its `<label>`. */
+/**
+ * One labelled picker input; the visible micro-label doubles as its `<label>`.
+ *
+ * A picked endpoint keeps a 48 dp clear affordance, so a rider can re-pick a
+ * field without typing over the old value (Kalsada directions form).
+ */
 function PlaceField({
   id,
   label,
@@ -203,27 +194,41 @@ function PlaceField({
   inputRef,
   onFocus,
   onChange,
+  onClear,
 }: PlaceFieldProps) {
+  const { t } = useT();
   return (
     <div className="flex min-w-0 flex-1 flex-col px-1">
       <label
         htmlFor={id}
-        className="text-[10px] font-bold uppercase tracking-[0.08em] text-on-surface-variant"
+        className="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
       >
         {label}
       </label>
-      <input
-        id={id}
-        ref={inputRef}
-        type="search"
-        autoComplete="off"
-        enterKeyHint="search"
-        value={value}
-        placeholder={placeholder}
-        onFocus={onFocus}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        className="min-h-12 w-full bg-transparent py-1 text-base font-medium text-on-surface placeholder:font-normal placeholder:text-on-surface-variant focus:outline-none"
-      />
+      <div className="flex min-w-0 items-center">
+        <input
+          id={id}
+          ref={inputRef}
+          type="search"
+          autoComplete="off"
+          enterKeyHint="search"
+          value={value}
+          placeholder={placeholder}
+          onFocus={onFocus}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          className="min-h-12 min-w-0 flex-1 bg-transparent py-1 text-base font-medium text-on-surface placeholder:font-normal placeholder:text-on-surface-variant focus:outline-none"
+        />
+        {value.length > 0 && onClear !== undefined ? (
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={t('search.clear')}
+            className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+          >
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -519,14 +524,10 @@ export function SearchScreen() {
 
   const fromValue = active?.kind === 'from' ? term : (form.from?.name ?? '');
   const fromPlaceholder =
-    form.from !== null && form.from.name.length > 0
-      ? form.from.name
-      : t('search.fromPlaceholder');
+    form.from !== null && form.from.name.length > 0 ? form.from.name : t('search.fromPlaceholder');
   const toValue = active?.kind === 'to' ? term : (form.dest?.name ?? '');
   const toPlaceholder =
-    form.dest !== null && form.dest.name.length > 0
-      ? form.dest.name
-      : t('search.placeholder');
+    form.dest !== null && form.dest.name.length > 0 ? form.dest.name : t('search.placeholder');
 
   const stopValue = (index: number): string => {
     if (active !== null && active.kind === 'stop' && active.index === index) {
@@ -546,7 +547,7 @@ export function SearchScreen() {
   return (
     <main className="flex min-h-dvh flex-col bg-surface text-on-surface">
       <header className="border-b border-outline-variant bg-surface-container-lowest px-4 pb-3 pt-3">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
+        <div className="mx-auto flex w-full max-w-2xl items-start gap-2">
           <button
             type="button"
             aria-label={t('common.back')}
@@ -555,9 +556,14 @@ export function SearchScreen() {
           >
             <ArrowLeft aria-hidden="true" className="size-5" />
           </button>
-          <h1 className="text-lg font-semibold tracking-tight text-on-surface">
-            {t('search.title')}
-          </h1>
+          <div className="flex min-w-0 flex-col">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
+              {t('home.brand')}
+            </p>
+            <h1 className="text-xl font-bold tracking-tight text-on-surface">
+              {t('search.title')}
+            </h1>
+          </div>
         </div>
       </header>
 
@@ -569,7 +575,7 @@ export function SearchScreen() {
             event.preventDefault();
             handleSubmit();
           }}
-          className="rounded-card border border-outline bg-surface-container-lowest p-3 shadow-elevation-1"
+          className="rounded-card border border-outline-variant bg-surface-container-lowest p-3 shadow-elevation-2"
         >
           <div className="flex items-start gap-2">
             <span aria-hidden="true" className="mt-6 flex w-5 flex-col items-center gap-1">
@@ -586,6 +592,10 @@ export function SearchScreen() {
               }}
               onFocus={() => handleFieldFocus({ kind: 'from' })}
               onChange={(value) => handleFieldChange({ kind: 'from' }, value)}
+              onClear={() => {
+                handleFieldChange({ kind: 'from' }, '');
+                fromInputRef.current?.focus();
+              }}
             />
             <button
               type="button"
@@ -642,7 +652,7 @@ export function SearchScreen() {
 
           <div className="flex items-start gap-2">
             <span aria-hidden="true" className="mt-6 flex w-5 items-center justify-center">
-              <span className="size-3 rotate-45 rounded-sm border-2 border-error-container bg-error" />
+              <span className="size-3 rotate-45 rounded-sm border-2 border-outline-variant bg-on-surface" />
             </span>
             <PlaceField
               id={toId}
@@ -654,6 +664,10 @@ export function SearchScreen() {
               }}
               onFocus={() => handleFieldFocus({ kind: 'to' })}
               onChange={(value) => handleFieldChange({ kind: 'to' }, value)}
+              onClear={() => {
+                handleFieldChange({ kind: 'to' }, '');
+                toInputRef.current?.focus();
+              }}
             />
             <button
               type="button"
@@ -686,7 +700,7 @@ export function SearchScreen() {
             type="button"
             onClick={handleSubmit}
             disabled={!canSearch}
-            className="mt-2 flex min-h-12 w-full items-center justify-center rounded-pill bg-primary px-6 text-base font-semibold text-on-primary transition enabled:hover:opacity-90 enabled:active:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant"
+            className="mt-2 flex min-h-12 w-full items-center justify-center rounded-pill bg-primary px-6 text-base font-semibold text-on-primary shadow-elevation-1 transition enabled:hover:opacity-90 enabled:active:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:shadow-none"
           >
             {t('search.findRoute')}
           </button>
@@ -746,8 +760,7 @@ export function SearchScreen() {
                       // A recent chip must always type into a visible field and
                       // drop that field's old pick, or the query would run
                       // invisibly and a later selection could overwrite To.
-                      const field: Field =
-                        active ?? firstEmptyField(form) ?? { kind: 'to' };
+                      const field: Field = active ?? firstEmptyField(form) ?? { kind: 'to' };
                       setActive(field);
                       setTerm(recent);
                       setForm((current) => {

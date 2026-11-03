@@ -6,6 +6,17 @@ container, search, fare-forward route options, trip detail, saved/offline trips
 and the About-data provenance screen. It consumes the Phase-1 BFF and router
 (`docs/runbooks/phase1-acceptance.md`).
 
+> **UX v2 addendum (2026-11-03).** The screens this runbook exercises were
+> rebuilt on the "Kalsada" identity (spec
+> `docs/superpowers/specs/2026-11-03-biyahey-ux-v2-design.md`): route options now
+> draw a per-alternative map path and leg-strip cards, trip detail has a mapped
+> leg-synced timeline, `/trip/:id/live` is a leg-by-leg walkthrough, and the
+> README screenshots (7, including `live-trip.png`) are regenerated from the
+> built app. The acceptance criteria and performance verdict below are unchanged
+> (PARTIAL with recorded numbers); `npm run test:e2e` now covers the v2 map
+> rendering and flows (11 specs). Re-run the commands in §2–§5 exactly as
+> documented.
+
 **Verdict 2026-11-02 (final task, clean tree `a417900` + these docs): PARTIAL** —
 all five spec §3 criteria this plan owns (2–6) pass; **0 fail**. The §11
 performance budget is **PARTIAL with measured numbers and is never reported

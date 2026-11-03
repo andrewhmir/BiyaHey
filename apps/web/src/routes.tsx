@@ -55,6 +55,9 @@ function HomeRoute() {
     <HomePage
       onSearchClick={() => navigate('/search')}
       onSavedClick={() => navigate('/saved')}
+      // UX v2: a recent-trip row re-opens that trip's detail (plan cache or the
+      // saved snapshot); the row is rendered only when recents exist.
+      onOpenRecent={(id) => navigate(`/trip/${id}`)}
     />
   );
 }
@@ -144,10 +147,26 @@ function AboutDataRoute() {
   return <AboutDataScreen onBack={goBack} />;
 }
 
+/**
+ * Reset the window scroll on navigation. Without this a push navigation keeps
+ * the previous page's scroll offset, so opening `/trip/:id/live` from a scrolled
+ * trip detail starts with the sticky header covering the map (and the map
+ * camera is fitted while the first paint is half off-screen).
+ */
+function ScrollToTopOnNavigate() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname]);
+  return null;
+}
+
 export function AppRoutes() {
   return (
     <>
       <GlobalSearchShortcut />
+      <ScrollToTopOnNavigate />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<HomeRoute />} />

@@ -1,4 +1,5 @@
 import type { DataSource } from '@biyahey/shared';
+import { X } from 'lucide-react';
 import { useEffect, useId, useRef } from 'react';
 import { useT } from '../../i18n/useT';
 import { sourceUrls } from '../../lib/sourceUrls';
@@ -119,14 +120,18 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
         aria-modal="true"
         aria-labelledby={titleId}
         data-testid="licence-sheet"
-        className="flex max-h-[85dvh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-t-sheet bg-surface-container-lowest px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-on-surface shadow-elevation-3"
+        className="flex max-h-[85dvh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-t-sheet bg-surface-container-lowest px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 text-on-surface shadow-elevation-3"
       >
+        <span
+          aria-hidden="true"
+          className="mx-auto h-1 w-10 shrink-0 rounded-pill bg-outline-variant"
+        />
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
               {t('about.sheetKicker')}
             </p>
-            <h2 id={titleId} className="break-words text-lg font-semibold tracking-tight">
+            <h2 id={titleId} className="break-words text-xl font-bold tracking-tight">
               {dataset.name}
             </h2>
             <p className="break-words text-sm text-on-surface-variant">{dataset.publisher}</p>
@@ -138,14 +143,14 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
             aria-label={t('common.close')}
             className="flex size-12 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
           >
-            <span aria-hidden="true">✕</span>
+            <X aria-hidden="true" className="size-5" />
           </button>
         </header>
 
         <section aria-labelledby={`${titleId}-licence`} className="flex flex-col gap-1">
           <h3
             id={`${titleId}-licence`}
-            className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
+            className="text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
           >
             {t('about.licenceHeading')}
           </h3>
@@ -165,7 +170,7 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
         <section aria-labelledby={`${titleId}-source`} className="flex flex-col gap-1">
           <h3
             id={`${titleId}-source`}
-            className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
+            className="text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
           >
             {t('about.sourceHeading')}
           </h3>
@@ -192,17 +197,19 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
         <section aria-labelledby={`${titleId}-attribution`} className="flex flex-col gap-1">
           <h3
             id={`${titleId}-attribution`}
-            className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
+            className="text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
           >
             {t('about.attributionHeading')}
           </h3>
-          <p className="break-words text-sm leading-5">{dataset.attribution}</p>
+          <p className="break-words rounded-field bg-surface-container-low p-3 text-sm leading-5">
+            {dataset.attribution}
+          </p>
         </section>
 
         <section aria-labelledby={`${titleId}-report`} className="flex flex-col gap-1">
           <h3
             id={`${titleId}-report`}
-            className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant"
+            className="text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
           >
             {t('about.reportHeading')}
           </h3>

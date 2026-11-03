@@ -9,16 +9,19 @@ BiyaHey! is built in the open with [BetterGov](https://bettergov.ph)
 conventions: MIT code, open data, Conventional Commits, and an explicit
 AI-assisted-work disclosure.
 
-> **Status (2026-11-02):** Plan 1 (data spine + router + BFF) and Plan 2 (PWA)
-> are complete on `feature/pwa-mvp`. Phase-2 acceptance is **PARTIAL** by
-> measurement, not by omission: spec §3 criteria 2–6 pass, while the §11
-> performance budget is recorded as PARTIAL — the interactive-map target and TBT
-> are not met and are documented with numbers in
-> `docs/runbooks/phase2-acceptance.md`. A post-Plan-2 trip-planner change (R89)
-> lives on `feature/trip-planner`: the start and end are now configurable, with
-> up to two optional transit stops (see Features). All of the above is merged to
-> `main` on 2026-11-02 (local only — this repository has no remote configured, so
-> nothing is pushed anywhere).
+> **Status (2026-11-03):** Plan 1 (data spine + router + BFF) and Plan 2 (PWA)
+> are complete. Phase-2 acceptance is **PARTIAL** by measurement, not by
+> omission: spec §3 criteria 2–6 pass, while the §11 performance budget is
+> recorded as PARTIAL — the interactive-map target and TBT are not met and are
+> documented with numbers in `docs/runbooks/phase2-acceptance.md`. The
+> post-Plan-2 trip planner (R89) adds configurable start/end plus up to two
+> optional transit stops. **UX v2 "Kalsada" (2026-11-03)** rebuilds every screen
+> on the approved civic-modern identity with Moovit-style route paths: each
+> alternative is drawn as its own path, the chosen itinerary is drawn leg-by-leg
+> in mode colours and synced to the step timeline, the in-trip screen is a
+> leg-by-leg walkthrough (still no real-time claims), and Playwright covers the
+> map paths and flows end-to-end. All of the above is merged to `main`
+> (local only — this repository has no remote configured, so nothing is pushed).
 
 ## Screenshots
 
@@ -31,15 +34,21 @@ local stack. These are real screenshots, not mockups:
 | <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home: live map behind the bottom sheet with the search pill" width="250"></a> | <a href="docs/screenshots/search-results.png"><img src="docs/screenshots/search-results.png" alt="Search: directions form (From/To) with grouped results for Cubao" width="250"></a> | <a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Route options: fare-forward cards over the map, planned from the current location to Cubao" width="250"></a> |
 | Map + sheet, search pill | From/To form, grouped stops | Fare, ETA, effectivity date |
 
-| Trip detail | Saved | About data |
+| Trip detail | Live trip | Saved |
 |:---:|:---:|:---:|
-| <a href="docs/screenshots/trip-detail.png"><img src="docs/screenshots/trip-detail.png" alt="Trip detail: header, timeline and save" width="250"></a> | <a href="docs/screenshots/saved.png"><img src="docs/screenshots/saved.png" alt="Saved: the saved trip snapshot" width="250"></a> | <a href="docs/screenshots/about-data.png"><img src="docs/screenshots/about-data.png" alt="About data: every dataset with publisher and licence" width="250"></a> |
-| Step-by-step legs, signage, fare breakdown | Offline-capable snapshots | Provenance for every dataset |
+| <a href="docs/screenshots/trip-detail.png"><img src="docs/screenshots/trip-detail.png" alt="Trip detail: map header with the leg-coloured route, leg rail and step timeline" width="250"></a> | <a href="docs/screenshots/live-trip.png"><img src="docs/screenshots/live-trip.png" alt="Live trip: leg-by-leg walkthrough with the honest no-live-data banner" width="250"></a> | <a href="docs/screenshots/saved.png"><img src="docs/screenshots/saved.png" alt="Saved: the endpoint-titled saved trip snapshot" width="250"></a> |
+| Map + leg rail, signage, fare breakdown | Guided steps, no real-time claims | Offline-capable snapshots |
+
+| About data |
+|:---:|
+| <a href="docs/screenshots/about-data.png"><img src="docs/screenshots/about-data.png" alt="About data: every dataset with publisher and licence" width="250"></a> |
+| Provenance for every dataset |
 
 The approved design reference is the **Option A** mockup
 [`.superpowers/mockups/option-a-maps-faithful.html`](.superpowers/mockups/option-a-maps-faithful.html)
 (full-bleed map + standard bottom sheet); the implementation follows its
-container, not Google's data.
+container, not Google's data. UX v2's approved identity mockup is
+[`.superpowers/mockups/option-a-kalsada.html`](.superpowers/mockups/option-a-kalsada.html).
 
 ## Features
 
@@ -51,16 +60,26 @@ container, not Google's data.
   every destination say *Walang ruta*. (MOTIS `via` accepts stop IDs only, so an
   optional stop is a real served stop, capped at two.)
 - **Fare-first route cards** — every option leads with the total time, arrival,
-  **₱ fare**, transfers, walk distance and mode chips, and every fare shows its
+  **₱ fare**, transfers and walk distance, and every fare shows its
   `effective_from` date and its source. No fare is ever shown without either.
+- **The paths you will actually take** — route options draw every alternative as
+  its own path on the map and the selected itinerary leg-by-leg in mode colours
+  (walk dashes, jeep/bus/rail lines, transfer dots, origin/destination pins),
+  with a Moovit-style leg-strip ribbon on every card. Selecting a card re-fits
+  the camera to that route; tapping a path on the map selects its card.
 - **Provenance in three layers** — a map/tile credit and a route-card chip (L1),
   the About-data dataset list with publisher, SPDX licence, last-checked date and
   coverage (L2), and a licence sheet with the full source URL (L3). Every dataset
   attribution string comes from the API's `sources[]`; the required basemap tile
   credit is the documented exception (R42/R55).
-- **Step-by-step trips** — an expandable leg timeline (walk / jeep / bus / rail /
-  ferry / wait) with the alight stop pinned, "Look for:" signage on board legs, a
-  landmark line, and an itemised fare breakdown with effectivity dates.
+- **Step-by-step trips on a map** — a sticky map header shows the chosen route,
+  an interactive leg rail plus expandable timeline (walk / jeep / bus / rail /
+  ferry / wait) keep the map and steps in sync, with the alight stop pinned,
+  "Hanapin" signage on board legs, and an itemised fare breakdown with
+  effectivity dates.
+- **Leg-by-leg live walkthrough** — the in-trip screen steps through the planned
+  legs with previous/next controls and the current leg emphasised on the map. It
+  always states there is no real-time data; it never fabricates a live ETA.
 - **Saved trips that work offline** — a saved trip keeps its fare snapshot and
   dataset version, survives a reload with the network cut, and labels itself
   "Saved route (no live data)" with an honest staleness stamp.

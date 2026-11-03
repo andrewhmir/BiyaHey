@@ -1,13 +1,13 @@
-import type { PlanResponse } from '@biyahey/shared';
+import type { DataSource, ItineraryDto, PlanResponse } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { AppRoutes } from '../../routes';
-import { mapInstances } from '../../test/mocks/maplibre';
 import {
   planCubaoAyalaResponse,
   planEmptyHandler,
@@ -16,7 +16,9 @@ import {
   planSuccessHandler,
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
-import { RouteOptionsScreen } from './RouteOptionsScreen';
+import { makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import { RouteOptionsScreen, type RouteFilter } from './RouteOptionsScreen';
+import type { PlanOutcome } from './usePlan';
 
 // R52: jsdom has no canvas, so axe's colour-contrast rule is noise here; token
 // contrast is reviewed against `tokens.css` instead.
@@ -31,7 +33,22 @@ function spyOnFetch() {
   return vi.spyOn(globalThis, 'fetch');
 }
 
-function renderRouteOptions(onEditTrip?: () => void) {
+/** A controlled `PlanOutcome` from the checked-in three-option plan fixture. */
+function outcome(
+  itineraries: ItineraryDto[] = [...planCubaoAyalaResponse.itineraries],
+  sources: DataSource[] = [...planCubaoAyalaResponse.sources],
+): PlanOutcome {
+  return { status: 'success', itineraries, sources, error: null, retry: vi.fn() };
+}
+
+/** Stable plan identity: the announcement effect must not re-run per render. */
+const DEFAULT_PLAN = outcome();
+
+function renderRouteOptions(
+  onEditTrip?: () => void,
+  onOpenDetail?: (id: string) => void,
+  onBack?: () => void,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
   });
@@ -46,10 +63,44 @@ function renderRouteOptions(onEditTrip?: () => void) {
         originLabel="Cubao"
         destinationLabel="Ayala"
         onEditTrip={onEditTrip}
+        onOpenDetail={onOpenDetail}
+        onBack={onBack}
       />
     </QueryClientProvider>,
   );
   return { user, queryClient, ...utils };
+}
+
+/**
+ * The `/plan` mount: a controlled plan with its own filter and selection state,
+ * so a card press and the detail action move together exactly as they do in the
+ * page.
+ */
+function ControlledRouteOptions({
+  plan = DEFAULT_PLAN,
+  onOpenDetail,
+}: {
+  plan?: PlanOutcome;
+  onOpenDetail?: (id: string) => void;
+}) {
+  const [filter, setFilter] = useState<RouteFilter>('recommended');
+  const [selectedId, setSelectedId] = useState<string | null>(
+    plan.itineraries[0]?.id ?? null,
+  );
+
+  return (
+    <RouteOptionsScreen
+      plan={plan}
+      filter={filter}
+      onFilterChange={setFilter}
+      selectedId={selectedId}
+      onSelect={(id) => setSelectedId(id)}
+      onOpenDetail={onOpenDetail}
+      originLabel="Cubao"
+      destinationLabel="Ayala"
+      onBack={vi.fn()}
+    />
+  );
 }
 
 beforeEach(() => {
@@ -63,29 +114,37 @@ afterEach(() => {
 });
 
 describe('RouteOptionsScreen', () => {
-  it('shows 3 fare-forward cards sorted by ETA with provenance chips', async () => {
+  it('shows 3 v2 cards in recommended order with leg strips and provenance', async () => {
     renderRouteOptions();
 
     const cards = await screen.findAllByTestId('route-card');
     expect(cards).toHaveLength(3);
 
-    // ETA is largest; the fare is a first-class field with its source line.
+    // ETA leads, with the arrival line beneath it.
     expect(cards[0]).toHaveTextContent('31 min');
     expect(cards[0]).toHaveTextContent('₱26.40');
     // Arrival is rendered from the API's `endTime` in Philippine time.
     expect(cards[0]).toHaveTextContent('Dating 8:31 AM');
-    // The plan's mandated copy is "Fares: ...", so the label assertion matches
-    // the plural (the plan snippet's `/fare:/i` would not match its own copy).
     expect(cards[0]).toHaveTextContent(/fares:/i);
     expect(cards[0]).toHaveTextContent(/direct/i);
-    expect(cards[0]).toHaveTextContent('Lakad');
-    expect(cards[0]).toHaveTextContent('Jeepney');
+    expect(cards[0]).toHaveTextContent('484 m lakad');
+
+    // Every card carries the signature leg ribbon, one segment per API leg.
+    const strips = screen.getAllByTestId('leg-strip');
+    expect(strips).toHaveLength(3);
+    expect(strips[0]).toHaveAttribute('data-leg-count', '3');
+    expect(strips[1]).toHaveAttribute('data-leg-count', '4');
+    expect(strips[2]).toHaveAttribute('data-leg-count', '5');
+    expect(
+      within(strips[0]!)
+        .getAllByTestId('leg-strip-segment')
+        .map((segment) => segment.getAttribute('data-mode')),
+    ).toEqual(['walk', 'jeepney', 'walk']);
 
     // The 2-transfer option uses the Taglish transfer wording; the long walk
-    // switches to kilometres; every card has a labelled mode-chip group.
+    // switches to kilometres.
     expect(screen.getByText('2 sakay')).toBeInTheDocument();
     expect(screen.getByText('1.3 km lakad')).toBeInTheDocument();
-    expect(screen.getAllByRole('group', { name: 'Mga mode ng sakay' })).toHaveLength(3);
 
     // Every displayed fare carries its effectivity date.
     const fareDates = screen.getAllByTestId('fare-date');
@@ -106,25 +165,50 @@ describe('RouteOptionsScreen', () => {
     expect(chips[1]).not.toHaveTextContent('Fares per LTFRB fare matrix');
 
     // One badge for the recommended lead card.
+    expect(screen.getAllByTestId('route-badge')).toHaveLength(1);
     expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
 
-    // All four local filters exist; Recommended is active by default.
-    expect(screen.getByRole('button', { name: 'Recommended' })).toHaveAttribute(
+    // All four local filters exist; Recommended is active by default and the
+    // active pill uses the ink inverse fill.
+    const recommended = screen.getByRole('button', { name: 'Recommended' });
+    expect(recommended).toHaveAttribute('aria-pressed', 'true');
+    expect(recommended).toHaveClass('bg-inverse-surface', 'text-inverse-on-surface');
+    expect(screen.getByRole('button', { name: 'Cheapest' })).toHaveAttribute(
       'aria-pressed',
-      'true',
+      'false',
     );
-    expect(screen.getByRole('button', { name: 'Cheapest' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fewest transfers' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Less walking' })).toBeInTheDocument();
+  });
+
+  it('shows the Kalsada header: eyebrow, trip line and departure sub-line', async () => {
+    const { container } = renderRouteOptions(undefined, undefined, vi.fn());
+    await screen.findAllByTestId('route-card');
+
+    expect(screen.getByText('Plano ng biyahe')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Cubao → Ayala' })).toBeInTheDocument();
+    // The first ranked itinerary departs at 08:00 Philippine time (12-hour UI).
+    expect(screen.getByText('alis 8:00 AM')).toBeInTheDocument();
+
+    // The count line above the cards names the count and the fastest option.
+    expect(screen.getByTestId('routes-count')).toHaveTextContent(
+      '3 ruta · pinakamabilis 31 min',
+    );
+
+    // The back button is first in DOM order (and first for keyboard/SR) even
+    // though it is visually on the trailing edge.
+    const header = container.querySelector('header');
+    expect(header).not.toBeNull();
+    const headerButtons = within(header as HTMLElement).getAllByRole('button');
+    expect(headerButtons).toHaveLength(1);
+    expect(headerButtons[0]).toHaveAccessibleName('Bumalik');
   });
 
   it('re-ranks by cheapest without refetching', async () => {
     const { user } = renderRouteOptions();
     await screen.findAllByTestId('route-card');
 
-    const initialFares = screen
-      .getAllByTestId('fare-amount')
-      .map((node) => node.textContent);
+    const initialFares = screen.getAllByTestId('fare-amount').map((node) => node.textContent);
     expect(initialFares).toEqual(['₱26.40', '₱41.17', '₱40.61']);
 
     await user.click(screen.getByRole('button', { name: 'Cheapest' }));
@@ -150,7 +234,7 @@ describe('RouteOptionsScreen', () => {
     // Here A wins only ETA; B wins fare, transfers and walking; C sits between
     // them and wins nothing — so the consensus must put B first even though the
     // API sent it second. Fares keep their breakdown summing to the amount (R60).
-    const base = planCubaoAyalaResponse.itineraries[0];
+    const base = planCubaoAyalaResponse.itineraries[0]!;
     const consensusPlan: PlanResponse = {
       ...planCubaoAyalaResponse,
       itineraries: [
@@ -206,6 +290,11 @@ describe('RouteOptionsScreen', () => {
     // once their wins counts tie (B 6, C 8, A 10 before that key).
     expect(etaOrder()).toEqual(['35 min', '22 min', '28 min']);
     expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+    // "pinakamabilis" must name the minimum duration in the returned set (22),
+    // not the ranked lead's (35) — the discriminating case for review I3.
+    expect(screen.getByTestId('routes-count')).toHaveTextContent(
+      '3 ruta · pinakamabilis 22 min',
+    );
 
     // Every other chip must agree on the same lead, and each names its own
     // criterion instead of claiming the Recommended BEST badge.
@@ -236,7 +325,7 @@ describe('RouteOptionsScreen', () => {
     // 8), so option 2 would lead Recommended while Cheapest and Less walking led
     // option 3 — the original complaint again. The wins-count primary key must
     // keep all three chips on option 3, with Fewest transfers on option 2.
-    const base = planCubaoAyalaResponse.itineraries[0];
+    const base = planCubaoAyalaResponse.itineraries[0]!;
     const liveOption = (
       id: string,
       durationMin: number,
@@ -269,7 +358,7 @@ describe('RouteOptionsScreen', () => {
     const { user } = renderRouteOptions();
     await screen.findAllByTestId('route-card');
     const leadCard = () => screen.getAllByTestId('route-card')[0];
-    const leadFare = () => screen.getAllByTestId('fare-amount')[0].textContent;
+    const leadFare = () => screen.getAllByTestId('fare-amount')[0]!.textContent;
 
     // Recommended agrees with the chips' convergent pick: option 3.
     expect(leadCard()).toHaveTextContent('45 min');
@@ -302,38 +391,26 @@ describe('RouteOptionsScreen', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('renders an unknown mode with a generic sakay chip', async () => {
-    const lead = planCubaoAyalaResponse.itineraries[0];
-    const planWithUnknownMode: PlanResponse = {
-      ...planCubaoAyalaResponse,
-      itineraries: [
-        {
-          ...lead,
-          id: 'plan-unknown-mode',
-          modes: ['walk', 'hovercraft'],
-        },
-      ],
+  it('renders a walk-only plan as one walk segment without a mode-colour assumption', async () => {
+    const walkPlan: PlanResponse = {
+      v: 1,
+      sources: planCubaoAyalaResponse.sources,
+      itineraries: [makeWalkOnlyItinerary()],
     };
-    server.use(http.post('*/plan', () => HttpResponse.json(planWithUnknownMode)));
+    server.use(http.post('*/plan', () => HttpResponse.json(walkPlan)));
 
     renderRouteOptions();
 
-    expect(await screen.findByText(/sakay \(hovercraft\)/i)).toBeInTheDocument();
-  });
-
-  it('renders a rail chip with its line name and the line colour', async () => {
-    const lead = planCubaoAyalaResponse.itineraries[0];
-    const railPlan: PlanResponse = {
-      ...planCubaoAyalaResponse,
-      itineraries: [{ ...lead, id: 'plan-rail', modes: ['walk', 'mrt3'] }],
-    };
-    server.use(http.post('*/plan', () => HttpResponse.json(railPlan)));
-
-    renderRouteOptions();
-
-    // Colour is never the only carrier of meaning: the line name is text.
-    expect(await screen.findByText('MRT-3')).toBeInTheDocument();
-    expect(screen.getByTestId('rail-colour-mrt3')).toBeInTheDocument();
+    const cards = await screen.findAllByTestId('route-card');
+    expect(cards).toHaveLength(1);
+    const segments = within(cards[0]!).getAllByTestId('leg-strip-segment');
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toHaveAttribute('data-mode', 'walk');
+    // The badge rule still applies to a one-option plan.
+    expect(screen.getAllByTestId('route-badge')).toHaveLength(1);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+    // A walk-only fare is still shown with its honest provenance line.
+    expect(screen.getByTestId('fare-date')).toHaveTextContent('Fares: no fare effective');
   });
 
   it('shows skeleton cards after 300ms, never a spinner', async () => {
@@ -408,18 +485,89 @@ describe('RouteOptionsScreen', () => {
   it('highlights the tapped card and keeps exactly one card selected', async () => {
     const { user } = renderRouteOptions();
     const cards = await screen.findAllByTestId('route-card');
-    expect(cards[0]).toHaveAttribute('aria-pressed', 'true');
+    const selectOf = (card: HTMLElement) => within(card).getByTestId('route-card-select');
+    expect(selectOf(cards[0]!)).toHaveAttribute('aria-pressed', 'true');
 
-    await user.click(cards[2]);
+    await user.click(selectOf(cards[2]!));
 
     const updated = screen.getAllByTestId('route-card');
-    expect(updated[2]).toHaveAttribute('aria-pressed', 'true');
-    expect(updated[0]).toHaveAttribute('aria-pressed', 'false');
-    expect(updated[1]).toHaveAttribute('aria-pressed', 'false');
+    expect(selectOf(updated[2]!)).toHaveAttribute('aria-pressed', 'true');
+    expect(selectOf(updated[1]!)).toHaveAttribute('aria-pressed', 'false');
+    expect(selectOf(updated[0]!)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps exactly one route-detail-action directly under the selected card', async () => {
+    const user = userEvent.setup();
+    const onOpenDetail = vi.fn();
+    render(<ControlledRouteOptions onOpenDetail={onOpenDetail} />);
+
+    const actions = screen.getAllByTestId('route-detail-action');
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toHaveTextContent('Tingnan ang detalye');
+    expect(actions[0]).toHaveAttribute('aria-label', 'Tingnan ang detalye ng rutang 31 min');
+    // The legacy per-card button id is gone: E2E uses the new one.
+    expect(screen.queryByTestId('trip-open')).not.toBeInTheDocument();
+    const firstItem = actions[0]!.closest('li') as HTMLElement;
+    expect(within(firstItem).getByTestId('route-card-select')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // Selecting another card moves the single action with the selection.
+    await user.click(
+      within(screen.getAllByTestId('route-card')[2]!).getByTestId('route-card-select'),
+    );
+
+    const movedActions = screen.getAllByTestId('route-detail-action');
+    expect(movedActions).toHaveLength(1);
+    expect(movedActions[0]).toHaveAttribute(
+      'aria-label',
+      'Tingnan ang detalye ng rutang 45 min',
+    );
+    const movedItem = movedActions[0]!.closest('li') as HTMLElement;
+    expect(within(movedItem).getByTestId('route-card-select')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await user.click(movedActions[0]!);
+    expect(onOpenDetail).toHaveBeenCalledTimes(1);
+    expect(onOpenDetail).toHaveBeenCalledWith(planCubaoAyalaResponse.itineraries[2]!.id);
+  });
+
+  it('renders no detail action when the screen owns no navigation', async () => {
+    render(<ControlledRouteOptions />);
+    await screen.findAllByTestId('route-card');
+
+    expect(screen.queryByTestId('route-detail-action')).not.toBeInTheDocument();
+  });
+
+  it('announces an explicit selection once, without repeating the count message', async () => {
+    const { user } = renderRouteOptions();
+    await screen.findAllByTestId('route-card');
+
+    // Only the count announcement exists until the rider actually selects.
+    const countStatus = screen.getByRole('status');
+    expect(countStatus).toHaveTextContent('3 ruta');
+    expect(screen.queryByText(/Napili ang rutang/)).not.toBeInTheDocument();
+
+    await user.click(
+      within(screen.getAllByTestId('route-card')[2]!).getByTestId('route-card-select'),
+    );
+
+    const statuses = screen.getAllByRole('status');
+    expect(statuses).toHaveLength(2);
+    const selectionAnnouncements = statuses.filter((node) =>
+      /Napili ang rutang/.test(node.textContent ?? ''),
+    );
+    expect(selectionAnnouncements).toHaveLength(1);
+    expect(selectionAnnouncements[0]).toHaveTextContent('Napili ang rutang 45 min');
+    // The count announcement is unchanged — the selection has its own region.
+    expect(countStatus).toHaveTextContent('3 ruta');
   });
 
   it('has no axe violations with route cards rendered', async () => {
-    const { container } = renderRouteOptions();
+    const { container } = renderRouteOptions(undefined, vi.fn());
     await screen.findAllByTestId('route-card');
 
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
@@ -456,7 +604,7 @@ describe('/plan route wiring', () => {
     );
 
     expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
-    expect(screen.getByText('Cubao → Ayala')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Cubao → Ayala' })).toBeInTheDocument();
     expect(getCurrentPosition).not.toHaveBeenCalled();
     // The URL's `from` is the request origin and `dest` the destination —
     // never swapped.
@@ -466,7 +614,7 @@ describe('/plan route wiring', () => {
     });
   });
 
-  it('plans with ordered via stops and shows them in the place line', async () => {
+  it('plans with ordered via stops and shows them in the trip line', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
     const viaStop = {
@@ -488,7 +636,9 @@ describe('/plan route wiring', () => {
     );
 
     expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
-    expect(screen.getByText('Cubao → Guadalupe → Ayala')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Cubao → Guadalupe → Ayala' }),
+    ).toBeInTheDocument();
     // The POST body carries the stop's served id in travel order; the display
     // name stays in the URL only.
     expect(captured).toEqual({
@@ -520,7 +670,7 @@ describe('/plan route wiring', () => {
     expect(screen.getByRole('searchbox', { name: /papunta sa/i })).toHaveValue('Ayala');
   });
 
-  it('hosts the options in the map + sheet container and highlights the tapped polyline', async () => {
+  it('hosts the options in the sheet and keeps one detail action for the selected card', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', { ...window.navigator, geolocation: { getCurrentPosition } });
     const user = userEvent.setup();
@@ -530,57 +680,41 @@ describe('/plan route wiring', () => {
     );
 
     const cards = await screen.findAllByTestId('route-card');
+    expect(cards).toHaveLength(3);
     // The route layer owns the one `POST /plan`; the controlled screen must not
     // fetch a second copy of the same plan.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+
     const sheet = screen.getByTestId('sheet');
     expect(sheet).toHaveAttribute('data-detent', 'half');
-    expect(within(sheet).getByRole('heading', { name: 'Mga ruta' })).toBeInTheDocument();
+    // The Kalsada trip line is the sheet's heading.
+    expect(within(sheet).getByRole('heading', { level: 1, name: 'Cubao → Ayala' })).toBeInTheDocument();
     expect(within(sheet).getAllByTestId('route-card')).toHaveLength(3);
-
-    const map = mapInstances[0]!;
-    act(() => {
-      map.emit('load');
-    });
-
-    // Every returned itinerary is drawn (R53 straight-leg geometry).
-    await waitFor(() => expect(map.addSource).toHaveBeenCalledTimes(3));
-    for (const id of ['plan-cubao-ayala-1', 'plan-cubao-ayala-2', 'plan-cubao-ayala-3']) {
-      expect(map.getSource(`route-${id}`)).toBeDefined();
-    }
-
-    // The lead card's itinerary is the emphasised line (6 px, others 4 px).
-    await waitFor(() =>
-      expect(map.setPaintProperty).toHaveBeenCalledWith(
-        'route-plan-cubao-ayala-1',
-        'line-width',
-        6,
-      ),
+    // Exactly one 48 dp detail action, belonging to the selected lead card.
+    const detailActions = within(sheet).getAllByTestId('route-detail-action');
+    expect(detailActions).toHaveLength(1);
+    expect(detailActions[0]).toHaveAttribute(
+      'aria-label',
+      'Tingnan ang detalye ng rutang 31 min',
     );
-    expect(map.setPaintProperty).toHaveBeenCalledWith('route-plan-cubao-ayala-2', 'line-width', 4);
-    expect(map.setPaintProperty).toHaveBeenCalledWith('route-plan-cubao-ayala-3', 'line-width', 4);
-
-    // Tapping a card moves the emphasis to that itinerary's line.
-    await user.click(cards[2]);
-    await waitFor(() =>
-      expect(map.setPaintProperty).toHaveBeenCalledWith(
-        'route-plan-cubao-ayala-3',
-        'line-width',
-        6,
-      ),
+    const detailItem = detailActions[0]!.closest('li') as HTMLElement;
+    expect(within(detailItem).getByTestId('route-card-select')).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
-    await waitFor(() =>
-      expect(map.setPaintProperty).toHaveBeenCalledWith(
-        'route-plan-cubao-ayala-1',
-        'line-width',
-        4,
-      ),
+    expect(within(sheet).getByTestId('routes-count')).toHaveTextContent(
+      '3 ruta · pinakamabilis 31 min',
     );
 
-    // The plan response's provenance rows reach the map credit's ⓘ detail.
-    await user.click(screen.getByRole('button', { name: 'Pinagmulan ng data' }));
-    expect(screen.getByRole('dialog', { name: 'Pinagmulan ng data' })).toHaveTextContent(
-      'LTFRB fare matrix (transcribed)',
+    // Tapping another card moves the single action there (not a per-card row).
+    await user.click(
+      within(within(sheet).getAllByTestId('route-card')[2]!).getByTestId('route-card-select'),
+    );
+    const movedActions = within(sheet).getAllByTestId('route-detail-action');
+    expect(movedActions).toHaveLength(1);
+    expect(movedActions[0]).toHaveAttribute(
+      'aria-label',
+      'Tingnan ang detalye ng rutang 45 min',
     );
   });
 
@@ -607,7 +741,9 @@ describe('/plan route wiring', () => {
     expect(await screen.findAllByTestId('route-card')).toHaveLength(3);
     // The legacy hand-off labels the device fix honestly instead of inventing a
     // place, and the one bounded read supplies the request origin.
-    expect(screen.getByText('Kasalukuyang lokasyon → Ayala')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Kasalukuyang lokasyon → Ayala' }),
+    ).toBeInTheDocument();
     expect(getCurrentPosition).toHaveBeenCalledTimes(1);
     expect(captured).toEqual({
       origin: { lat: 14.5547, lon: 121.0244 },
