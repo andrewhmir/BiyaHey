@@ -200,6 +200,7 @@ export interface MapFacts {
     selectedId: string;
     activeLeg: string;
     alternativeCount: string;
+    approximateLegs: string;
     routeCount: string;
   };
 }
@@ -314,6 +315,7 @@ export async function readMap(page: Page, options: ReadMapOptions = {}): Promise
           selectedId: stateNode?.getAttribute('data-selected-id') ?? '',
           activeLeg: stateNode?.getAttribute('data-active-leg') ?? '',
           alternativeCount: stateNode?.getAttribute('data-alternative-count') ?? '',
+          approximateLegs: stateNode?.getAttribute('data-approximate-legs') ?? '',
           routeCount: stateNode?.getAttribute('data-route-count') ?? '',
         },
       };

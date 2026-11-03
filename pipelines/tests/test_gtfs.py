@@ -333,15 +333,21 @@ def test_stop_times_are_monotonic_within_every_trip():
         )
 
 
-def test_shapes_table_carries_the_relation_way_geometry():
+def test_shapes_table_carries_the_relation_way_geometry_per_direction():
     feed = _feed()
     shapes: dict[str, list] = {}
     for row in feed.shapes:
         shapes.setdefault(row.shape_id, []).append(row)
 
-    assert set(shapes) == {f"{row.route_id}:shape" for row in feed.routes}
+    # GTFS shapes are ordered in *travel* order, so a shape must not be shared by
+    # both directions: each route gets one per direction, the second reversed.
+    assert set(shapes) == {
+        f"{row.route_id}:shape:{direction}"
+        for row in feed.routes
+        for direction in (0, 1)
+    }
 
-    rail = sorted(shapes["rail-mrt3:shape"], key=lambda row: row.shape_pt_sequence)
+    rail = sorted(shapes["rail-mrt3:shape:0"], key=lambda row: row.shape_pt_sequence)
     assert len(rail) == 5
     assert (rail[0].shape_pt_lat, rail[0].shape_pt_lon) == pytest.approx(
         (14.6000, 121.0000)
@@ -350,11 +356,33 @@ def test_shapes_table_carries_the_relation_way_geometry():
         (14.6100, 121.0100)
     )
 
+    # the return direction traverses the same geometry in the opposite order
+    rail_return = sorted(
+        shapes["rail-mrt3:shape:1"], key=lambda row: row.shape_pt_sequence
+    )
+    assert len(rail_return) == 5
+    assert (rail_return[0].shape_pt_lat, rail_return[0].shape_pt_lon) == pytest.approx(
+        (14.6100, 121.0100)
+    )
+    assert (rail_return[-1].shape_pt_lat, rail_return[-1].shape_pt_lon) == pytest.approx(
+        (14.6000, 121.0000)
+    )
+
     # every shape point has a globally valid coordinate and a 1-based sequence
     for rows in shapes.values():
         assert [row.shape_pt_sequence for row in rows] == list(range(1, len(rows) + 1))
         assert all(-90.0 <= row.shape_pt_lat <= 90.0 for row in rows)
         assert all(-180.0 <= row.shape_pt_lon <= 180.0 for row in rows)
+
+
+def test_trips_reference_the_shape_for_their_travel_direction():
+    feed = _feed()
+
+    # A direction-1 trip reverses the stop sequence, so it must also reference the
+    # reversed shape; sharing the direction-0 shape is what let MOTIS draw the
+    # whole trip shape as a multi-kilometre beeline on the return leg.
+    for trip in feed.trips:
+        assert trip.shape_id == f"{trip.route_id}:shape:{trip.direction_id}"
 
 
 def test_write_is_deterministic(tmp_path):

@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import type { FeatureCollection, LineString } from 'geojson';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  encodePolyline,
   makeItinerary,
   makeLeg,
   makeLongItinerary,
@@ -108,6 +109,8 @@ describe('RoutePathLayer', () => {
       paint: expect.objectContaining({ 'line-color': ['get', 'colour'] }),
     });
     expect(map.getLayer(ROUTE_LAYERS.transfers)).toMatchObject({ type: 'circle' });
+    // Routed fixtures are solid: nothing falls back to the approximate chord.
+    expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-approximate-legs', '0');
   });
 
   it('puts an origin and a destination marker on the selected itinerary', async () => {
@@ -143,8 +146,10 @@ describe('RoutePathLayer', () => {
     expect(alternatives).toHaveLength(2);
     expect(alternatives.map((feature) => feature.properties?.['itineraryId'])).toEqual(['b', 'c']);
     expect(alternatives[0]?.properties?.['colour']).toBe(MODE_COLORS.bus);
+    // Alternatives are muted context, not competing answers: one neutral hue,
+    // thin, below full opacity (the selected route keeps its mode colours).
     expect(map.getLayer(ROUTE_LAYERS.altLine)).toMatchObject({
-      paint: expect.objectContaining({ 'line-color': ['get', 'colour'] }),
+      paint: expect.objectContaining({ 'line-color': '#7a878d', 'line-opacity': 0.55 }),
     });
 
     // Two selected-itinerary markers plus one numbered badge per alternative.
@@ -171,6 +176,36 @@ describe('RoutePathLayer', () => {
     await waitFor(() => expect(map.getSource(ROUTE_SOURCES.alternatives)).toBeDefined());
     expect(collectionOf(map, ROUTE_SOURCES.alternatives).features).toHaveLength(1);
     await waitFor(() => expect(markers.filter((marker) => marker.map !== null)).toHaveLength(3));
+  });
+
+  it('collapses an alternative that runs along the selected corridor instead of stacking a badge on it', async () => {
+    const selected = { ...makeRailTrip(), id: 'a' };
+    // The same corridor with both endpoints nudged ~22 m: MOTIS fan-out emits
+    // variants like this for different departures, and drawing them would put a
+    // numbered badge on top of the selected line.
+    const nudged = makeItinerary(
+      selected.legs.map((leg) => ({
+        ...leg,
+        geometry: {
+          points: encodePolyline([
+            [leg.from.lat + 0.0002, leg.from.lon + 0.0002],
+            [leg.to.lat + 0.0002, leg.to.lon + 0.0002],
+          ]),
+          precision: 6,
+        },
+      })),
+      { id: 'near' },
+    );
+    render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[selected, nudged]} selectedId="a" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() => expect(map.getSource(ROUTE_SOURCES.alternatives)).toBeDefined());
+    expect(collectionOf(map, ROUTE_SOURCES.alternatives).features).toHaveLength(0);
+    expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-alternative-count', '0');
   });
 
   it('reports an alternative tap through onSelect', async () => {
@@ -235,8 +270,13 @@ describe('RoutePathLayer', () => {
     expect(onSelectLeg).toHaveBeenCalledWith(2);
   });
 
-  it('falls back to the straight from→to segment when a leg has no geometry', async () => {
-    const itinerary = { ...makeRailTrip(), id: 'a' };
+  it('draws a geometry-less long leg as a dashed approximate chord, not a solid route', async () => {
+    const from = { name: 'Cubao', lat: 14.6195, lon: 121.0528 };
+    const to = { name: 'Ayala', lat: 14.5547, lon: 121.0244 };
+    // Legacy/cached payload: no geometry, so the only drawable line is the
+    // straight from→to chord — the reported "line through buildings".
+    const leg = { ...makeLeg({ mode: 'mrt3', from, to }), geometry: undefined };
+    const itinerary = { ...makeItinerary([leg]), id: 'a' };
     render(
       <MapCanvas>
         <RoutePathLayer itineraries={[itinerary]} selectedId="a" />
@@ -244,13 +284,21 @@ describe('RoutePathLayer', () => {
     );
     const map = loadMap();
 
-    await waitFor(() => expect(map.getSource(ROUTE_SOURCES.selected)).toBeDefined());
-    const legs = collectionOf(map, ROUTE_SOURCES.selected).features;
-    const ride = legs[1]!;
-    expect(ride.geometry.coordinates).toEqual([
-      [itinerary.legs[1]!.from.lon, itinerary.legs[1]!.from.lat],
-      [itinerary.legs[1]!.to.lon, itinerary.legs[1]!.to.lat],
+    await waitFor(() => expect(map.getSource(ROUTE_SOURCES.approximate)).toBeDefined());
+    const chord = collectionOf(map, ROUTE_SOURCES.approximate).features;
+    expect(chord).toHaveLength(1);
+    expect(chord[0]?.geometry.coordinates).toEqual([
+      [from.lon, from.lat],
+      [to.lon, to.lat],
     ]);
+    // It is never mixed into the solid selected path...
+    expect(collectionOf(map, ROUTE_SOURCES.selected).features).toHaveLength(0);
+    // ...and the layer marks it dashed + muted, plus counts it for the state mirror.
+    expect(map.getLayer(ROUTE_LAYERS.approxLine)?.paint).toMatchObject({
+      'line-dasharray': [1.5, 2],
+      'line-color': ['get', 'colour'],
+    });
+    expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-approximate-legs', '1');
   });
 
   it('decodes routed MOTIS geometry into drawn coordinates', async () => {
@@ -342,7 +390,7 @@ describe('RoutePathLayer', () => {
           [minLon, minLat],
           [maxLon, maxLat],
         ],
-        expect.objectContaining({ maxZoom: 16, duration: 450, padding: 56 }),
+        expect.objectContaining({ maxZoom: 16, duration: 350, padding: 56 }),
       ),
     );
 
@@ -534,5 +582,97 @@ describe('RoutePathLayer', () => {
 
     expect(map.addSource.mock.calls.length).toBe(sourceCalls);
     expect(map.fitBounds.mock.calls.length).toBe(fitCalls);
+  });
+
+  it('draws the selected route wider and in its mode colours over muted alternatives', async () => {
+    const a = { ...makeRailTrip(), id: 'a' };
+    const b = altItinerary('b');
+    render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[a, b]} selectedId="a" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+    await waitFor(() =>
+      expect(collectionOf(map, ROUTE_SOURCES.alternatives).features).toHaveLength(1),
+    );
+    const ride = map.getLayer(ROUTE_LAYERS.ride)?.paint as Record<string, unknown>;
+    const alt = map.getLayer(ROUTE_LAYERS.altLine)?.paint as Record<string, unknown>;
+    expect(ride['line-color']).toEqual(['get', 'colour']);
+    expect(ride['line-width']).toBeGreaterThan(alt['line-width'] as number);
+    expect(map.getLayer(ROUTE_LAYERS.casing)?.paint).toMatchObject({ 'line-width': 16 });
+  });
+
+  it('switches the highlighted route by pushing data, not rebuilding the style', async () => {
+    const a = { ...makeRailTrip(), id: 'a' };
+    const b = altItinerary('b');
+    const { rerender } = render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[a, b]} selectedId="a" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+    await waitFor(() =>
+      expect(
+        collectionOf(map, ROUTE_SOURCES.alternatives).features[0]?.properties?.['itineraryId'],
+      ).toBe('b'),
+    );
+    const sourceCalls = map.addSource.mock.calls.length;
+    const layerCalls = map.addLayer.mock.calls.length;
+    const removeLayerCalls = map.removeLayer.mock.calls.length;
+    const removeSourceCalls = map.removeSource.mock.calls.length;
+    const fitCalls = map.fitBounds.mock.calls.length;
+
+    rerender(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[a, b]} selectedId="b" />
+      </MapCanvas>,
+    );
+
+    await waitFor(() =>
+      expect(
+        collectionOf(map, ROUTE_SOURCES.selected).features.map(
+          (feature) => feature.properties?.['mode'],
+        ),
+      ).toEqual(b.legs.map((leg) => leg.mode)),
+    );
+    expect(
+      collectionOf(map, ROUTE_SOURCES.alternatives).features[0]?.properties?.['itineraryId'],
+    ).toBe('a');
+
+    // A card tap must not tear the style down: that was what made the map flash
+    // and stall while MapLibre rebuilt every render tile.
+    expect(map.addSource.mock.calls.length).toBe(sourceCalls);
+    expect(map.addLayer.mock.calls.length).toBe(layerCalls);
+    expect(map.removeLayer.mock.calls.length).toBe(removeLayerCalls);
+    expect(map.removeSource.mock.calls.length).toBe(removeSourceCalls);
+    await waitFor(() => expect(map.fitBounds.mock.calls.length).toBeGreaterThan(fitCalls));
+  });
+
+  it('fits the camera to the selected route by default on the shortlist', async () => {
+    const a = { ...makeRailTrip(), id: 'a' };
+    const b = altItinerary('b');
+    render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[a, b]} selectedId="a" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+    const selectedBounds = itineraryCoordinates(a);
+    await waitFor(() =>
+      expect(map.fitBounds).toHaveBeenCalledWith(
+        [
+          [
+            Math.min(...selectedBounds.map(([lon]) => lon)),
+            Math.min(...selectedBounds.map(([, lat]) => lat)),
+          ],
+          [
+            Math.max(...selectedBounds.map(([lon]) => lon)),
+            Math.max(...selectedBounds.map(([, lat]) => lat)),
+          ],
+        ],
+        expect.objectContaining({ padding: 56, maxZoom: 16 }),
+      ),
+    );
   });
 });

@@ -90,7 +90,7 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 
 | Check | Result |
 |---|---|
-| pytest | `146 passed in 5.48s` (6.7 s wall) |
+| pytest | `153 passed in 7.04s` |
 | `npm run ci` | lint + typecheck + **138 tests (134 passed, 4 `integration`-tagged skipped)** + 6 data files validated + `check:fares` fresh (18–20 s) |
 | `check:fares` | `ltfrb-puv-2026-09-28 effective 2026-09-28 — fresh on 2026-11-01 (threshold 183 days)` |
 | hermeticity | the live golden suites stay out of `ci` through Vitest's `integration` tag; the harness also strips `API_URL`/`MOTIS_URL` from the child env |
@@ -98,8 +98,8 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 | `npm run smoke:routing` | `ok: 10 geocode hits, 10 transit itineraries` |
 | licence gate | `ok (4 datasets, ODbL-1.0 notice present, CC BY-SA 2.0 inventory attribution present in artifact, no blocked dataset)` |
 | coverage | **12/16 = 75.0 %**; missing T109, T112, T115, T420 |
-| golden suite | 10/10 trips within contract; p95 plan **185–208 ms** and p95 search **30–39 ms** across two runs; every corridor ≤ 5 itineraries (the spec §9 cap) |
-| plausibility guard | **62 impossible itineraries dropped** across the ten golden corridors (6 Cubao→Ayala, 6 Cubao→Manila, 4 Cubao→Pasig, 12 Pasay→Taguig, 15 Fairview→Manila, 15 Las Piñas→Makati, 4 Cubao→Divisoria); every returned itinerary passed the guard |
+| golden suite | 10/10 trips within contract (re-probed 2026-11-03 on the fixed feed); p95 plan **185–208 ms** and p95 search **30–39 ms** across the 2026-11-01 runs; every corridor ≤ 5 itineraries (the spec §9 cap) |
+| plausibility guard | **62 impossible itineraries dropped** on the 2026-11-01 feed (6 Cubao→Ayala, 6 Cubao→Manila, 4 Cubao→Pasig, 12 Pasay→Taguig, 15 Fairview→Manila, 15 Las Piñas→Makati, 4 Cubao→Divisoria); **51** on the rebuilt 2026-11-03 feed; every returned itinerary passed the guard in both runs |
 | `/sources` | 10 registry rows served |
 | gtfs-validator | **not executed locally** — the pinned CLI jar is downloaded and verified, but this host's JVM fails to load the validator's classpath resources (zero GTFS tables, every file `unknown_file`, on our feed **and** on the canonical GTFS sample feed). CI job added; recorded as a known gap (§8). |
 
@@ -109,8 +109,8 @@ node scripts/motis-stress.mjs 20                 # R37 repeated 3-call plan prob
 |---|---|---|---|
 | 1 | `docker compose up` serves the full stack in < 20 min | **PARTIAL** | `docker compose up -d --wait routing api` brought **routing + api** healthy in 1.9 s warm (23.8 s after a republish; the healthcheck still allows 600 s for slower machines); smoke 10/10. The api service is on `:8787` with `/health`, `/search`, `/plan`, `/sources`, `/fares/*` and the `:5173` CORS allowlist (§9). The web service does not exist yet (Plan 2), so the three-service clause cannot be fully measured. |
 | 2 | Grouped search, p95 ≤ 1.5 s | **PASS** | p95 **30–39 ms** across two runs over Cubao/Ayala/Novaliches/Fairview/Alabang/Divisoria; every response carried `stops`, `landmarks`, `routes`, `saved` groups and `partial: false`; a `near` probe returns `distanceM` on every row. The harness requires the golden suite exit code 0 **and** at least one recorded sample (`searchP95Ms > 0`), so a failed search test cannot read as PASS. |
-| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips returned 4–5 itineraries (spec §9 cap: ≥ 3 and ≤ 5) at the pinned 2026-11-02T08:00+08:00 departure; p95 **185–208 ms** across two runs (limit 1 500 ms). The BFF plausibility guard dropped 62 impossible options and the suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
-| 4 | Fare engine ≥ 25 golden fare cases | **PASS** | 45 test cases in `packages/shared/src/fares.test.ts`, green under `npm run ci`: 2026-09-28 PUV matrix, 2026-03-23 LRT-2/MRT-3 50 % discount, LRT-1 exclusion, free-ride overrides, guards. The same criterion now also requires the pipeline pytest suite (146 passed), so a pytest failure fails criterion 4 and the process exit. |
+| 3 | 10 golden trips ≥ 3 itineraries, p95 plan ≤ 1.5 s | **PASS** | 10/10 trips returned 4–5 itineraries (spec §9 cap: ≥ 3 and ≤ 5) at the pinned 2026-11-02T08:00+08:00 departure; p95 **185–208 ms** across two 2026-11-01 runs (limit 1 500 ms). Re-probed 2026-11-03 on the rebuilt feed: still 10/10 within contract (fares re-pinned; the guard dropped 51 instead of 62). The suite asserts every returned itinerary is plausible. Per-trip counts in §4. |
+| 4 | Fare engine ≥ 25 golden fare cases | **PASS** | 45 test cases in `packages/shared/src/fares.test.ts`, green under `npm run ci`: 2026-09-28 PUV matrix, 2026-03-23 LRT-2/MRT-3 50 % discount, LRT-1 exclusion, free-ride overrides, guards. The same criterion now also requires the pipeline pytest suite (153 passed), so a pytest failure fails criterion 4 and the process exit. |
 | 5 | Every itinerary `sources[]`; About-data lists every dataset; fares show `effective_from` | **PARTIAL** | Every golden itinerary was asserted to carry a non-empty `sources[]` and a dated `fare.effective_from`; `/sources` serves **10** datasets, and the API-side contract is covered by tests. The About-data *screen* is Plan 2 (there is no web app). |
 | 6 | PWA installable; offline saved trips + fare matrix | **DEFERRED** | Plan 2 (ruling R38). Not measured, not claimed. |
 | 7 | Coverage ≥ 60 % of the curated NCR jeepney/UV inventory | **PASS** | 12/16 = **75.0 %**, measured from the built `gtfs.zip` `routes.txt`, with the missing list published: T109, T112, T115, T420 (reasons in §6). |
@@ -124,35 +124,44 @@ are the live observed min/max rounded outward. Every `minItineraries` is **3**, 
 suite asserts that value, and it also asserts the spec §9 upper bound of **5**; a
 corridor that cannot produce three plausible options is replaced, never lowered.
 
-All values below are from the 2026-11-01 final-fix-wave run against the 489-route feed
-(the excluded PNR/non-PRFS-ferry families are gone) with the guard active. "Dropped" is
-the `x-biyahey-implausible-dropped` header: the number of unique itineraries removed
+All values below are from the **2026-11-03 re-probe** against the rebuilt 489-route feed
+(the excluded PNR/non-PRFS-ferry families are gone) with the guard active, after the GTFS
+geometry fix documented in §4.1. "Dropped" is the
+`x-biyahey-implausible-dropped` header: the number of unique itineraries removed
 because one of their transit legs implied more than 120 km/h. Counts are capped at 5
-after ranking/dedupe, so a corridor that produced 10–12 options before now shows 5.
+after ranking/dedupe, so a corridor that produced 10–12 options before now shows 5. The
+`Plan ms` column is still the 2026-11-01 harness timing (the re-probe measured contracts,
+not latency; plan latency is asserted by the ≥3-itinerary/p95 test in the same suite).
 
 | Trip | Itineraries (min) | Modes seen | Fares observed (PHP) | MOTIS calls | Dropped | Plan ms |
 |---|---|---|---|---|---|---|
 | Cubao to Ayala | 4 (3) | mrt3, walk | 10.50 | 1 | 6 | 172 |
-| Marikina to Cubao | 5 (3) | bus, lrt2, walk | 17.16 / 23.00 / 28.20 | 1 | 0 | 55 |
-| Cubao to Manila | 5 (3) | bus, lrt2, walk | 24.00 / 25.93 / 26.90 | 1 | 6 | 173 |
-| Pasay to Monumento | 5 (3) | bus, lrt1, walk | 47.16 / 51.22 | 1 | 0 | 118 |
-| Cubao to Pasig | 4 (3) | bus, ferry, walk | 27.44 | 1 | 4 | 97 |
-| Pasay to Taguig | 5 (3) | bus, ferry, jeepney, walk | 61.29 / 84.52 / 89.37 | 1 | 12 | 185 |
-| Fairview to Manila | 5 (3) | bus, walk | 61.19 / 79.16 | 1 | 15 | 136 |
-| Novaliches to Cubao | 4 (3) | bus, walk | 104.46 | 1 | 0 | 78 |
-| Las Piñas to Makati | 4 (3) | bus, walk | 69.95 | 1 | 15 | 119 |
-| Cubao to Divisoria | 4 (3) | bus, walk | 51.92 | 1 | 4 | 87 |
+| Marikina to Cubao | 5 (3) | bus, lrt2, walk | 17.15 / 18.20 / 23.00 | 1 | 0 | 55 |
+| Cubao to Manila | 5 (3) | bus, lrt2, walk | 22.62 / 24.00 / 48.91 | 1 | 3 | 173 |
+| Pasay to Monumento | 5 (3) | bus, lrt1, walk | 35.90 / 48.37 | 1 | 0 | 118 |
+| Cubao to Pasig | 5 (3) | bus, ferry, mrt3, walk | 16.47 / 23.00 | 1 | 0 | 97 |
+| Pasay to Taguig | 5 (3) | bus, ferry, jeepney, walk | 54.48 / 71.62 / 76.47 | 1 | 12 | 185 |
+| Fairview to Manila | 5 (3) | bus, walk | 61.19 / 76.86 | 1 | 15 | 136 |
+| Novaliches to Cubao | 4 (3) | bus, walk | 48.64 | 1 | 0 | 78 |
+| Las Piñas to Makati | 4 (3) | bus, walk | 67.96 | 1 | 15 | 119 |
+| Cubao to Divisoria | 4 (3) | bus, walk | 28.92 | 1 | 0 | 87 |
 
 Counts, modes and fares were identical across repeated probes; only latency moved. A
-second acceptance run measured p95 **208 ms** plan / **39 ms** search with the same
-counts, modes, fares and drop numbers (the per-trip `Plan ms` column is from the first
-run and moves by ±20 %).
+2026-11-01 second acceptance run measured p95 **208 ms** plan / **39 ms** search with the
+counts, modes, fares and drop numbers of that date (the per-trip `Plan ms` column is from
+the first run and moves by ±20 %). The 2026-11-03 re-probe kept the pinned departure and
+the `minItineraries`/`requiredModes` contract; what moved is the fare floor of the
+distance-priced bus corridors, because the corrected shapes no longer overstate the
+travelled kilometres (§4.1).
 
 ### 4.1 Plausibility guard (R10 data defect)
 
-The feed's OSM/curated route shapes and `stop_times` disagree. MOTIS maps the whole
-route shape onto a leg, `map-itinerary` uses geometry distance for transit legs, and
-the fare engine then prices kilometres no vehicle covers. Measured on the live feed:
+The 2026-11-01 feed's OSM route shapes and `stop_times` disagreed: relation way members
+were concatenated in relation order with no connectivity check, so a shape could splice
+detached fragments into a 13 km jump, and one shape was shared by both travel directions
+even though GTFS shapes are travel-order. MOTIS maps the whole route shape onto a leg,
+`map-itinerary` uses geometry distance for transit legs, and the fare engine then priced
+kilometres no vehicle covers. Measured on the pre-fix feed:
 
 | Route | Leg shape distance | Scheduled leg time | Implied speed |
 |---|---|---|---|
@@ -163,34 +172,42 @@ the fare engine then prices kilometres no vehicle covers. Measured on the live f
 | `jeep-t165` (Balintawak → Novaliches) | 8,194 m | 2 min | 246 km/h |
 | `ferry-…` first leg (Pasig) | 12,981 m | 5 min | 156 km/h |
 
-The BFF now drops any itinerary with a transit leg whose implied speed exceeds
+**The defect is fixed at source (2026-11-03).** `pipelines/pipeline/osm_routes.py` now
+stitches shape members by shared OSM node (reversing them as needed, keeping the main
+chain, dropping detached fragments) and `pipelines/pipeline/gtfs.py` emits one shape per
+travel direction. A re-scan of the rebuilt feed finds **zero** OSM-derived shapes with a
+consecutive-point gap above 1.5 km; the MRT-3 leg that used to be drawn as a 29,981 m
+path with a 13,369 m straight segment is now 9,257 m against an 8,260 m beeline (max
+segment 1,012 m). Only the 11 curated jeep/UV routes whose inventory has landmark
+endpoints but no way geometry remain straight lines (2-point shapes, one per direction) —
+the map draws those dashed as an approximate alignment instead of a solid route.
+
+The BFF keeps dropping any itinerary with a transit leg whose implied speed exceeds
 **`MAX_TRANSIT_SPEED_KMH = 120 km/h`** (`services/api/src/routing/map-itinerary.ts`,
-documented there with this rationale). 120 km/h is above the fastest legs this feed
-actually keeps — the two fastest kept legs are **105.4 km/h** (Las Piñas→Makati,
-`bus-23`, 14,054 m in 8 min) and **104.0 km/h** (Novaliches→Cubao, `bus-51`,
-31,190 m in 18 min) — and far below every observed defect (743–2,107 km/h), so kept
-legs of up to ~105 km/h remain under the guard. It is a gross-defect net, not a
-realism certificate: those two kept legs are themselves implausible for NCR traffic,
-so the guard leaves only ~15 km/h of headroom above them; tightening the net is the
-GTFS-rebuild work in §8. A legitimate long-distance provincial bus (e.g. 100 km in
-90 min, 67 km/h) is **not** pruned. Walk legs are never flagged. Speed is judged from
-the raw MOTIS leg duration in seconds, not the rounded whole-minute `durationMin`
-(a 1.4-minute leg would otherwise read 40 % faster than it is); a missing or zero
-duration is evaluated with a 30-second floor rather than dividing by zero. A
+documented there with this rationale). It is retained as defence in depth for future feed
+regressions and for the residual curated placeholders above. Walk legs are never flagged.
+Speed is judged from the raw MOTIS leg duration in seconds, not the rounded whole-minute
+`durationMin` (a 1.4-minute leg would otherwise read 40 % faster than it is); a missing or
+zero duration is evaluated with a 30-second floor rather than dividing by zero. A
 geometry-to-straight-line ratio rule is deliberately not used: a route crossing the
 Pasig River can legitimately drive several kilometres between stops 1 km apart.
 
 Each `/plan` response carries `x-biyahey-motis-calls` (the fan-out: base, +10 min,
 direct-only) and `x-biyahey-implausible-dropped` (unique dropped options), and the
-golden suite asserts every returned itinerary passes the same guard. The guard is a
-mitigation for the current artifact, not a cure: the real fix is a GTFS rebuild with
-correct `shape_dist_traveled`/stop times (see §8).
+golden suite asserts every returned itinerary passes the same guard. On the pre-fix feed
+that net dropped 62 impossible options; on the rebuilt feed the golden corridors drop
+**51** (6 Cubao→Ayala, 3 Cubao→Manila, 12 Pasay→Taguig, 15 Fairview→Manila, 15 Las
+Piñas→Makati) and the corridors whose options were all shape artefacts now return real
+bus rides (Cubao→Manila, Pasay→Monumento, Cubao→Pasig, Novaliches→Cubao, Cubao→Divisoria).
 
 **Retraction.** The first Task 11 report described the ₱406.98 Cubao→Ayala options
 as "legitimate provincial through-buses". That was wrong: they were three
 itineraries riding the impossible `bus-59`/`bus-61` shapes above, and the
 ₱10–420 / ₱65–440 / ₱100–320 bounds existed only to absorb them. The honest
-post-guard bounds are ₱10–11 for Cubao→Ayala and 51–52 for Cubao→Divisoria.
+post-guard bounds were ₱10–11 for Cubao→Ayala and 51–52 for Cubao→Divisoria on the
+pre-fix feed; after the geometry fix Cubao→Divisoria is ₱28.92 (the old price was the
+inflated shape distance), and the re-probed bounds are the ones pinned in `routes.json`
+(§4).
 
 ### 4.2 Why the brief's illustrative expectations changed
 

@@ -45,6 +45,14 @@ Other deliberate decisions
 * A route whose shape has fewer than two resolvable points is skipped and
   counted (``BuildStats.routes_skipped_no_geometry``); a route with fewer than
   two stops after cleaning is skipped and counted too.
+* Shapes are emitted **per travel direction**: ``<route_id>:shape:0`` is the
+  RouteDef shape and ``<route_id>:shape:1`` is the same points reversed, and a
+  trip references the shape of its own direction. GTFS shapes are ordered in
+  travel order, so one shape shared by both directions puts the reverse trip's
+  stop order against its shape order; MOTIS then cannot map the stops onto the
+  shape and draws the whole trip shape for the leg - the multi-kilometre beeline
+  defect that survived route-relation stitching. The cost is roughly twice the
+  ``shapes.txt`` rows.
 * Rows are plain frozen dataclasses, written with ``csv.writer`` as UTF-8 with
   BOM (``utf-8-sig``). Zip entries use a fixed timestamp, so rebuilding the
   same feed produces byte-identical output — Task 8 hashes it.
@@ -582,9 +590,24 @@ def build_feed(
                 )
             )
 
-        shape_id = f"{route.route_id}:shape"
-        for sequence, (lat, lon) in enumerate(shape, start=1):
-            shape_rows.append(ShapeRow(shape_id, lat, lon, sequence))
+        # One shape per travel direction. GTFS shapes must be ordered in travel
+        # order, so the return direction cannot reuse the outbound shape: MOTIS
+        # maps a trip's stops onto its shape in stop order and slices the leg
+        # geometry between them, and a shared shape made the reversed trip's stop
+        # order run against its shape order (multi-kilometre straight jumps in
+        # the served leg geometry). shape:1 is shape:0 reversed.
+        shape_ids = (
+            f"{route.route_id}:shape:0",
+            f"{route.route_id}:shape:1",
+        )
+        for direction_id, direction_shape in (
+            (0, shape),
+            (1, tuple(reversed(shape))),
+        ):
+            for sequence, (lat, lon) in enumerate(direction_shape, start=1):
+                shape_rows.append(
+                    ShapeRow(shape_ids[direction_id], lat, lon, sequence)
+                )
 
         segment_minutes = SEGMENT_MINUTES[route.route_type]
         specs = generate_trips(route.headway_peak_min, route.headway_offpeak_min)
@@ -601,7 +624,7 @@ def build_feed(
                     service_id=SERVICE_ID,
                     trip_id=trip_id,
                     direction_id=spec.direction_id,
-                    shape_id=shape_id,
+                    shape_id=shape_ids[spec.direction_id],
                 )
             )
 

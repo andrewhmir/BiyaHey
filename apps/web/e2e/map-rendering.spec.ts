@@ -1,4 +1,4 @@
-﻿import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   MODE_COLOURS,
   cameraKey,
@@ -81,6 +81,10 @@ test('every alternative is its own path and the selected route is drawn leg by l
     await readMap(page, { layers: [...PLAN_LAYERS], sources: [...PLAN_SOURCES] }),
   );
 
+  // The corridor is served by routed shapes: no leg may be a fallback chord drawn
+  // as the selected path (the "straight line through buildings" defect).
+  expect(facts.state.approximateLegs).toBe('0');
+
   // The selected itinerary is the leg-coloured path: one feature per leg, in
   // the card's leg order, with the documented mode palette — not a single
   // one-colour chord.
@@ -110,10 +114,11 @@ test('every alternative is its own path and the selected route is drawn leg by l
   expect(altFeatures.length).toBe(Number(state.alternativeCount));
   expect(altFeatures.length).toBeLessThanOrEqual(count - 1);
   // A fan-out plan can consist entirely of duplicate paths; then dedupe leaves
-  // zero drawn alternatives, which is the correct map (and no alt layers).
-  expect(facts.layerIds['route-alt-casing']).toBe(altFeatures.length > 0);
-  expect(facts.layerIds['route-alt-line']).toBe(altFeatures.length > 0);
-  expect(facts.layerIds['route-alt-hit']).toBe(altFeatures.length > 0);
+  // zero drawn alternatives. The alternative layers still exist (they are added
+  // once and fed by setData), but draw nothing when the collection is empty.
+  expect(facts.layerIds['route-alt-casing']).toBe(true);
+  expect(facts.layerIds['route-alt-line']).toBe(true);
+  expect(facts.layerIds['route-alt-hit']).toBe(true);
   const alternativeIds = new Set<string>();
   const knownColours = new Set(Object.values(MODE_COLOURS));
   for (const feature of altFeatures) {
@@ -125,9 +130,9 @@ test('every alternative is its own path and the selected route is drawn leg by l
   }
   expect(alternativeIds.size).toBe(altFeatures.length);
 
-  // The shortlist has no leg-focus layer yet (that belongs to the detail map),
-  // and the camera has fitted the returned plan.
-  expect(facts.layerIds['route-focus-halo']).toBe(false);
+  // The shortlist keeps the focus layers mounted but empty (a leg-focus layer is
+  // a detail-screen behaviour), and the camera has fitted the selected route.
+  expect(facts.layerIds['route-focus-halo']).toBe(true);
   expect(facts.layerIds['route-leg-hit']).toBe(false);
   expect([facts.center[0], facts.center[1], facts.zoom]).not.toEqual([120.9842, 14.5995, 11]);
 
@@ -226,8 +231,9 @@ test('trip detail emphasises the focused leg on the map and follows the strip ra
     }),
   );
   expect(initial.state.activeLeg).toBe('');
-  expect(initial.sourceIds['route-focus']).toBe(false);
-  expect(initial.layerIds['route-focus-halo']).toBe(false);
+  expect(initial.sourceIds['route-focus']).toBe(true);
+  expect(initial.features['route-focus']).toHaveLength(0);
+  expect(initial.layerIds['route-focus-halo']).toBe(true);
   expect(Number(initial.paint['route-ride/line-opacity'])).toBe(1);
 
   // Press the 2nd timeline row: it becomes the active step and the map isolates
@@ -237,7 +243,15 @@ test('trip detail emphasises the focused leg on the map and follows the strip ra
   await expect(legs.nth(1)).toHaveAttribute('aria-current', 'step');
   await expect(legs.nth(1)).toHaveAttribute('data-active', 'true');
   await expect(segments.nth(1)).toHaveAttribute('aria-pressed', 'true');
-  await waitForMapSources(page, ['route-focus']);
+  // The focus source always exists; wait for the leg feature it now carries.
+  await expect
+    .poll(
+      async () =>
+        requireMap(await readMap(page, { sources: ['route-focus'] })).features['route-focus']
+          .length,
+      { timeout: 20_000 },
+    )
+    .toBe(1);
 
   const focused = requireMap(
     await readMap(page, {
@@ -272,8 +286,13 @@ test('trip detail emphasises the focused leg on the map and follows the strip ra
   await expect(page.getByTestId('route-map-state')).toHaveAttribute('data-active-leg', '');
   await expect(legs.first()).not.toHaveAttribute('aria-current', 'step');
   await expect
-    .poll(async () => (await readMap(page, { sources: ['route-focus'] }))?.sourceIds['route-focus'])
-    .toBe(false);
+    .poll(
+      async () =>
+        requireMap(await readMap(page, { sources: ['route-focus'] })).features['route-focus']
+          .length,
+      { timeout: 10_000 },
+    )
+    .toBe(0);
   const cleared = requireMap(
     await readMap(page, { paint: ['route-ride/line-opacity'] }),
   );

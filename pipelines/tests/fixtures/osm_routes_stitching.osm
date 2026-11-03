@@ -1,0 +1,217 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract used by pipelines/tests/test_osm_routes_geometry.py.
+
+  It reproduces the bad route-relation geometry shapes seen in the real NCR
+  extract that made the route map draw straight lines through buildings:
+
+  * 4001 bus-stitch1  way members are out of relation order and one is stored in
+                      the opposite direction (4103 is F->E, travel is E->F);
+                      endpoint stitching must rebuild A-B-C-D-E-F in travel order.
+  * 4002 bus-stitch2  two detached fragments (4113, 4114) that share no endpoint
+                      with the main chain; they must be dropped and counted, never
+                      concatenated into a beeline.
+  * 4003 bus-stitch3  the only way member has two points but the relation carries
+                      three ordered stop nodes; the shape falls back to the ordered
+                      stop coordinates instead of a bare two-point line.
+  * 4004 bus-stitch4  two points and two stops: no better geometry exists, so the
+                      bare two-point shape is kept.
+  * 4005 bus-stitch5  two points, three stops, but the stop order zigzags far
+                      beyond the two-point span; the fallback must not make the
+                      geometry worse.
+  * 4006 bus-stitch6  a single way stored B->A while the stops are ordered A then B;
+                      the resolved shape is oriented to start at the first stop.
+
+  Everything is offline and committed: no test downloads or queries OSM.
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <!-- relation 4001: out-of-order / reversed members, chain A..F -->
+  <node id="1101" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5000000" lon="121.0000000">
+    <tag k="name" v="Stitch Start"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1102" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5050000" lon="121.0050000"/>
+  <node id="1103" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5100000" lon="121.0100000"/>
+  <node id="1104" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5150000" lon="121.0150000"/>
+  <node id="1105" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5200000" lon="121.0200000"/>
+  <node id="1106" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.5250000" lon="121.0250000">
+    <tag k="name" v="Stitch End"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+
+  <way id="4101" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1101"/>
+    <nd ref="1102"/>
+    <nd ref="1103"/>
+  </way>
+  <way id="4102" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1103"/>
+    <nd ref="1104"/>
+    <nd ref="1105"/>
+  </way>
+  <way id="4103" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1106"/>
+    <nd ref="1105"/>
+  </way>
+
+  <relation id="4001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4102" role=""/>
+    <member type="way" ref="4101" role=""/>
+    <member type="way" ref="4103" role=""/>
+    <member type="node" ref="1101" role="stop"/>
+    <member type="node" ref="1106" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-1"/>
+    <tag k="name" v="Shuffled members"/>
+  </relation>
+
+  <!-- relation 4002: main chain A-B-C plus two detached fragments -->
+  <node id="1111" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6000000" lon="121.0000000">
+    <tag k="name" v="Main Start"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1112" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6050000" lon="121.0050000"/>
+  <node id="1113" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6100000" lon="121.0100000">
+    <tag k="name" v="Main End"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1121" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4000000" lon="120.9500000"/>
+  <node id="1122" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4050000" lon="120.9550000"/>
+  <node id="1123" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4500000" lon="121.1000000"/>
+  <node id="1124" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4550000" lon="121.1050000"/>
+  <node id="1125" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4600000" lon="121.1100000"/>
+
+  <way id="4111" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1111"/>
+    <nd ref="1112"/>
+  </way>
+  <way id="4112" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1112"/>
+    <nd ref="1113"/>
+  </way>
+  <way id="4113" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1121"/>
+    <nd ref="1122"/>
+  </way>
+  <way id="4114" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1123"/>
+    <nd ref="1124"/>
+    <nd ref="1125"/>
+  </way>
+
+  <relation id="4002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4113" role=""/>
+    <member type="way" ref="4112" role=""/>
+    <member type="way" ref="4111" role=""/>
+    <member type="way" ref="4114" role=""/>
+    <member type="node" ref="1111" role="stop"/>
+    <member type="node" ref="1113" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-2"/>
+    <tag k="name" v="Detached fragments"/>
+  </relation>
+
+  <!-- relation 4003: two way points, three ordered stops -> ordered-stop shape -->
+  <node id="1131" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7000000" lon="121.0000000">
+    <tag k="name" v="P"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1133" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7050000" lon="121.0020000">
+    <tag k="name" v="R"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1132" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7100000" lon="121.0000000">
+    <tag k="name" v="Q"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <way id="4121" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1131"/>
+    <nd ref="1132"/>
+  </way>
+  <relation id="4003" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4121" role=""/>
+    <member type="node" ref="1131" role="stop"/>
+    <member type="node" ref="1133" role="stop"/>
+    <member type="node" ref="1132" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-3"/>
+    <tag k="name" v="Two way points"/>
+  </relation>
+
+  <!-- relation 4004: two way points, two stops -> keep the bare line -->
+  <node id="1141" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.8000000" lon="121.0000000">
+    <tag k="name" v="Two A"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1142" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.8050000" lon="121.0050000">
+    <tag k="name" v="Two B"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <way id="4131" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1141"/>
+    <nd ref="1142"/>
+  </way>
+  <relation id="4004" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4131" role=""/>
+    <member type="node" ref="1141" role="stop"/>
+    <member type="node" ref="1142" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-4"/>
+    <tag k="name" v="Two stops"/>
+  </relation>
+
+  <!-- relation 4005: stop order zigzags far beyond the two-point span -->
+  <node id="1151" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4000000" lon="121.0000000">
+    <tag k="name" v="Zig Start"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1153" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.7500000" lon="121.0000000">
+    <tag k="name" v="Zig Detour"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1152" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.4000000" lon="121.1000000">
+    <tag k="name" v="Zig End"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <way id="4141" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1151"/>
+    <nd ref="1152"/>
+  </way>
+  <relation id="4005" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4141" role=""/>
+    <member type="node" ref="1151" role="stop"/>
+    <member type="node" ref="1153" role="stop"/>
+    <member type="node" ref="1152" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-5"/>
+    <tag k="name" v="Zigzag stops"/>
+  </relation>
+
+  <!-- relation 4006: way stored B->A, stops ordered A then B -->
+  <node id="1161" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6500000" lon="121.0500000">
+    <tag k="name" v="First stop"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="1162" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6550000" lon="121.0550000">
+    <tag k="name" v="Second stop"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <way id="4151" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="1162"/>
+    <nd ref="1161"/>
+  </way>
+  <relation id="4006" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="4151" role=""/>
+    <member type="node" ref="1161" role="stop"/>
+    <member type="node" ref="1162" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="STITCH-6"/>
+    <tag k="name" v="Reversed way"/>
+  </relation>
+</osm>

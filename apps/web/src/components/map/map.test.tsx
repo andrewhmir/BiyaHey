@@ -553,9 +553,10 @@ describe('MapCanvas', () => {
     );
     await screen.findByTestId('map-canvas');
     const map = loadMap();
-    // The layer owns three sources: the selected legs, the alternatives and the
-    // transfer dots (plus a focus source when a leg is isolated).
-    await waitFor(() => expect(map.addSource).toHaveBeenCalledTimes(3));
+    // The layer owns five sources: the selected legs, the alternatives, the
+    // transfer dots, the focused-leg source (empty until a leg is isolated) and
+    // the approximate-geometry fallback source.
+    await waitFor(() => expect(map.addSource).toHaveBeenCalledTimes(5));
     expect(screen.getAllByTestId('map-credit')).toHaveLength(1);
 
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();

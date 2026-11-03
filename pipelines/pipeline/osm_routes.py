@@ -55,18 +55,28 @@ or ``<route_id>:landmark:<n>``) so they are stable and collision-free.
 When a relation carries no stop members (common for ferries and older bus
 relations), two landmark stops are synthesized from the first/last shape
 vertex and named from the relation's ``from``/``to`` tags, else from a route
-name split on a separator. Shape geometry is the concatenation of the member
-ways' node geometry, orienting ``backward`` ways and dropping duplicated
-junction points.
+name split on a separator.
+
+Shape geometry is *stitched*, not merely concatenated: member ways are chained
+by shared endpoints (an OSM node id, or an identical endpoint coordinate) and
+reversed where needed, because OSM relations routinely list ways out of order,
+store a way against the direction of travel, or carry a detached fragment left
+behind by mapping errors or by the bbox clip. The chain that covers the most
+stops (then the longest) becomes the shape; detached fragment chains are
+dropped and counted in :attr:`RouteRelation.skipped_members` instead of being
+spliced in as multi-kilometre beelines. A relation whose only usable geometry
+is a two-point line but which carries three or more ordered stop members gets
+its shape synthesized from those stops (see :func:`_synthesise_shape_from_stops`).
 
 The reader is offline by construction: it only opens the path it is given.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Mapping, Sequence, Set, Tuple
+from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
 
 import osmium
 
@@ -263,14 +273,23 @@ def _resolve(
     route_id = _route_id(candidate)
     skipped = 0
 
-    shape = _resolve_shape(candidate.members, way_nodes, node_coords)
-    skipped += shape.skipped
-
+    # Stops are resolved first: the shape resolver uses them to decide which
+    # contiguous chain is the route's main line, and the ordered-stop fallback
+    # below needs them. Neither resolver depends on the other's result.
     stops = _resolve_stops(
         candidate.members, route_id, way_nodes, way_names, node_coords, node_names
     )
     skipped += stops.skipped
     unique_stops = _dedupe_stops(stops.stops)
+
+    shape = _resolve_shape(
+        candidate.members,
+        way_nodes,
+        node_coords,
+        stop_coords=tuple((stop.lat, stop.lon) for stop in unique_stops),
+    )
+    skipped += shape.skipped
+    shape = _synthesise_shape_from_stops(shape, unique_stops)
 
     if not unique_stops and shape.points:
         start_name, end_name = _landmark_names(tags)
@@ -306,19 +325,66 @@ def _resolve(
     )
 
 
+#: Mean Earth radius in metres, for the endpoint/stop scoring distances.
+_EARTH_RADIUS_M = 6371000.0
+
+#: A stop counts as served by a candidate chain when a chain vertex is this
+#: close to it (metres). Stop-position nodes that are part of a way are exact
+#: vertices, so this only matters for platform-centroid stops.
+_STOP_COVERAGE_M = 100.0
+
+Point = Tuple[float, float]
+
+
 @dataclass(frozen=True)
 class _ShapeResult:
     points: Tuple[Tuple[float, float], ...]
     skipped: int
 
 
+@dataclass(frozen=True)
+class _ShapeSegment:
+    """One usable way member: its OSM node refs and resolved coordinates."""
+
+    node_refs: Tuple[int, ...]
+    coords: Tuple[Point, ...]
+    role: str
+
+    @property
+    def start_node(self) -> int:
+        return self.node_refs[0]
+
+    @property
+    def end_node(self) -> int:
+        return self.node_refs[-1]
+
+
 def _resolve_shape(
     members: Sequence[_Member],
     way_nodes: Mapping[int, Sequence[int]],
     node_coords: Mapping[int, Tuple[float, float]],
+    stop_coords: Sequence[Point] = (),
 ) -> _ShapeResult:
-    """Concatenate member-way geometry, skipping dangling or unresolvable ways."""
-    points: List[Tuple[float, float]] = []
+    """Resolve the relation's way members into one stitched contiguous shape.
+
+    Way members are chained by shared endpoints - an identical OSM node id, or
+    an identical endpoint coordinate - and reversed when the stored direction
+    points the wrong way, so neither relation order nor a way's ``role`` can
+    introduce a straight jump. The chain that covers the most stops (then the
+    longest) is the route shape; remaining chains are detached fragments and are
+    dropped, counted once each in :attr:`_ShapeResult.skipped`.
+
+    Args:
+        members: the relation's members in relation order.
+        way_nodes: OSM way id -> node refs.
+        node_coords: OSM node id -> ``(lat, lon)``.
+        stop_coords: the relation's resolved stops in member order, used to score
+            which chain is the main line and to orient the result.
+
+    Ways whose geometry cannot be resolved (dangling after the bbox clip, or a
+    node without coordinates) are counted as skipped too.
+    """
+    segments: List[_ShapeSegment] = []
     skipped = 0
 
     for member_type, ref, role in members:
@@ -331,7 +397,7 @@ def _resolve_shape(
         if not node_refs:
             skipped += 1
             continue
-        coords: List[Tuple[float, float]] = []
+        coords: List[Point] = []
         resolved = True
         for node_ref in node_refs:
             coord = node_coords.get(node_ref)
@@ -339,16 +405,248 @@ def _resolve_shape(
                 resolved = False
                 break
             coords.append(coord)
-        if not resolved or not coords:
+        if not resolved:
             skipped += 1
             continue
-        if role == "backward":
-            coords.reverse()
+        if len(coords) < 2:
+            skipped += 1  # a one-node way is a point, not a segment
+            continue
+        segments.append(_ShapeSegment(tuple(node_refs), tuple(coords), role))
+
+    if not segments:
+        return _ShapeResult((), skipped)
+
+    chains = _build_shape_chains(segments)
+    chain_coords = [_chain_coords(segments, chain) for chain in chains]
+    best = max(
+        range(len(chains)),
+        key=lambda index: (_chain_score(chain_coords[index], stop_coords), -index),
+    )
+    # Every chain that is not the main line is a detached fragment, counted once:
+    # the count says how many pieces were dropped, not how many ways they used.
+    skipped += len(chains) - 1
+
+    points = _orient_to_stops(list(chain_coords[best]), stop_coords)
+    return _ShapeResult(tuple(points), skipped)
+
+
+def _build_shape_chains(
+    segments: Sequence[_ShapeSegment],
+) -> List[List[Tuple[int, bool]]]:
+    """Chain way segments into maximal contiguous runs by shared endpoints.
+
+    Returns one chain per connected run; each entry is ``(segment index,
+    reversed)`` in travel order. Greedy but deterministic: the longest remaining
+    segment seeds a chain, then unused segments are attached to the tail first
+    and the head second until nothing connects.
+    """
+    unused = list(range(len(segments)))
+    chains: List[List[Tuple[int, bool]]] = []
+    while unused:
+        seed = max(unused, key=lambda index: (len(segments[index].coords), -index))
+        unused.remove(seed)
+        chain: List[Tuple[int, bool]] = [(seed, False)]
+        head_node = segments[seed].start_node
+        head_coord = segments[seed].coords[0]
+        tail_node = segments[seed].end_node
+        tail_coord = segments[seed].coords[-1]
+        while True:
+            attachment = _find_attachment(
+                segments, unused, tail_node, tail_coord, append_to_tail=True
+            )
+            if attachment is not None:
+                index, reverse = attachment
+                unused.remove(index)
+                chain.append((index, reverse))
+                segment = segments[index]
+                if reverse:
+                    tail_node, tail_coord = segment.start_node, segment.coords[0]
+                else:
+                    tail_node, tail_coord = segment.end_node, segment.coords[-1]
+                continue
+            attachment = _find_attachment(
+                segments, unused, head_node, head_coord, append_to_tail=False
+            )
+            if attachment is not None:
+                index, reverse = attachment
+                unused.remove(index)
+                chain.insert(0, (index, reverse))
+                segment = segments[index]
+                if reverse:
+                    head_node, head_coord = segment.end_node, segment.coords[-1]
+                else:
+                    head_node, head_coord = segment.start_node, segment.coords[0]
+                continue
+            break
+        chains.append(chain)
+    return chains
+
+
+def _find_attachment(
+    segments: Sequence[_ShapeSegment],
+    unused: Sequence[int],
+    node_ref: int,
+    coord: Point,
+    *,
+    append_to_tail: bool,
+) -> Optional[Tuple[int, bool]]:
+    """Find an unused segment touching an endpoint of the chain.
+
+    Args:
+        segments: all segments of the relation.
+        unused: indexes of segments not yet chained.
+        node_ref: OSM node id at the chain endpoint.
+        coord: coordinate at the chain endpoint (fallback match).
+        append_to_tail: extend the tail when true, prepend to the head otherwise.
+
+    Returns:
+        ``(segment index, reverse)`` where ``reverse`` says the segment's stored
+        coordinate order must be flipped to join that endpoint, or ``None``.
+        A shared OSM node is a stronger match than an identical coordinate;
+        among equals the longest segment wins (at a junction it is more likely
+        the mainline), then relation order.
+    """
+    node_matches: List[Tuple[int, bool]] = []
+    coord_matches: List[Tuple[int, bool]] = []
+    for index in unused:
+        segment = segments[index]
+        if append_to_tail:
+            if segment.start_node == node_ref:
+                node_matches.append((index, False))
+            elif segment.end_node == node_ref:
+                node_matches.append((index, True))
+            elif segment.coords[0] == coord:
+                coord_matches.append((index, False))
+            elif segment.coords[-1] == coord:
+                coord_matches.append((index, True))
+            continue
+        if segment.end_node == node_ref:
+            node_matches.append((index, False))
+        elif segment.start_node == node_ref:
+            node_matches.append((index, True))
+        elif segment.coords[-1] == coord:
+            coord_matches.append((index, False))
+        elif segment.coords[0] == coord:
+            coord_matches.append((index, True))
+    for matches in (node_matches, coord_matches):
+        if matches:
+            return max(
+                matches, key=lambda match: (len(segments[match[0]].coords), -match[0])
+            )
+    return None
+
+
+def _chain_coords(
+    segments: Sequence[_ShapeSegment], chain: Sequence[Tuple[int, bool]]
+) -> Tuple[Point, ...]:
+    """Concatenate a chain in travel order, dropping duplicated junction points."""
+    points: List[Point] = []
+    for index, reversed_segment in chain:
+        coords = segments[index].coords
+        if reversed_segment:
+            coords = tuple(reversed(coords))
         for coord in coords:
             if not points or points[-1] != coord:
                 points.append(coord)
+    return tuple(points)
 
-    return _ShapeResult(tuple(points), skipped)
+
+def _chain_score(
+    points: Sequence[Point], stop_coords: Sequence[Point]
+) -> Tuple[int, float]:
+    """Main-chain score: stops served, then total length in metres.
+
+    Both components are "bigger is better", so the shape of a relation that
+    includes a stray fragment is determined by the stops it serves before its
+    length is considered.
+    """
+    covered = sum(1 for stop in stop_coords if _serves_stop(points, stop))
+    length = sum(
+        _distance_m(earlier, later) for earlier, later in zip(points, points[1:])
+    )
+    return covered, length
+
+
+def _serves_stop(points: Sequence[Point], stop: Point) -> bool:
+    """True when a chain vertex lies within :data:`_STOP_COVERAGE_M` of ``stop``."""
+    lat_threshold = _STOP_COVERAGE_M / 111320.0
+    lon_threshold = lat_threshold / max(math.cos(math.radians(stop[0])), 0.01)
+    for vertex in points:
+        if abs(vertex[0] - stop[0]) > lat_threshold:
+            continue
+        if abs(vertex[1] - stop[1]) > lon_threshold:
+            continue
+        if _distance_m(vertex, stop) <= _STOP_COVERAGE_M:
+            return True
+    return False
+
+
+def _distance_m(a: Point, b: Point) -> float:
+    """Great-circle distance in metres between two ``(lat, lon)`` pairs."""
+    lat1, lon1 = a
+    lat2, lon2 = b
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    h = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(min(1.0, h)))
+
+
+def _orient_to_stops(points: List[Point], stop_coords: Sequence[Point]) -> List[Point]:
+    """Reverse a shape so it starts at the first stop and ends at the last.
+
+    Relation stop members are usually in travel order (ptv2), so orienting the
+    shape the same way keeps a direction-0 trip's geometry monotonic; it changes
+    no drawn point and does nothing when the stops are absent or eccentric.
+    """
+    if len(points) < 2 or len(stop_coords) < 2:
+        return points
+    forward = _distance_m(points[0], stop_coords[0]) + _distance_m(
+        points[-1], stop_coords[-1]
+    )
+    backward = _distance_m(points[0], stop_coords[-1]) + _distance_m(
+        points[-1], stop_coords[0]
+    )
+    if backward < forward:
+        points.reverse()
+    return points
+
+
+def _synthesise_shape_from_stops(
+    shape: _ShapeResult, stops: Sequence[StopRef]
+) -> _ShapeResult:
+    """Use ordered stop coordinates when a relation only yields a two-point line.
+
+    Some relations (older and badly mapped bus routes, clipped relations) have
+    almost no way geometry but do carry ordered stop members. Their shape is a
+    single straight line between two way endpoints - exactly the beeline through
+    buildings the app must not draw. When at least three stops are resolved, the
+    stop polyline is measured geometry from the same relation and better than a
+    bare two-point line, so it replaces it.
+
+    The fallback is deliberately conservative so it can never make the drawn
+    geometry worse: it only fires for a two-point shape, and only when every
+    stop-to-stop hop is strictly shorter than the two-point span it replaces. A
+    relation whose stop members are not in travel order (the zigzag case) keeps
+    the bare line; fewer than three stops leaves nothing to build.
+    """
+    if len(shape.points) != 2 or len(stops) < 3:
+        return shape
+    stop_points = tuple((stop.lat, stop.lon) for stop in stops)
+    span = _distance_m(shape.points[0], shape.points[-1])
+    if span <= 0.0:
+        return shape
+    hops = [
+        _distance_m(earlier, later)
+        for earlier, later in zip(stop_points, stop_points[1:])
+    ]
+    if any(hop >= span for hop in hops):
+        return shape
+    return _ShapeResult(stop_points, shape.skipped)
 
 
 @dataclass(frozen=True)

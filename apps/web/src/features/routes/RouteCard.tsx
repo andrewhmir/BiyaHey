@@ -1,4 +1,5 @@
 import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
+import { memo } from 'react';
 import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
 import { LegStrip } from '../../components/transit/LegStrip';
 import { defaultT, type Translate } from '../../i18n/strings';
@@ -98,7 +99,13 @@ function arrivalLabel(endTime: string): string | null {
  * both invalid HTML and a lost list to screen readers (review I2). The
  * provenance chip is the only interactive content above the overlay.
  */
-export function RouteCard({ itinerary, sources, selected, onSelect, badge }: RouteCardProps) {
+export const RouteCard = memo(function RouteCard({
+  itinerary,
+  sources,
+  selected,
+  onSelect,
+  badge,
+}: RouteCardProps) {
   const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
   const cardName = `${itinerary.durationMin} min, ₱${formatFare(itinerary.fare.amount)}, ${transfersLabel(
@@ -203,4 +210,4 @@ export function RouteCard({ itinerary, sources, selected, onSelect, badge }: Rou
       </div>
     </div>
   );
-}
+});

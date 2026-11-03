@@ -92,13 +92,14 @@ function PlanView({
         <MapSlot mapPadding={mapPadding}>
           <MapView sources={plan.sources}>
             {/* One path per alternative; the selected itinerary is drawn
-                leg-by-leg in the mode colours. An explicit card tap re-fits the
-                camera to that route instead of the whole shortlist. */}
+                leg-by-leg in the mode colours. The camera follows the selected
+                route — Google-Maps-like: the answer fills the map, the other
+                options stay as muted numbered context. */}
             <RoutePathLayer
               itineraries={plan.itineraries}
               selectedId={selectedId}
               onSelect={setExplicitSelection}
-              fit={explicitSelection !== null ? 'selected' : 'all'}
+              fit="selected"
             />
           </MapView>
         </MapSlot>

@@ -66,6 +66,7 @@ export function LegStrip({
   const { t } = useT();
   const listId = useId();
   const interactive = onSelectLeg !== undefined;
+  const totalMinutes = legs.reduce((total, leg) => total + growFor(leg), 0);
   const barClass = size === 'md' ? 'h-3.5' : 'h-2.5';
   const labelClass =
     size === 'md'
@@ -92,6 +93,15 @@ export function LegStrip({
               ? `${t('routes.legMinutes', { minutes: leg.durationMin })} ${t('mode.walk')} · ${legDistanceLabel(leg.distanceM)}`
               : `${text} · ${t('routes.legMinutes', { minutes: leg.durationMin })}`;
           const style = { flex: `${growFor(leg)} 1 0%` };
+          /*
+           * A proportional strip gives a short leg a narrow column; the label
+           * under it would truncate to "1…" on a card. Below roughly a fifth of
+           * the ribbon the visible label is dropped and the segment keeps its
+           * accessible name (and the card summary still states the walking
+           * total), instead of showing a clipped fragment.
+           */
+          const share = totalMinutes > 0 ? growFor(leg) / totalMinutes : 1;
+          const showLabel = size === 'md' || legs.length <= 2 || share >= 0.18;
           const bar = (
             <span
               aria-hidden="true"
@@ -108,13 +118,15 @@ export function LegStrip({
           const body = (
             <>
               {bar}
-              <span
-                className={`mt-1 block min-w-0 truncate ${labelClass} ${
-                  active ? 'text-on-surface' : 'text-on-surface-variant'
-                }`}
-              >
-                {walk ? t('routes.legMinutes', { minutes: leg.durationMin }) : text}
-              </span>
+              {showLabel ? (
+                <span
+                  className={`mt-1 block min-w-0 truncate ${labelClass} ${
+                    active ? 'text-on-surface' : 'text-on-surface-variant'
+                  }`}
+                >
+                  {walk ? t('routes.legMinutes', { minutes: leg.durationMin }) : text}
+                </span>
+              ) : null}
               <span className="sr-only">{hidden}</span>
             </>
           );

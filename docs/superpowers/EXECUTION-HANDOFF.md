@@ -285,3 +285,77 @@ failed; Plan 2 may proceed. Do not describe Plan 1 as "phase-1 fully accepted".
     stop names); the independent UX/a11y reviewer did not return a report, so
     that pass is the Lead's screenshot/source review + the axe suites and the
     Playwright browser checks; no new API/BFF/data behaviour was added.
+
+## 2026-11-03 evening — route rendering, selection highlight, interaction smoothness
+
+Follow-up to the first live review. Three reported symptoms: (a) the map struggled to
+render the right routes and the selected route should stand out like Google Maps, (b) a
+straight line ran between origin and destination that is not a walkable/routable path,
+(c) the UI still felt choppy.
+
+**Root causes**
+
+1. **Corrupt GTFS shape geometry (the beelines).** `osm_routes._resolve_shape`
+   concatenated route-relation way members in relation order with no connectivity check,
+   so detached fragments became multi-kilometre straight jumps (GTFS `rail-3:shape`
+   sequence 1→3 jumped 13.4 km from Taft to North Ave; 89 of 489 shapes had a
+   consecutive-point gap above 1.5 km). `gtfs.py` also shared one shape between both
+   travel directions, but GTFS shapes are travel-order, so MOTIS sliced reverse legs
+   across the whole shape. MOTIS faithfully returned that geometry, the BFF priced
+   distance from it (inflated fares), and the map drew a solid line through buildings.
+2. **Selection did not read as the answer.** Alternatives were mode-coloured and heavily
+   cased (as loud as the selected route), the camera fitted the whole shortlist instead
+   of the selected route, and every card tap removed and re-added every source, layer and
+   marker — forcing MapLibre to rebuild render tiles (flash + 12–14 long tasks / 1.1–1.5 s
+   main-thread work per selection under 4× CPU throttle).
+3. **Smaller polish:** a short leg's strip label truncated to "1…" on cards.
+
+**Fixes**
+
+- **Data pipeline (Task 7, TDD, 6 new geometry tests):** way members stitched by shared
+  OSM node (reversed as needed), main chain chosen by stops-served then length, detached
+  fragments dropped and counted; `_resolve` resolves stops first and adds a guarded
+  ordered-stop fallback for two-point shapes; `gtfs.py` emits one shape per travel
+  direction (`<route_id>:shape:0|1`, trips reference their own). Feed rebuilt
+  (`npm run data:build -- --publish-only`), routing recreated and reimported, API
+  restarted. Shapes: 189,141 → 378,282 rows, sha256
+  `0dff35d264dd24a19ce93ac61c5f4b4972d243c4b66283a82b19c0ee073a5fdd`; OSM-derived
+  shapes with >1.5 km gaps **88 → 0**; MRT-3 leg 29,981 m / 13,369 m max segment →
+  **9,257 m vs 8,260 m beeline, max segment 1,012 m**; worst sampled transit leg's
+  straight segment 30,551 m → 1,443 m. Golden fare bounds re-pinned from a live re-probe
+  (distance-based fares were inflated by the broken shapes — e.g. Novaliches→Cubao
+  ₱104.46 → ₱48.64 for the same two ordinary city-bus legs).
+- **Map layer:** style ownership split from data updates — sources/layers/markers are
+  created once per style load and every selection/filter/walkthrough change only calls
+  `setData()`/`setPaintProperty()`; markers are reused. Highlight hierarchy is now
+  Google-Maps-like: the selected itinerary keeps a 16 px white casing and 8.5 px mode
+  colours, alternatives are one neutral grey 3.2 px line at 0.55 with numbered badges,
+  and near-duplicate fan-out paths (within ~60 m of the selected corridor) collapse so a
+  badge never sits on the selected line. Camera defaults to the selected route (350 ms
+  fit) on the shortlist; fallback chords are drawn dashed/muted on a
+  `route-approximate` source and counted in `data-approximate-legs` instead of claiming
+  a solid walkable path.
+- **Polish:** `RouteCard` memoised; narrow leg-strip labels hidden (accessible name and
+  card summary keep the text).
+
+**Verification (2026-11-03 evening, rebuilt app + stack)**
+
+- `pipelines pytest` **153 passed**; `npm run validate:data` / `check:fares` exit 0;
+  golden live suite **2 passed / 1 skipped** against the re-pinned contract.
+- `npm run lint` / `npm run typecheck` green; `npm test` **518 passed / 4 skipped**
+  (45 files, includes the bundle budget); e2e **11 passed** (dev flow, map-rendering with
+  the new `data-approximate-legs` guard, ux-v2, preview offline/SW); all 7 README
+  screenshots regenerated from the built app.
+- 4× CPU-throttled, headed Chromium (GPU, production preview): card selection click
+  latency 315–345 ms, p50 frame **6 ms**, p95 **12–24 ms**, zero long tasks on the sheet
+  drag; no console/page errors.
+- What the app shows now: the selected route follows EDSA/streets leg by leg, the camera
+  tracks the selected card, and origin→destination are connected only by routed geometry.
+
+**Residual (recorded, not hidden):** the 11 curated jeep/UV routes whose inventory has
+landmark endpoints but no way geometry still have two-point shapes and are drawn as the
+dashed approximate chord; a few intercity/terminal-loop bus legs are genuine detours
+(length/beeline up to 1.78, worst straight segment < 1.5 km); the phase-2 Lighthouse
+verdict is still PARTIAL (not re-run in this pass); the production preview is served on
+:5173 (Vite preview) for live testing, while the Playwright dev project runs against the
+dev server.

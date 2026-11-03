@@ -285,7 +285,8 @@ The stage (all offline, reads local files only):
 
 Measured on 2026-11-01 (final fix wave, after the mode gate): the publish stage remains
 **≈ 6 min** (first measured 383.9 s; the fix-wave republish is the same order of
-magnitude). Expected console output:
+magnitude). The 2026-11-03 geometry fix republished the feed in the same window. Expected
+console output:
 
 ```
 publish: 489 routes, 160392 trips, 4562 stops
@@ -294,7 +295,7 @@ coverage: 12/16 curated routes in the feed (75.0%)
 aliases: 8 used, 0 invalid (data\routes\landmark-aliases.yaml)
 fare tables: 6 fares, 469 route rules, 3 unrepresentable
 gtfs: data\build\gtfs\gtfs.zip
-manifest: data\build\manifest.json (sha256 1c8df31ecbcb8b40e4e2f0a0a5267c8e27eba9fd17a3488ac8264fec81c94296)
+manifest: data\build\manifest.json (sha256 0dff35d264dd24a19ce93ac61c5f4b4972d243c4b66283a82b19c0ee073a5fdd)
 report: data\build\build-report.json
 licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices present in artifact)
 ```
@@ -302,6 +303,19 @@ licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices pr
 The five fewer routes than the pre-gate 494 are the excluded families (7 unique route
 ids; the extract carries duplicate relations for `rail-ss`/`rail-mnc`/`rail-mrt9`). The
 zip sha256 is byte-identical across rebuilds of the same inputs (deterministic).
+
+**Shapes (`shapes.txt`).** Since 2026-11-03 the feed publishes **one shape per travel
+direction** — `<route_id>:shape:0` and its exact reverse `<route_id>:shape:1`, with each
+trip referencing its own direction's shape. A single shared shape is not travel-ordered
+for the return trip, and MOTIS maps a trip's stops onto its shape in stop order; that
+mismatch was drawing whole-trip beelines on reverse legs (for example MRT-3 northbound
+with a 4.8 km straight segment). The feed therefore carries 978 shape ids / 378,282 shape
+rows instead of 489 / 189,141. Route-relation geometry is also stitched by shared OSM
+node before it becomes a shape (`osm_routes._resolve_shape`): relation order and member
+direction can no longer splice detached fragments into a straight jump. After the fix,
+**zero** OSM-derived shapes have a consecutive-point gap above 1.5 km; the only remaining
+straight-line shapes are the 11 curated jeep/UV routes whose inventory carries landmark
+endpoints but no way geometry (12 two-point shapes, one per direction).
 
 Artifacts:
 

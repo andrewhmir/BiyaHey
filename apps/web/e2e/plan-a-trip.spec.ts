@@ -1,4 +1,4 @@
-﻿import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   MODE_COLOURS,
   MAP_DEFAULT_CENTER,
@@ -137,8 +137,10 @@ test('directions form → route options → trip detail map + leg focus → save
   expect(planMap.layerIds['route-ride']).toBe(true);
   expect(planMap.layerIds['route-transfers']).toBe(true);
   expect(planMap.layerIds['route-leg-hit']).toBe(false);
-  expect(planMap.layerIds['route-focus-halo']).toBe(false);
-  expect(planMap.layerIds['route-focus-line']).toBe(false);
+  // Focus layers stay mounted on the shortlist but carry no feature until a leg
+  // is focused (the detail screen owns that interaction).
+  expect(planMap.layerIds['route-focus-halo']).toBe(true);
+  expect(planMap.layerIds['route-focus-line']).toBe(true);
   if (count > 1) {
     // Alternatives are drawn one feature per *unique physical path*:
     // RoutePathLayer collapses MOTIS fan-out duplicates (the same corridor
@@ -152,9 +154,9 @@ test('directions form → route options → trip detail map + leg focus → save
       altFeatures.map((feature) => String(feature.properties.itineraryId ?? '')),
     );
     expect(alternativeIds.size).toBe(altFeatures.length);
-    expect(planMap.layerIds['route-alt-casing']).toBe(altFeatures.length > 0);
-    expect(planMap.layerIds['route-alt-line']).toBe(altFeatures.length > 0);
-    expect(planMap.layerIds['route-alt-hit']).toBe(altFeatures.length > 0);
+    expect(planMap.layerIds['route-alt-casing']).toBe(true);
+    expect(planMap.layerIds['route-alt-line']).toBe(true);
+    expect(planMap.layerIds['route-alt-hit']).toBe(true);
   }
 
   // 5. The selected itinerary is drawn **leg by leg** in mode colours: one
@@ -249,12 +251,13 @@ test('directions form → route options → trip detail map + leg focus → save
   expect(detailMap.features['route-selected']).toHaveLength(legCount);
   expect(detailMap.layerIds['route-ride']).toBe(true);
   expect(detailMap.layerIds['route-walk']).toBe(true);
-  // Detail draws one itinerary only: no alternative paths.
-  expect(detailMap.layerIds['route-alt-line']).toBe(false);
+  // Detail draws one itinerary only: the alternative layers exist but their
+  // source is empty.
+  expect(detailMap.layerIds['route-alt-line']).toBe(true);
   expect(detailMap.features['route-transfers']).toHaveLength(legCount - 1);
   // Whole-route emphasis before a leg is focused.
   expect(detailMap.state.activeLeg).toBe('');
-  expect(detailMap.layerIds['route-focus-halo']).toBe(false);
+  expect(detailMap.layerIds['route-focus-halo']).toBe(true);
   expect(Number(detailMap.paint['route-ride/line-opacity'])).toBe(1);
 
   // 8. Signage is on the ride legs (v2 drops the invented landmark fallback).
@@ -273,7 +276,14 @@ test('directions form → route options → trip detail map + leg focus → save
     'aria-pressed',
     'true',
   );
-  await waitForMapSources(page, ['route-focus']);
+  await expect
+    .poll(
+      async () =>
+        requireMap(await readMap(page, { sources: ['route-focus'] })).features['route-focus']
+          .length,
+      { timeout: 20_000 },
+    )
+    .toBe(1);
   const focusedMap = requireMap(
     await readMap(page, {
       layers: [...FOCUS_LAYERS],

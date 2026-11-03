@@ -156,13 +156,16 @@ describe('RouteCard v2 anatomy', () => {
 
   it('renders legacy payloads whose legs carry no geometry', () => {
     // Cached/saved snapshots from before path geometry existed: straight
-    // from→to legs must still render the ribbon and the card.
-    const itinerary = makeItinerary([
-      makeLeg({ mode: 'walk', durationMin: 3 }),
-      makeLeg({ mode: 'jeepney', durationMin: 18 }),
-      makeLeg({ mode: 'bus', durationMin: 12 }),
-      makeLeg({ mode: 'walk', durationMin: 4 }),
-    ]);
+    // from→to legs must still render the ribbon and the card. The builder now
+    // emits a routed polyline by default, so strip it here on purpose.
+    const itinerary = makeItinerary(
+      [
+        makeLeg({ mode: 'walk', durationMin: 3 }),
+        makeLeg({ mode: 'jeepney', durationMin: 18 }),
+        makeLeg({ mode: 'bus', durationMin: 12 }),
+        makeLeg({ mode: 'walk', durationMin: 4 }),
+      ].map((leg) => ({ ...leg, geometry: undefined })),
+    );
     expect(itinerary.legs.every((leg) => leg.geometry === undefined)).toBe(true);
 
     renderCard({ ...itinerary });

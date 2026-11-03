@@ -159,7 +159,19 @@ export class MockMap {
     return this;
   });
 
-  setPaintProperty = vi.fn((): this => this);
+  setPaintProperty = vi.fn((layerId: string, property: string, value: unknown): this => {
+    const layer = this.layers.get(layerId);
+    if (layer !== undefined) {
+      const paint = (layer.paint as Record<string, unknown> | undefined) ?? {};
+      if (value === null || value === undefined) {
+        delete paint[property];
+      } else {
+        paint[property] = value;
+      }
+      layer.paint = paint;
+    }
+    return this;
+  });
 
   setPadding = vi.fn((padding: Partial<MockMapPadding>): this => {
     this.padding = { ...this.padding, ...padding };
