@@ -1,8 +1,9 @@
 import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
 import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
+import { LegStrip } from '../../components/transit/LegStrip';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
-import { ModeChips } from './ModeChips';
+import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
 
 /**
  * The single badge a card may show (spec §11 screen 3). `BEST` belongs to the
@@ -38,26 +39,6 @@ const ARRIVAL_FORMATTER = new Intl.DateTimeFormat('en-PH', {
   minute: '2-digit',
   timeZone: 'Asia/Manila',
 });
-
-/**
- * Format a PHP amount without recomputing it (R45): whole pesos stay whole,
- * fractional fares keep two decimals.
- */
-export function formatFare(amount: number): string {
-  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-}
-
-/** Taglish transfer wording: `direct` for zero, `N sakay` otherwise. */
-export function transfersLabel(transfers: number, t: Translate = defaultT): string {
-  return transfers <= 0 ? t('routes.direct') : t('routes.transfers', { count: transfers });
-}
-
-/** Walk total in metres under 1 km, otherwise one decimal of a kilometre. */
-export function walkLabel(distanceM: number, t: Translate = defaultT): string {
-  const distance =
-    distanceM >= 1000 ? `${(distanceM / 1000).toFixed(1)} km` : `${Math.round(distanceM)} m`;
-  return t('routes.walk', { distance });
-}
 
 /**
  * The matrix label for the mandatory fare provenance line, derived strictly
@@ -101,85 +82,123 @@ function arrivalLabel(endTime: string): string | null {
 }
 
 /**
- * Provenance chip body is owned by the shared `ProvenanceChip` (Task 7); the
- * route card only supplies the itinerary's ids and the response's rows.
+ * One route alternative, Kalsada v2 (spec §2 route options, §4.1).
+ *
+ * Anatomy, top to bottom: the big ETA + arrival line with the single badge and
+ * the API fare on the right; the signature leg-strip ribbon (the Moovit-style
+ * "paths you will take"); the transfers/walk meta line; and the mandatory fare
+ * provenance line (matrix + effectivity date, R45/R57) with an `estimate` chip
+ * when the quote is not official.
+ *
+ * The select action is a full-card overlay button: it keeps the whole card
+ * tappable and keyboard-operable with a short accessible name, while the card
+ * content (including the leg-strip `<ol>`) stays outside the button. A `<button>`
+ * may only contain phrasing content and its descendant semantics are suppressed
+ * by `childrenPresentational`, so nesting the ordered list inside it would be
+ * both invalid HTML and a lost list to screen readers (review I2). The
+ * provenance chip is the only interactive content above the overlay.
  */
 export function RouteCard({ itinerary, sources, selected, onSelect, badge }: RouteCardProps) {
   const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
+  const cardName = `${itinerary.durationMin} min, ₱${formatFare(itinerary.fare.amount)}, ${transfersLabel(
+    itinerary.transfers,
+    t,
+  )}, ${walkLabel(itinerary.walkDistanceM, t)}`;
 
   return (
     <div
-      className={`flex w-full flex-col rounded-card border transition ${
-        selected
-          ? 'border-primary bg-surface-container-lowest shadow-elevation-2'
-          : 'border-outline-variant bg-surface-container shadow-none'
+      data-testid="route-card"
+      data-selected={selected ? 'true' : 'false'}
+      className={`relative flex w-full flex-col overflow-hidden rounded-card bg-surface-container-lowest transition ${
+        selected ? 'shadow-elevation-2' : 'shadow-none'
       }`}
     >
+      {/* The select action: a full-card overlay with a short, honest name. The
+          focus ring is drawn INSIDE the box: the card clips overflow, so a
+          positive outline offset would render the ring outside the clip box and
+          keyboard users would see no focus indicator (WCAG 2.4.7). */}
       <button
         type="button"
-        data-testid="route-card"
-        data-selected={selected ? 'true' : 'false'}
+        data-testid="route-card-select"
         aria-pressed={selected}
+        aria-label={cardName}
         onClick={() => onSelect(itinerary.id)}
-        className="flex w-full flex-col gap-3 rounded-card p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-      >
-        <span className="flex items-start justify-between gap-2">
-          <span className="flex flex-col">
-            <span data-testid="route-eta" className="text-2xl font-bold leading-8 text-on-surface">
+        className={`absolute inset-0 rounded-card border text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-focus-ring ${
+          selected
+            ? 'border-primary ring-2 ring-primary-container'
+            : 'border-outline-variant hover:border-outline'
+        }`}
+      />
+
+      <div className="pointer-events-none relative z-10 flex w-full flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col">
+            <span
+              data-testid="route-eta"
+              className="text-2xl font-bold leading-8 tracking-tight text-on-surface"
+            >
               {itinerary.durationMin} min
             </span>
             {arrival !== null ? (
-              <span className="text-sm text-on-surface-variant">
+              <span className="text-sm leading-5 text-on-surface-variant">
                 {t('routes.arrive', { time: arrival })}
               </span>
             ) : null}
-          </span>
-          {badge !== undefined ? (
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            {badge !== undefined ? (
+              <span
+                data-testid="route-badge"
+                className="rounded-pill bg-primary px-2.5 py-1 text-[10px] font-bold uppercase leading-4 tracking-[0.08em] text-on-primary"
+              >
+                {t(BADGE_KEYS[badge])}
+              </span>
+            ) : null}
             <span
-              data-testid="route-badge"
-              className="rounded-pill bg-primary px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-on-primary"
+              data-testid="fare-amount"
+              className="text-2xl font-extrabold leading-8 tracking-tight text-on-surface"
             >
-              {t(BADGE_KEYS[badge])}
+              ₱{formatFare(itinerary.fare.amount)}
             </span>
-          ) : null}
-        </span>
+          </div>
+        </div>
 
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-on-surface-variant">
+        {/* The signature leg ribbon: one proportional, mode-coloured segment
+            per leg. The card's text already names each leg, so colour is never
+            the only channel. It stays outside the overlay button so the ordered
+            list semantics survive (review I2). */}
+        <LegStrip legs={itinerary.legs} size="sm" />
+
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-5 text-on-surface-variant">
           <span>{transfersLabel(itinerary.transfers, t)}</span>
           <span aria-hidden="true">·</span>
           <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
-        </span>
+        </div>
 
-        <span className="flex flex-col gap-0.5 rounded-card border border-fare-border bg-fare-bg px-3 py-2 text-on-fare-bg">
-          <span className="flex flex-wrap items-center gap-2">
-            <span data-testid="fare-amount" className="text-xl font-semibold leading-7">
-              ₱{formatFare(itinerary.fare.amount)}
-            </span>
-            {/* An estimated quote (rail band, free-ride override) is never
-                presented as an official matrix fare. Task 6 owns the full
-                fare breakdown; the card only flags the confidence. */}
-            {itinerary.fare.confidence === 'estimated' ? (
-              <span
-                data-testid="fare-estimate"
-                className="rounded-pill border border-fare-border px-1.5 py-0.5 text-[11px] font-medium leading-4"
-              >
-                {t('common.estimate')}
-              </span>
-            ) : null}
-          </span>
-          <span data-testid="fare-date" className="text-xs leading-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Mandatory provenance: every displayed fare carries the matrix and
+              the effectivity date the API returned (R45/R57). */}
+          <span data-testid="fare-date" className="text-xs leading-4 text-on-surface-variant">
             {fareEffectiveLine(itinerary.fare, t)}
           </span>
-        </span>
+          {/* An estimated quote (rail band, free-ride override) is never
+              presented as an official matrix fare. */}
+          {itinerary.fare.confidence === 'estimated' ? (
+            <span
+              data-testid="fare-estimate"
+              className="rounded-pill border border-fare-border bg-fare-bg px-2 py-0.5 text-[11px] font-semibold leading-4 text-on-fare-bg"
+            >
+              {t('common.estimate')}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
-        <ModeChips modes={itinerary.modes} />
-      </button>
-
-      {/* Task 7: the chip lives beside the select action, not inside it — a
-          link nested in a button would be invalid and would also select the
-          card when the rider only wanted the provenance detail. */}
-      <div className="px-4 pb-3">
+      {/* The chip lives beside the select action, above the overlay: a link
+          inside the overlay button would be invalid nesting and would also
+          select the card when the rider only wanted the provenance detail. */}
+      <div className="relative z-20 border-t border-outline-variant px-4 pb-2">
         <ProvenanceChip sourcesFromItinerary={itinerary.sources} knownSources={sources} />
       </div>
     </div>

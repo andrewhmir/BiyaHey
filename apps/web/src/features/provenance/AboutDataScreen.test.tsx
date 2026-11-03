@@ -23,8 +23,7 @@ import { AboutDataScreen } from './AboutDataScreen';
 // contrast is reviewed against `tokens.css` instead.
 const AXE_OPTIONS = { rules: { 'color-contrast': { enabled: false } } };
 
-const PLAN_ENTRY =
-  '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao';
+const PLAN_ENTRY = '/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao';
 
 function newQueryClient(): QueryClient {
   return new QueryClient({
@@ -148,7 +147,9 @@ describe('AboutDataScreen', () => {
     await user.click((await screen.findAllByTestId('dataset-card'))[0]!);
 
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(/wala pang naka-configure na report link/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/wala pang naka-configure na report link/i),
+    ).toBeInTheDocument();
     expect(within(dialog).queryByRole('link', { name: /report/i })).not.toBeInTheDocument();
   });
 
@@ -252,7 +253,10 @@ describe('ProvenanceChip', () => {
 
   it('marks a partly missing source set without rendering undefined', () => {
     render(
-      <ProvenanceChip sourcesFromItinerary={['osm', 'photon']} knownSources={[sourcesResponse[0]!]} />,
+      <ProvenanceChip
+        sourcesFromItinerary={['osm', 'photon']}
+        knownSources={[sourcesResponse[0]!]}
+      />,
     );
 
     const chip = screen.getByTestId('provenance-chip');
@@ -269,9 +273,7 @@ describe('About-data entry points', () => {
     const chips = await screen.findAllByTestId('provenance-chip');
     await user.click(within(chips[0]!).getByRole('link'));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Pinagmulan ng datos' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
     expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
   });
 
@@ -284,24 +286,24 @@ describe('About-data entry points', () => {
     const credit = screen.getByRole('dialog', { name: 'Pinagmulan ng data' });
     await user.click(within(credit).getByRole('link', { name: /about data/i }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Pinagmulan ng datos' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
   });
 
   it('reaches About data from the trip-detail fare footer', async () => {
     const { user } = renderApp(PLAN_ENTRY);
 
     await screen.findAllByTestId('route-card');
-    const detail = screen.getAllByRole('button', { name: /^detalye ng rutang \d+ min$/i })[0]!;
+    // UX v2 RouteCard: one "Tingnan ang detalye" action under the selected card
+    // (the ranked lead), with the route's duration in its accessible name.
+    const detail = screen.getAllByRole('button', {
+      name: /tingnan ang detalye ng rutang \d+ min/i,
+    })[0]!;
     await user.click(detail);
     expect(await screen.findByText('Detalye ng biyahe')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: /about data/i }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Pinagmulan ng datos' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
   });
 
   it('offers an About-data entry from Home', async () => {
@@ -316,9 +318,7 @@ describe('About-data entry points', () => {
 
     await user.click(screen.getByRole('link', { name: /about data/i }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Pinagmulan ng datos' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
     expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
   });
 
@@ -330,9 +330,7 @@ describe('About-data entry points', () => {
     expect(await screen.findByRole('search')).toBeInTheDocument();
     // R89: `/search` is a directions form; the shortcut focuses the first
     // `input[type="search"]`, which is the From picker.
-    await waitFor(() =>
-      expect(screen.getByRole('searchbox', { name: /mula sa/i })).toHaveFocus(),
-    );
+    await waitFor(() => expect(screen.getByRole('searchbox', { name: /mula sa/i })).toHaveFocus());
   });
 
   it('does not hijack / while the rider is typing', async () => {
@@ -385,9 +383,6 @@ describe('About-data entry points', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: /about data/i })).toHaveAttribute(
-      'href',
-      '/sources',
-    );
+    expect(screen.getByRole('link', { name: /about data/i })).toHaveAttribute('href', '/sources');
   });
 });

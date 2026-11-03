@@ -1,7 +1,11 @@
 /**
- * Philippine-local clock formatting shared by the trip detail and the route
- * cards. Times are always rendered in Asia/Manila regardless of the device or
- * test-runner timezone, matching the API's `+08:00` timestamps.
+ * Philippine-local clock formatting shared by every screen that prints a time.
+ *
+ * Times are always rendered in Asia/Manila regardless of the device or
+ * test-runner timezone, matching the API's `+08:00` timestamps. The rider-facing
+ * format is the Philippine convention: 12-hour with a regular-space AM/PM
+ * (`8:31 AM`), built by hand so the output never depends on an ICU
+ * narrow-no-break-space or a locale variant.
  */
 const CLOCK_FORMATTER = new Intl.DateTimeFormat('en-PH', {
   hour: '2-digit',
@@ -10,7 +14,7 @@ const CLOCK_FORMATTER = new Intl.DateTimeFormat('en-PH', {
   timeZone: 'Asia/Manila',
 });
 
-/** `HH:mm` in Philippine time, or `null` for a missing/invalid timestamp. */
+/** `8:31 AM` in Philippine time, or `null` for a missing/invalid timestamp. */
 export function formatClockTime(iso: string | undefined): string | null {
   if (iso === undefined) {
     return null;
@@ -19,7 +23,11 @@ export function formatClockTime(iso: string | undefined): string | null {
   if (Number.isNaN(time.getTime())) {
     return null;
   }
-  return CLOCK_FORMATTER.format(time);
+  const [rawHour = '0', minute = '00'] = CLOCK_FORMATTER.format(time).split(':');
+  const hour = Number(rawHour) % 24;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minute} ${suffix}`;
 }
 
 /**

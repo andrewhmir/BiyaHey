@@ -61,7 +61,10 @@ export function AboutDataScreen({ onBack }: AboutDataScreenProps) {
             </button>
           ) : null}
           <div className="flex min-w-0 flex-col">
-            <h1 className="text-lg font-semibold tracking-tight">{t('about.title')}</h1>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
+              {t('home.brand')}
+            </p>
+            <h1 className="text-xl font-bold tracking-tight">{t('about.title')}</h1>
             <p className="text-sm text-on-surface-variant">{t('about.subtitle')}</p>
           </div>
         </div>

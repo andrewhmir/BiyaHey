@@ -67,6 +67,44 @@ function isGeoJSONSource(source: unknown): source is MockGeoJSONSourceInput {
 }
 
 export const mapInstances: MockMap[] = [];
+/** Every Marker created since `resetMapLibreMock()`; cleared by the same call. */
+export const markers: MockMarker[] = [];
+
+/**
+ * Minimal MapLibre `Marker` double: records the element, position and the map it
+ * was added to, so tests can assert origin/destination/alternative markers and
+ * the layer's teardown.
+ */
+export class MockMarker {
+  readonly element: HTMLElement;
+  lngLat: [number, number] | null = null;
+  map: MockMap | null = null;
+
+  constructor(options: { element: HTMLElement }) {
+    this.element = options.element;
+    markers.push(this);
+  }
+
+  setLngLat = vi.fn((lngLat: [number, number]): this => {
+    this.lngLat = lngLat;
+    return this;
+  });
+
+  addTo = vi.fn((map: MockMap): this => {
+    this.map = map;
+    return this;
+  });
+
+  remove = vi.fn((): this => {
+    this.map = null;
+    return this;
+  });
+
+  getElement(): HTMLElement {
+    return this.element;
+  }
+}
+
 
 export class MockMap {
   readonly options: MockMapOptions;
@@ -207,9 +245,10 @@ export class MockMap {
   }
 }
 
-/** Forget maps created by an earlier test. Called from the shared test setup. */
+/** Forget maps and markers created by an earlier test. Called from the shared test setup. */
 export function resetMapLibreMock(): void {
   mapInstances.length = 0;
+  markers.length = 0;
 }
 
 /**
@@ -222,6 +261,7 @@ export function resetMapLibreMock(): void {
  */
 export const mockMapLibre = {
   Map: MockMap,
+  Marker: MockMarker,
   setWorkerUrl: (): void => undefined,
   default: undefined as unknown,
 };

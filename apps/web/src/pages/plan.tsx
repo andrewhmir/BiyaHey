@@ -5,7 +5,7 @@ import { AppShell } from '../components/layout/AppShell';
 import { MapSlot } from '../components/layout/MapSlot';
 import { PageNotice } from '../components/layout/PageNotice';
 import { MapView } from '../components/map/MapView';
-import { RoutePolylines } from '../components/map/RoutePolylines';
+import { RoutePathLayer } from '../components/map/RoutePathLayer';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 import {
   RouteOptionsScreen,
@@ -91,10 +91,14 @@ function PlanView({
       map={
         <MapSlot mapPadding={mapPadding}>
           <MapView sources={plan.sources}>
-            <RoutePolylines
+            {/* One path per alternative; the selected itinerary is drawn
+                leg-by-leg in the mode colours. An explicit card tap re-fits the
+                camera to that route instead of the whole shortlist. */}
+            <RoutePathLayer
               itineraries={plan.itineraries}
               selectedId={selectedId}
               onSelect={setExplicitSelection}
+              fit={explicitSelection !== null ? 'selected' : 'all'}
             />
           </MapView>
         </MapSlot>

@@ -1,12 +1,13 @@
 import type { DataSource, FareQuote } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import { SAVED_TRIPS_KEY, readSavedTrips } from '../../lib/savedTripsStore';
 import { AppRoutes } from '../../routes';
-import { cachedTrip, clearPlanCache, rememberPlan } from '../routes/planCache';
+import { makeItinerary, makeLeg, makeRailTrip, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
 import {
   planCubaoAyalaResponse,
   planLong15LegsResponse,
@@ -14,21 +15,72 @@ import {
   planSuccessHandler,
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
+import { cachedTrip, clearPlanCache, rememberPlan } from '../routes/planCache';
 import { FareBreakdown } from './FareBreakdown';
 import { StopsList } from './StopsList';
-import { TripDetailScreen } from './TripDetailScreen';
-import { SAVED_TRIPS_KEY, readSavedTrips } from '../../lib/savedTripsStore';
+import {
+  TripDetailScreen,
+  type TripMapRenderer,
+  type TripMapRenderState,
+} from './TripDetailScreen';
 
 // R52: jsdom has no canvas, so axe's colour-contrast rule is noise here.
 const AXE_OPTIONS = { rules: { 'color-contrast': { enabled: false } } };
 
 const MRT_PLAN = planMrt3CubaoAyalaResponse;
 const MRT_ITINERARY = MRT_PLAN.itineraries[0]!;
-const LONG_ITINERARY = planLong15LegsResponse.itineraries[0]!;
+const LONG_PLAN = planLong15LegsResponse;
+const LONG_ITINERARY = LONG_PLAN.itineraries[0]!;
 const LONG_NAME = 'Boni MRT-3 Station Northbound Stairs beside Boni Avenue Hall';
 
-function renderDetail(itinerary = MRT_ITINERARY) {
-  return render(<TripDetailScreen itinerary={itinerary} sources={MRT_PLAN.sources} />);
+interface MapStub {
+  calls: TripMapRenderState[];
+  renderMap: TripMapRenderer;
+}
+
+/** `renderMap` double that records every state the screen hands to the map. */
+function makeMapStub(): MapStub {
+  const calls: TripMapRenderState[] = [];
+  return {
+    calls,
+    renderMap: (state) => {
+      calls.push(state);
+      return (
+        <div
+          data-testid="map-stub"
+          data-active-leg={state.activeLegIndex === null ? 'none' : String(state.activeLegIndex)}
+        />
+      );
+    },
+  };
+}
+
+function latestCall(stub: MapStub): TripMapRenderState {
+  const call = stub.calls[stub.calls.length - 1];
+  if (call === undefined) {
+    throw new Error('renderMap was never called');
+  }
+  return call;
+}
+
+interface RenderDetailOptions {
+  renderMap?: TripMapRenderer;
+  savedSnapshotAt?: string;
+  sources?: readonly DataSource[];
+}
+
+function renderDetail(
+  itinerary = MRT_ITINERARY,
+  { renderMap, savedSnapshotAt, sources = MRT_PLAN.sources }: RenderDetailOptions = {},
+) {
+  return render(
+    <TripDetailScreen
+      itinerary={itinerary}
+      sources={sources}
+      renderMap={renderMap}
+      savedSnapshotAt={savedSnapshotAt}
+    />,
+  );
 }
 
 function renderApp(entry: string, plan?: typeof MRT_PLAN) {
@@ -47,6 +99,17 @@ function renderApp(entry: string, plan?: typeof MRT_PLAN) {
   );
 }
 
+/** jsdom has no `scrollIntoView`; install a spy and undo it after each test. */
+function stubScrollIntoView() {
+  const spy = vi.fn();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    value: spy,
+    writable: true,
+    configurable: true,
+  });
+  return spy;
+}
+
 let user: UserEvent;
 
 beforeEach(() => {
@@ -57,7 +120,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   clearPlanCache();
+  delete (Element.prototype as unknown as { scrollIntoView?: () => void }).scrollIntoView;
 });
 
 describe('TripDetailScreen', () => {
@@ -76,42 +141,168 @@ describe('TripDetailScreen', () => {
   function itineraryWithLegPatch(patch: Record<string, unknown>) {
     return {
       ...MRT_ITINERARY,
-      legs: MRT_ITINERARY.legs.map((leg) =>
-        leg.mode === 'mrt3' ? { ...leg, ...patch } : leg,
-      ),
+      legs: MRT_ITINERARY.legs.map((leg) => (leg.mode === 'mrt3' ? { ...leg, ...patch } : leg)),
     };
   }
 
-  it('renders leg instructions with signage to look for and landmark hints', () => {
+  it('renders the sticky map header and hands renderMap the whole route by default', () => {
+    const stub = makeMapStub();
+    renderDetail(MRT_ITINERARY, { renderMap: stub.renderMap });
+
+    expect(screen.getByTestId('trip-header')).toHaveClass('sticky');
+    expect(screen.getByTestId('trip-header')).toHaveClass('top-0');
+    expect(screen.getByTestId('trip-map')).toHaveAttribute('role', 'region');
+    expect(screen.getByTestId('map-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('map-stub')).toHaveAttribute('data-active-leg', 'none');
+    expect(latestCall(stub).itinerary).toBe(MRT_ITINERARY);
+    expect(latestCall(stub).activeLegIndex).toBeNull();
+    expect(screen.queryByTestId('trip-map-placeholder')).toBeNull();
+  });
+
+  it('renders an aria-hidden placeholder map when no renderer is supplied', () => {
     renderDetail();
 
-    expect(screen.getByText(/look for: MRT-3 \/ Ayala/i)).toBeInTheDocument();
-    expect(screen.getByText(/landmark: Farmers Plaza/i)).toBeInTheDocument();
-    // Every instruction has a landmark line, including when the API sent none.
-    expect(screen.getByText(/landmark: walang landmark — use the stop name/i)).toBeInTheDocument();
-    expect(screen.getAllByTestId('leg-row')).toHaveLength(3);
+    expect(screen.getByTestId('trip-map')).toBeInTheDocument();
+    const placeholder = screen.getByTestId('trip-map-placeholder');
+    expect(placeholder).toHaveAttribute('aria-hidden', 'true');
+    expect(placeholder).toHaveClass('bg-surface-container-low');
+    expect(screen.queryByTestId('map-stub')).toBeNull();
+  });
+
+  it('focuses a leg from its row header and syncs the map with the row state', async () => {
+    const stub = makeMapStub();
+    renderDetail(MRT_ITINERARY, { renderMap: stub.renderMap });
+
+    const focusButtons = screen.getAllByTestId('leg-focus');
+    expect(focusButtons).toHaveLength(3);
+    // The accessible name carries the leg number so E2E/screen readers can
+    // target one specific leg (Lead integration requirement).
+    expect(focusButtons[1]).toHaveAccessibleName(/hakbang 2: sakay mrt-3 papuntang ayala/i);
+
+    await user.click(focusButtons[1]!);
+
+    const rows = screen.getAllByTestId('leg-row');
+    expect(rows[1]).toHaveAttribute('aria-current', 'step');
+    expect(rows[1]).toHaveAttribute('data-active', 'true');
+    expect(rows[0]).not.toHaveAttribute('aria-current');
+    expect(latestCall(stub).activeLegIndex).toBe(1);
+    expect(screen.getByTestId('map-stub')).toHaveAttribute('data-active-leg', '1');
+
+    // Re-pressing the focused row returns to the whole-route emphasis.
+    await user.click(focusButtons[1]!);
+    expect(screen.getAllByTestId('leg-row')[1]).not.toHaveAttribute('aria-current');
+    expect(latestCall(stub).activeLegIndex).toBeNull();
+  });
+
+  it('focuses a leg from the interactive strip segment', async () => {
+    const stub = makeMapStub();
+    renderDetail(MRT_ITINERARY, { renderMap: stub.renderMap });
+
+    const segments = screen.getAllByTestId('leg-strip-segment');
+    expect(segments).toHaveLength(3);
+
+    await user.click(segments[2]!);
+    expect(latestCall(stub).activeLegIndex).toBe(2);
+    expect(screen.getAllByTestId('leg-row')[2]).toHaveAttribute('aria-current', 'step');
+    expect(segments[2]).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(segments[2]!);
+    expect(latestCall(stub).activeLegIndex).toBeNull();
+    expect(screen.getAllByTestId('leg-row')[2]).not.toHaveAttribute('aria-current');
+  });
+
+  it('applies a leg tapped on the map to the timeline row', () => {
+    const stub = makeMapStub();
+    renderDetail(MRT_ITINERARY, { renderMap: stub.renderMap });
+
+    const fromMap = latestCall(stub);
+    act(() => fromMap.onSelectLeg(0));
+    expect(screen.getAllByTestId('leg-row')[0]).toHaveAttribute('aria-current', 'step');
+
+    act(() => latestCall(stub).onSelectLeg(null));
+    expect(screen.getAllByTestId('leg-row')[0]).not.toHaveAttribute('aria-current');
+  });
+
+  it('scrolls the focused row into view, instantly under reduced motion', async () => {
+    const scrollSpy = stubScrollIntoView();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    );
+
+    renderDetail();
+    await user.click(screen.getAllByTestId('leg-strip-segment')[2]!);
+
+    expect(scrollSpy).toHaveBeenCalled();
+    expect(scrollSpy).toHaveBeenLastCalledWith({ block: 'nearest', behavior: 'auto' });
+  });
+
+  it('renders the landmark line only for legs whose landmarkHint is non-null', () => {
+    const rail = makeRailTrip();
+    expect(rail.legs.every((leg) => leg.landmarkHint === null)).toBe(true);
+    const { unmount } = renderDetail(rail);
+    expect(screen.queryAllByTestId('landmark-line')).toHaveLength(0);
+    unmount();
+
+    const hinted = makeItinerary([
+      makeLeg({ mode: 'walk', landmarkHint: 'Farmers Plaza' }),
+      makeLeg({ mode: 'mrt3', landmarkHint: null }),
+    ]);
+    renderDetail(hinted);
+
+    const lines = screen.getAllByTestId('landmark-line');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toHaveTextContent('Landmark: Farmers Plaza');
+  });
+
+  it('shows the API signage on a plate and the alight stop for ride legs', () => {
+    renderDetail();
+
+    expect(screen.getByTestId('signage-plate')).toHaveTextContent(/MRT-3 \/ Ayala/);
+    expect(screen.getByTestId('signage-plate')).toHaveTextContent('Hanapin');
+    expect(screen.getAllByTestId('alight-copy')[0]).toHaveTextContent('Baba sa Ayala');
+    expect(screen.queryAllByTestId('alight-copy')).toHaveLength(1);
   });
 
   it('expands a ride leg to its stop list with the alight stop pinned last', async () => {
     renderDetail();
 
-    await user.click(screen.getByRole('button', { name: /show 3 stops/i }));
+    await user.click(screen.getByRole('button', { name: /ipakita ang 3 hintuan/i }));
 
     const stops = screen.getAllByTestId('stop-row');
     expect(stops).toHaveLength(4);
     expect(stops[0]).toHaveTextContent('Cubao');
     expect(stops.at(-1)).toHaveAttribute('data-alight', 'true');
     expect(stops.at(-1)).toHaveTextContent('Ayala');
-    expect(screen.getByTestId('stop-counter')).toHaveTextContent('4 stops');
-    expect(screen.getByRole('button', { name: /hide 3 stops/i })).toHaveAttribute(
+    expect(screen.getByTestId('stop-counter')).toHaveTextContent('3 hintuan · baba sa Ayala');
+    expect(screen.getByRole('button', { name: /itago ang 3 hintuan/i })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
   });
 
+  it('labels an informal transfer with the 5-minute buffer', () => {
+    renderDetail(planCubaoAyalaResponse.itineraries[1]!, {
+      sources: planCubaoAyalaResponse.sources,
+    });
+
+    expect(screen.getByText('Allow 5 min transfer')).toBeInTheDocument();
+    expect(screen.getByTestId('informal-transfer')).toHaveTextContent('informal_transfer');
+  });
+
   it('renders the fare breakdown with its source and effectivity date', () => {
     renderDetail();
 
+    expect(screen.getByRole('heading', { name: 'Bayad sa biyahe' })).toBeInTheDocument();
     expect(screen.getByText(/mrt-3 published fare \(9\.26 km\)/i)).toBeInTheDocument();
     expect(screen.getByText(/effective 2026-03-23/i)).toBeInTheDocument();
     expect(screen.getByTestId('fare-estimate')).toHaveTextContent(/estimate/i);
@@ -124,30 +315,41 @@ describe('TripDetailScreen', () => {
     expect(links[1]).toHaveAttribute('href', 'https://lrmc.ph');
   });
 
-  it('labels an informal transfer with the 5-minute buffer', () => {
-    render(
-      <TripDetailScreen
-        itinerary={planCubaoAyalaResponse.itineraries[1]!}
-        sources={planCubaoAyalaResponse.sources}
-      />,
-    );
+  it('labels a saved snapshot honestly and refuses to re-date it', async () => {
+    renderDetail(MRT_ITINERARY, { savedSnapshotAt: '2026-11-01T08:00:00.000Z' });
 
-    expect(screen.getByText('Allow 5 min transfer')).toBeInTheDocument();
-    expect(screen.getByTestId('informal-transfer')).toHaveTextContent('informal_transfer');
+    const note = screen.getByTestId('saved-snapshot-note');
+    expect(note).toHaveAttribute('lang', 'en');
+    expect(note).toHaveTextContent(/saved route \(no live data\)/i);
+    expect(note).toHaveTextContent(/last updated/i);
+
+    const save = screen.getByTestId('save-trip');
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(readSavedTrips()).toEqual([]);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('renders a walk-only itinerary without ride extras', () => {
+    renderDetail(makeWalkOnlyItinerary());
+
+    expect(screen.getAllByTestId('leg-row')).toHaveLength(1);
+    expect(screen.queryAllByTestId('stop-counter')).toHaveLength(0);
+    expect(screen.queryByTestId('signage-plate')).toBeNull();
+    expect(screen.getByTestId('start-trip')).toBeVisible();
+    expect(screen.getByTestId('fare-breakdown')).toBeInTheDocument();
   });
 
   it('does not clip a 15-leg, 60-character-stop itinerary', () => {
-    render(
-      <TripDetailScreen itinerary={LONG_ITINERARY} sources={planLong15LegsResponse.sources} />,
-    );
+    renderDetail(LONG_ITINERARY, { sources: LONG_PLAN.sources });
 
     expect(screen.getByTestId('fare-total')).toBeVisible();
-    expect(screen.getByRole('button', { name: /start trip/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /simulan ang biyahe/i })).toBeVisible();
     expect(screen.getAllByTestId('leg-row')).toHaveLength(15);
     expect(screen.getAllByText(new RegExp(LONG_NAME)).length).toBeGreaterThan(0);
 
-    // The CTAs are pinned by a sticky header; the page itself has no height cap
-    // or overflow clipping that could cut off the 15-leg timeline.
+    // The map header is sticky; the page itself has no height cap or overflow
+    // clipping that could cut off the 15-leg timeline.
     expect(screen.getByTestId('trip-header')).toHaveClass('sticky');
     expect(screen.getByTestId('trip-header')).toHaveClass('top-0');
     expect(screen.getAllByTestId('leg-instruction')[0]).toHaveClass('break-words');
@@ -155,7 +357,7 @@ describe('TripDetailScreen', () => {
 
   it('has no axe violations with the stop list expanded', async () => {
     const { container } = renderDetail();
-    await user.click(screen.getByRole('button', { name: /show 3 stops/i }));
+    await user.click(screen.getByRole('button', { name: /ipakita ang 3 hintuan/i }));
 
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
@@ -218,16 +420,14 @@ describe('TripDetailScreen', () => {
   it('renders a valid itinerary after dropping corrupt stop data', async () => {
     localStorage.setItem(
       SAVED_TRIPS_KEY,
-      JSON.stringify([
-        storedRow({ itinerary: itineraryWithLegPatch({ stops: [null, null] }) }),
-      ]),
+      JSON.stringify([storedRow({ itinerary: itineraryWithLegPatch({ stops: [null, null] }) })]),
     );
     expect(readSavedTrips()).toEqual([]);
 
     // Rendering the valid itinerary must not crash: the corrupt store never
     // hands a null stop to StopsList.
     renderDetail();
-    await user.click(screen.getByRole('button', { name: /show 3 stops/i }));
+    await user.click(screen.getByRole('button', { name: /ipakita ang 3 hintuan/i }));
     expect(screen.getAllByTestId('stop-row')).toHaveLength(4);
   });
 
@@ -365,22 +565,25 @@ describe('TripDetailScreen', () => {
 });
 
 describe('/trip/:id route wiring', () => {
-  it('opens the cached itinerary and starts the static live placeholder', async () => {
+  it('opens the cached itinerary and starts the live walkthrough', async () => {
     renderApp(`/trip/${MRT_ITINERARY.id}`, MRT_PLAN);
 
     expect(await screen.findByText('Detalye ng biyahe')).toBeInTheDocument();
-    expect(screen.getByTestId('trip-summary')).toHaveTextContent('31 min · arrive 08:31 · ₱10.50');
+    expect(screen.getByTestId('trip-summary')).toHaveTextContent('31 min');
+    expect(screen.getByTestId('trip-summary')).toHaveTextContent(/dating 8:31 AM/);
+    expect(screen.getByTestId('fare-total')).toHaveTextContent('₱10.50');
 
-    await user.click(screen.getByRole('button', { name: /start trip/i }));
+    await user.click(screen.getByRole('button', { name: /simulan ang biyahe/i }));
 
     expect(await screen.findByTestId('live-banner')).toHaveTextContent(
       'no live data — expected wait',
     );
-    // m3: the placeholder title must not claim live tracking. Only the mandated
+    // m3: the walkthrough title must not claim live tracking. Only the mandated
     // "no live data" sentence may mention live data on this screen.
     const title = screen.getByRole('heading', { level: 1 });
     expect(title).toHaveTextContent('Biyahe ngayon');
     expect(title).not.toHaveTextContent(/live/i);
+    expect(screen.getByTestId('live-progress')).toHaveTextContent(/hakbang 1 ng 3/i);
     expect(screen.getByTestId('live-trip-summary')).toHaveTextContent('31 min');
     // The plan came from the in-memory cache, not the saved-trips store.
     expect(screen.getByTestId('live-trip-summary')).toHaveTextContent(/naka-cache na plano/i);
@@ -404,7 +607,7 @@ describe('/trip/:id route wiring', () => {
     expect(await screen.findByRole('search')).toBeInTheDocument();
   });
 
-  it('opens the detail from /plan with the Detalye action without a second POST /plan', async () => {
+  it('opens the detail from /plan with the detail action without a second POST /plan', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     server.use(planSuccessHandler);
     renderApp('/plan?dest=14.554,121.024&name=Ayala&from=14.619,121.053&fromName=Cubao');
@@ -413,9 +616,7 @@ describe('/trip/:id route wiring', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(cachedTrip('plan-cubao-ayala-1')).toBeDefined());
 
-    const detailActions = screen.getAllByRole('button', {
-      name: /^detalye ng rutang \d+ min$/i,
-    });
+    const detailActions = await screen.findAllByRole('button', { name: /detalye/i });
     expect(detailActions.length).toBeGreaterThan(0);
     await user.click(detailActions[0]!);
 

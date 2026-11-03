@@ -95,6 +95,50 @@ describe('SavedScreen offline snapshot', () => {
   });
 });
 
+describe('SavedScreen card v2', () => {
+  it('titles a saved row by its itinerary endpoints and shows its leg strip', async () => {
+    seedSaved([storedRow(MRT_PLAN, '2026-09-01T08:00:00.000Z')]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const row = await screen.findByTestId('saved-row');
+    // The title comes from `itineraryEndpoints()` — first leg origin → last leg
+    // destination — never from the itinerary id or a "START → END" placeholder.
+    expect(screen.getByTestId('saved-title')).toHaveTextContent(
+      'Cubao, Quezon City → Ayala Triangle Gardens',
+    );
+    // The stored plan's own legs are drawn as the shared ribbon.
+    expect(within(row).getByTestId('leg-strip')).toHaveAttribute('data-leg-count', '3');
+    // The saved date is labelled as the save action's date (not a live ETA).
+    // `formatLongDate` renders in Asia/Manila via the en-PH formatter.
+    expect(screen.getByTestId('saved-date')).toHaveTextContent(/na-save noong sep 1, 2026/i);
+  });
+
+  it('lets a nickname win the title while keeping the endpoints visible', async () => {
+    seedSaved([storedRow(MRT_PLAN, '2026-09-01T08:00:00.000Z', { nickname: 'Bahay → Opisina' })]);
+
+    render(<SavedScreen now={NOW} />);
+
+    expect(await screen.findByTestId('saved-title')).toHaveTextContent('Bahay → Opisina');
+    expect(screen.getByTestId('saved-row')).toHaveTextContent(
+      'Cubao, Quezon City → Ayala Triangle Gardens',
+    );
+  });
+
+  it('labels a recent row with its last-opened date', async () => {
+    seedRecents([storedRow(MRT_PLAN, '2026-10-31T08:00:00.000Z')]);
+
+    render(<SavedScreen now={NOW} />);
+    await user.click(screen.getByRole('tab', { name: /recent/i }));
+
+    expect(await screen.findByTestId('recent-row')).toBeInTheDocument();
+    expect(screen.getByTestId('saved-title')).toHaveTextContent(
+      'Cubao, Quezon City → Ayala Triangle Gardens',
+    );
+    expect(screen.getByTestId('saved-date')).toHaveTextContent(/huling binuksan oct 31, 2026/i);
+  });
+});
+
 describe('SavedScreen tabs', () => {
   it('renders only the selected tab panel and hides the other (I1)', async () => {
     seedSaved([storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z')]);
@@ -121,9 +165,7 @@ describe('SavedScreen tabs', () => {
     // A `flex`/`block` utility on either section would beat the [hidden] UA
     // rule in the built Tailwind CSS and show both lists at once.
     for (const panel of [savedPanel, recentPanel]) {
-      expect(panel.className).not.toMatch(
-        /\b(flex|grid|block|inline|inline-flex|table)\b/,
-      );
+      expect(panel.className).not.toMatch(/\b(flex|grid|block|inline|inline-flex|table)\b/);
     }
 
     await user.click(recentTab);

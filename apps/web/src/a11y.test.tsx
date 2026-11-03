@@ -116,7 +116,8 @@ describe('WCAG 2.2 axe pass over the key screens', () => {
 
   it('has no violations on Trip detail (stop list expanded)', async () => {
     const { container } = renderTripDetail();
-    await userEvent.click(screen.getByRole('button', { name: /show 3 stops/i }));
+    // UX v2 copy: the expander is `trip.stopsShow` ("Ipakita ang N hintuan").
+    await userEvent.click(screen.getByRole('button', { name: /ipakita ang \d+ hintuan/i }));
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
@@ -159,18 +160,18 @@ describe('200% text zoom at 320 px', () => {
 
     expect(window.innerWidth).toBe(320);
     const fare = screen.getAllByTestId('fare-amount')[0]!;
-    const cta = screen.getAllByTestId('trip-open')[0]!;
+    const cta = screen.getAllByTestId('route-detail-action')[0]!;
     expect(fare).toBeVisible();
     expect(cta).toBeVisible();
     expect(fare.className).not.toMatch(/truncate|whitespace-nowrap/);
     expect(cta.className).not.toMatch(/truncate|whitespace-nowrap/);
   });
 
-  it('keeps the trip-detail total fare and Start trip CTA visible', () => {
+  it('keeps the trip-detail total fare and start-trip CTA visible', () => {
     renderTripDetail();
 
     expect(screen.getByTestId('fare-total')).toBeVisible();
-    expect(screen.getByRole('button', { name: /start trip/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /simulan ang biyahe/i })).toBeVisible();
     expect(screen.getByTestId('trip-summary').className).toContain('break-words');
   });
 });

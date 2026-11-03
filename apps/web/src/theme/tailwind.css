@@ -14,6 +14,18 @@
   }
 
   /*
+   * The directions form renders its own 48 dp clear control per field. Chromium
+   * also paints a native `<input type="search">` cancel button, which produced
+   * two clear affordances side by side (found in the UX v2 browser pass); the
+   * native one is suppressed so the designed control is the only one.
+   */
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /*
    * Task 9 reduced-motion safety net (spec §11: no animation when
    * `prefers-reduced-motion`). The sheet and the skeleton cards already opt out
    * per component (`transition-none`, `motion-reduce:animate-none`); this rule
