@@ -295,7 +295,7 @@ coverage: 12/16 curated routes in the feed (75.0%)
 aliases: 8 used, 0 invalid (data\routes\landmark-aliases.yaml)
 fare tables: 6 fares, 469 route rules, 3 unrepresentable
 gtfs: data\build\gtfs\gtfs.zip
-manifest: data\build\manifest.json (sha256 0dff35d264dd24a19ce93ac61c5f4b4972d243c4b66283a82b19c0ee073a5fdd)
+manifest: data\build\manifest.json (sha256 6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c)
 report: data\build\build-report.json
 licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices present in artifact)
 ```
@@ -540,10 +540,14 @@ Requirements and measured facts:
 - **The MOTIS graph needs a named Docker volume, never a host bind mount.** MOTIS ftruncates/mmaps
   sparse graph files and fails on a Windows-backed bind mount with `resize error`; `docker-compose.yml`
   mounts `routing-data` at `/var/lib/motis/data`, and the entrypoint's hash-keyed import makes an
-  unchanged graph a ~1.5 s no-op. Measured national import (recon, 612 MB OSM + NCR timetable):
-  **1006.6 s wall / 3.047 GiB peak RSS / 890 MB graph**, exit 0 — see
-  `data/build/recon/motis-national/logs/import-summary.json`. Re-importing with a changed GTFS into
-  an existing graph volume only re-runs the changed tasks.
+  unchanged graph a ~1.5 s no-op. Measured national import: with the graph volume primed from a
+  national import it is **~37 s to healthy** (only the timetable/matching/footpath tasks re-run);
+  the cold national OSM import measured **1006.6 s wall / 3.047 GiB peak RSS / 890 MB graph**
+  (recon §4, `data/build/recon/motis-national/logs/import-summary.json`). The national feed build
+  itself measured **~33 min** (`node scripts/data-build.mjs --region ph --publish-only`, 1,073
+  routes / 351,944 trips / 10,941 stops, feed sha `fb70d1ab…`); national shape resolution is the
+  dominant cost. Re-importing with a changed GTFS into an existing graph volume only re-runs the
+  changed tasks.
 - **`--region ph` publishes into `data/build/gtfs/ph`**, so the NCR feed and its pinned sha256 are
   not overwritten. Ruling R25: the *NCR feed sha changes deliberately* in this pass because the
   synthesized schedule is now distance-consistent and shapes are trimmed to their served stops; the
@@ -552,3 +556,11 @@ Requirements and measured facts:
   `pipelines/pipeline/regions.py` (copied into
   `docs/research/2026-11-04-ph-wide-coverage-recon.md` §3): stops are assigned exactly once, a route
   counts in every region its served stops touch, and `unassigned` is reported, never hidden.
+
+### Measured national pass (2026-11-05)
+
+- National feed: `fb70d1ab…`, 1,073 routes / 10,941 stops / 351,944 trips, 45.2 MB, ~33 min.
+- NCR feed re-pinned: `6aea510b…` (623 routes / 5,656 stops / 204,344 trips); the schedule is now
+  distance-consistent and shapes start/end at served stops (ruling R25).
+- National import: cold 1006.6 s / 3.047 GiB (recon); primed ~37 s.
+- Acceptance record: `docs/runbooks/ph-wide-coverage-acceptance.md`.

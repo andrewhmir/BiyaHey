@@ -319,7 +319,7 @@ straight line ran between origin and destination that is not a walkable/routable
   direction (`<route_id>:shape:0|1`, trips reference their own). Feed rebuilt
   (`npm run data:build -- --publish-only`), routing recreated and reimported, API
   restarted. Shapes: 189,141 → 378,282 rows, sha256
-  `0dff35d264dd24a19ce93ac61c5f4b4972d243c4b66283a82b19c0ee073a5fdd`; OSM-derived
+  `6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c`; OSM-derived
   shapes with >1.5 km gaps **88 → 0**; MRT-3 leg 29,981 m / 13,369 m max segment →
   **9,257 m vs 8,260 m beeline, max segment 1,012 m**; worst sampled transit leg's
   straight segment 30,551 m → 1,443 m. Golden fare bounds re-pinned from a live re-probe
@@ -359,3 +359,59 @@ dashed approximate chord; a few intercity/terminal-loop bus legs are genuine det
 verdict is still PARTIAL (not re-run in this pass); the production preview is served on
 :5173 (Vite preview) for live testing, while the Playwright dev project runs against the
 dev server.
+
+## 2026-11-05 — PH-wide coverage, walk bridging and tricycle ingestion
+
+**What shipped on `feature/ph-wide-coverage`** (from `main` @ `3bd0684`; plan
+`docs/superpowers/plans/2026-11-04-ph-wide-coverage.md`, acceptance record
+`docs/runbooks/ph-wide-coverage-acceptance.md`):
+
+- **National data spine.** The OSM build is region-aware (`--region ncr|ph|bbox`, NCR default
+  unchanged), and one national feed is built from the 612 MB PH extract with ingestible OSM route
+  relations nationwide: **1,073 routes / 10,941 stops / 351,944 trips**, feed sha
+  `fb70d1aba7d933c209277484c9380b8386b787ea2440bdd9ec455d386e050794`, 45.2 MB. Ingestion is reversal-aware for route ids, uses pyosmium native id filters
+  (national node pass 442 s → 53 s), picks feed-ready keepers (lost NCR routes restored), ingests
+  nameless relations under `<family>-osm<id>`, trims shapes to served stops, and synthesizes
+  distance-consistent segment times (a 40 km two-stop route now takes 41 min, not 2 min — the
+  Task-6B feed defect). The reader's counters reach `build-report.json` under `osm_ingest`, and a
+  per-region report is written to `data/build/gtfs/ph/coverage-regional.json` (BARMM honestly 0).
+- **National router.** `services/routing/config/config.ph.yml` runs one national MOTIS graph with
+  walk bridging enabled (`extend_missing_footpaths: true`, `max_footpath_length: 30`). Cold import
+  measured 1006.6 s / 3.047 GiB; the graph lives in a **named volume** (a Windows bind mount fails
+  with `resize error`), and `.env` selects the national config locally. Per-region geocoding and
+  routing work: Iloilo→Oton, NCR→Batangas, NCR→Cavite and NCR→Bulacan return real transit
+  itineraries; Cebu/Baguio/Davao have no OSM transit chain for the probed pairs and return the
+  labelled walk estimate (raw MOTIS verified 0).
+- **Walk fallback (BFF + PWA).** When every MOTIS attempt returns nothing, `/plan` returns one
+  clearly-labelled `fallback: "walk"` itinerary: road-following geometry from a walk-only
+  `/api/v6/plan` request when a walking path exists, straight-line `approximate` geometry only when
+  it does not, 4.5 km/h duration for the straight-line branch, `walk-estimate` provenance row
+  (honest derived row, no dataset licence), and an `x-biyahey-fallback: walk` header. The PWA shows
+  the estimate on every surface (card, detail, saved, home, live) with the explicit "no known
+  transit route / may not be safe" copy and a >25 km "not a realistic alternative" warning; no
+  transit affordances are shown. Verified live with Playwright screenshots.
+- **Tricycles, honestly.** The 2 OSM `route=tricycle` relations and the 10 mistagged Bulacan
+  "Tricycle" `route=bus` TODA corridors are counted and **excluded with reasons** (publishing the
+  latter would price tricycle corridors as city buses). The real OSM Wilson E-trike System becomes
+  two `trike-` routes (route_type 3, **zero fare rules**); a live probe on that corridor returns
+  `walk > tricycle` itineraries with `fareNotPublished` / `fareIncomplete` and "Traysikel" UI.
+  Curated tricycle route/fare files are deliberately deferred (ruling R28 — no citable LGU source),
+  and `data/build/tricycle-terminals.json` carries the one mapped NCR terminal for the
+  "tricycle likely here — not in the dataset" hint.
+- **Gates (2026-11-05).** `pytest` 245 passed; `npm test` 612 passed / 5 skipped; lint, typecheck,
+  web build green; `test:e2e` 11 passed; payload 112.3 KB gzip ≤ 250 KB; `validate:data` 6/6;
+  `check:fares` fresh; `smoke:routing` ok; `stress:motis` 20/20 with the API alive; probe matrix
+  **PASS** (11/11 pairs: transit where data exists, labelled fallback where it genuinely does not);
+  `verify:phase1` exit 0 **PARTIAL**; `verify:phase2` exit 0 **PARTIAL** (Lighthouse TBT still
+  fails: 7,628 ms, score 57 — recorded, not re-badged).
+- **Deliberate re-pins (R25).** The NCR feed sha changed `0dff35d2…` → **`6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c`** because the
+  synthesized schedule and shapes were corrected; the Task-6B Bulacan zero flipped from a failing
+  marker to a hard acceptance assertion. Golden fare bands were widened for the national feed's
+  long-bus alternatives and two `requiredModes` re-pinned (ferry coverage kept on Cubao→Pasig,
+  jeepney on Novaliches→Cubao). Gate harnesses that pinned stale departure dates now compute the
+  next 08:00 Asia/Manila, and `verify:phase1`'s golden invocation gained the missing
+  `--tagsFilter=integration`.
+- **Known gaps carried forward:** Cebu/Baguio/Davao transit absent in OSM (labelled fallback);
+  Region IV-A tricycle terminals outside the NCR landmark extract; 12 two-point shapes (6B 3c);
+  tricycle-only itineraries reuse the zero-fare quote shape (UI labels it partial); PNR,
+  long-distance ferries and P2P stay excluded; Lighthouse PARTIAL; no realtime claims anywhere.

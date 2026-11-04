@@ -356,3 +356,21 @@ Recon evidence: `docs/research/2026-11-04-ph-wide-coverage-recon.md` (git-ignore
 - **R28 — Tricycle curated route/fare files are deliberately deferred.** No LGU or other citable source for tricycle routes or fares exists in this pass (recon §2), so `data/routes/tricycle-routes.yaml`, `data/fares/tricycle-fares.yaml` + its schema, the `fares.py` loader and the `check:fares` wiring are **not** shipped: there is nothing to ingest or price, and inventing either would violate D5/D6. The ingestion path for this pass is the OSM-mapped e-trike classification; tricycle legs show "fare not published" by absence.
 - **R30/R31/R32 — Route-id keeper rules** (implemented + verified): keeper = lowest-OSM-id **feed-ready** candidate (≥1 non-stop way member AND (stop members ≥2 OR 0)); reverse dedupe compares against **any kept relation of the same base slug**; nameless relations are ingested as `<family>-osm<id>` and counted; the reader's counters reach `build-report.json` under the additive `osm_ingest` key (`route_relations = unsupported_route + tricycle_relations_seen + excluded_mistagged + candidates`).
 - **R34 — Mistagged tricycle TODA corridors are excluded, never published or priced.** 10 OSM `route=bus` relations named "Baliwag/Bustos Tricycle" are tricycle corridors mistagged as bus (no stop members, from/to present); with zero stop members they are "feed-ready" as landmark routes and every `bus-` id is priced by the city-bus matrix, so publishing them would present and price a tricycle corridor as a bus service. They are counted (`excluded_mistagged_tricycle_relations`) and excluded. `route=tricycle` detection is case-insensitive so `route=Tricycle` (§2's second relation) is counted and explained rather than falling into `unsupported_route_values`.
+
+## Execution result (2026-11-05)
+
+All tasks executed; the acceptance record is `docs/runbooks/ph-wide-coverage-acceptance.md`.
+
+- National feed `fb70d1aba7d933c209277484c9380b8386b787ea2440bdd9ec455d386e050794` (1,073 routes / 10,941 stops / 351,944 trips, 45.2 MB, ~33 min build);
+  NCR feed re-pinned to `6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c` (623 routes / 5,656 stops / 204,344 trips).
+- National MOTIS graph with walk bridging; cold import 1006.6 s / 3.047 GiB, primed import ~37 s.
+- Probe matrix PASS (11/11 pairs, 5 real-transit corridors + 6 labelled fallbacks); Bulacan marker
+  flipped from `it.fails` to a hard assertion; live Wilson E-trike `walk > tricycle` itineraries.
+- Gates: pytest 245, unit 612 passed, e2e 11 passed, lint/typecheck/build/validate/fares/smoke/
+  stress green, payload 112.3 KB gzip, verify:phase1 exit 0 PARTIAL, verify:phase2 exit 0 PARTIAL.
+- Deviations recorded: R25 (deliberate NCR sha + golden re-pin), R28 (deferred curated tricycle
+  files), R30/R31/R32 (keeper/reverse/nameless + counters), R33 (incomplete fares never ranked
+  cheapest), R34 (mistagged tricycle-bus exclusion), R35 (national config selected via local `.env`).
+- Known gaps: Cebu/Baguio/Davao OSM transit absent; IV-A tricycle terminals outside the NCR
+  landmark extract; 12 two-point shapes (6B 3c); tricycle-only zero-fare quote shape; Lighthouse
+  PARTIAL; PNR/long-distance ferries/P2P excluded; no realtime claims.

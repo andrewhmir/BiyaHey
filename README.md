@@ -9,19 +9,19 @@ BiyaHey! is built in the open with [BetterGov](https://bettergov.ph)
 conventions: MIT code, open data, Conventional Commits, and an explicit
 AI-assisted-work disclosure.
 
-> **Status (2026-11-03):** Plan 1 (data spine + router + BFF) and Plan 2 (PWA)
-> are complete. Phase-2 acceptance is **PARTIAL** by measurement, not by
-> omission: spec §3 criteria 2–6 pass, while the §11 performance budget is
-> recorded as PARTIAL — the interactive-map target and TBT are not met and are
-> documented with numbers in `docs/runbooks/phase2-acceptance.md`. The
-> post-Plan-2 trip planner (R89) adds configurable start/end plus up to two
-> optional transit stops. **UX v2 "Kalsada" (2026-11-03)** rebuilds every screen
-> on the approved civic-modern identity with Moovit-style route paths: each
-> alternative is drawn as its own path, the chosen itinerary is drawn leg-by-leg
-> in mode colours and synced to the step timeline, the in-trip screen is a
-> leg-by-leg walkthrough (still no real-time claims), and Playwright covers the
-> map paths and flows end-to-end. All of the above is merged to `main`
-> (local only — this repository has no remote configured, so nothing is pushed).
+> **Status (2026-11-05):** Plans 1–2 and the UX v2 "Kalsada" identity are complete and merged
+> locally (this repository has no remote configured, so nothing is pushed). Phase-2 acceptance is
+> **PARTIAL by measurement**, not omission: spec §3 criteria 2–6 pass while the §11 performance
+> budget (interactive map, TBT) is not met — numbers in `docs/runbooks/phase2-acceptance.md`.
+>
+> **PH-wide coverage pass (2026-11-05):** routing now works nationwide on one MOTIS graph built
+> from the full Philippines OSM extract plus a national GTFS (**1,073 routes / 10,941 stops /
+> 351,944 trips**, feed sha `fb70d1aba7d9…`). The acceptance probe matrix passes 11/11 pairs —
+> real transit where the data exists (NCR, Bulacan, Cavite, Batangas, Iloilo) and a clearly-labelled
+> **walk estimate** where it genuinely does not, with a "walking is not realistic beyond 25 km"
+> warning. OSM-mapped Wilson E-trike corridors enter routing as real `tricycle` legs with **"fare not
+> published"** (no invented fares); no realtime claims anywhere. Evidence:
+> `docs/runbooks/ph-wide-coverage-acceptance.md`.
 
 ## Screenshots
 
@@ -201,6 +201,13 @@ runbooks' known-gaps sections. Sakay/PTAC 2014 GTFS, BusMaps and any feed
 without a reuse grant are **never shipped**.
 
 ## Known gaps (recorded, not hidden)
+
+- **PH-wide pass (2026-11-05):** Cebu City→Lapu-Lapu, NCR→Baguio and Davao City→Tagum have no OSM
+  transit chain for the probed pairs and return the labelled walk estimate (raw MOTIS verified 0);
+  Region IV-A's tricycle terminals are outside the NCR landmark extract so the terminal hint
+  artifact carries one NCR terminal; 12 routes still publish a two-point straight-line shape
+  (measured, not repaired); tricycle-only itineraries reuse the zero-fare quote shape and the UI
+  labels them partial; the phase-2 Lighthouse verdict stays PARTIAL (TBT 7.6 s in the 2026-11-05 run).
 
 - **Performance is PARTIAL.** The paint-only budget passes (104.4 KB gzip vs
   250 KB), but the spec §11 "cold start → interactive map ≤ 3 s" target is **not
