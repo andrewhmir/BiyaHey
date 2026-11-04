@@ -114,6 +114,38 @@ Luzon 920, Visayas 227, Mindanao 67. Ingestible transit relations by region: NCR
 CAR 114, VII 105, VIII 34, III 29, VI 29, V 28, XIII 20, X 20, IV-B 12, II 7, I 4, XII 2, IX 2,
 XI 0, no-stop-coords 16.
 
+The normative approximate region boxes (min_lat, min_lon, max_lat, max_lon) — the table
+`pipelines/pipeline/regions.py` copies verbatim. Axis-aligned approximations, not administrative
+boundaries; they overlap and the assignment order is NCR first, then the smallest-area containing
+box (ties by listed order).
+
+| Region | min_lat | min_lon | max_lat | max_lon |
+|---|---|---|---|---|
+| NCR | 14.35 | 120.9 | 14.8 | 121.15 |
+| CAR | 16.1 | 120.45 | 17.9 | 121.55 |
+| Region I | 15.9 | 119.7 | 18.6 | 121.0 |
+| Region II | 16.0 | 121.0 | 19.0 | 122.6 |
+| Region III | 14.6 | 119.7 | 16.2 | 121.3 |
+| Region IV-A | 13.6 | 120.6 | 14.95 | 122.3 |
+| Region IV-B | 7.9 | 116.8 | 14.6 | 122.4 |
+| Region V | 11.6 | 122.2 | 14.2 | 124.5 |
+| Region VI | 9.2 | 121.6 | 12.0 | 123.6 |
+| Region VII | 9.3 | 123.2 | 11.4 | 124.6 |
+| Region VIII | 9.8 | 124.2 | 12.6 | 125.7 |
+| Region IX | 5.5 | 120.4 | 8.6 | 123.8 |
+| Region X | 7.0 | 123.2 | 9.4 | 125.7 |
+| Region XI | 5.3 | 125.0 | 7.7 | 126.5 |
+| Region XII | 5.5 | 124.0 | 7.6 | 125.4 |
+| Region XIII | 8.0 | 125.3 | 9.9 | 126.7 |
+| BARMM | 4.5 | 121.0 | 8.2 | 125.2 |
+
+Note: the island roll-up figures above come from the recon scan's coarse coordinate heuristic; the
+pipeline's `regions.py` uses the administrative mapping (Region V/Bicol and IV-B/Mimaropa count as Luzon;
+BARMM as Mindanao), so an artifact's island totals are not directly comparable to this section. Every
+stop is assigned exactly once; a route is counted once per region any of its served stops touches and is
+also counted under `unassigned` when any served stop falls outside every box (documented in the artifact's
+`method` string).
+
 Caveats, stated rather than hidden: the boxes are axis-aligned approximations, so boundary-adjacent
 relations can be misclassified (e.g. Region XI's single coordinate-bearing relation looks like a
 box/median artefact — the national feed's per-stop counts in Task 3 are the displayable number, and

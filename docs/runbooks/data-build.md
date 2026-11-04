@@ -509,3 +509,46 @@ second line of defence. Never `git add -f` an extract or a feed.
 | `landmark_aliases.invalid` is non-empty | The pinned OSM feature vanished or was renamed in the new extract. Re-check the stop in `stops.txt`/the extract and update `osm_stop` + `source`; the affected landmark stays unresolved meanwhile |
 | Publish is slow (~6 min) | Expected: the landmark resolver scans the 69 MB NCR extract and the GTFS builder writes ~162k trips |
 | `docker compose up -d --wait routing` waits after a republish | The entrypoint is re-importing the changed GTFS; watch `docker compose logs -f routing` |
+
+## National (PH-wide) build
+
+Added 2026-11-05 for the PH-wide-coverage pass. The NCR build above is unchanged and remains the
+acceptance default; `--region ncr` (the default) still produces `data/build/osm/ncr.osm.pbf` and
+`data/build/gtfs/gtfs.zip`.
+
+```powershell
+# Full national chain (reuses the downloaded extract; no re-download when it exists)
+npm run data:build -- --region ph
+# Rebuild only the national feed from the existing national extract (~minutes)
+npm run data:build -- --region ph --publish-only
+```
+
+Artifacts (ruling R6): national OSM `data/build/osm/ph.osm.pbf`, national build root
+`data/build/gtfs/ph/` containing `gtfs/gtfs.zip`, `manifest.json`, `build-report.json` and the
+additive `coverage-regional.json`. The national MOTIS config is
+`services/routing/config/config.ph.yml` (select it with
+`BIYAHEY_ROUTING_CONFIG=/etc/motis/config.ph.yml docker compose up -d routing`).
+
+Requirements and measured facts:
+
+- **`data/build/osm/ncr.osm.pbf` must exist** for a national build: publish reads the NCR clip for
+  curated landmark/terminal resolution (the curated inventory is NCR-only). The build fails loudly
+  with an actionable message if it is missing — ruling R17 exists because resolving landmarks with
+  `apply_file(locations=True)` on the 612 MB national extract would dominate the build.
+- **No download on `--region ph`** when `data/build/philippines-latest.osm.pbf` already exists
+  (ruling: the national extract must never be re-downloaded just to rebuild the feed).
+- **The MOTIS graph needs a named Docker volume, never a host bind mount.** MOTIS ftruncates/mmaps
+  sparse graph files and fails on a Windows-backed bind mount with `resize error`; `docker-compose.yml`
+  mounts `routing-data` at `/var/lib/motis/data`, and the entrypoint's hash-keyed import makes an
+  unchanged graph a ~1.5 s no-op. Measured national import (recon, 612 MB OSM + NCR timetable):
+  **1006.6 s wall / 3.047 GiB peak RSS / 890 MB graph**, exit 0 — see
+  `data/build/recon/motis-national/logs/import-summary.json`. Re-importing with a changed GTFS into
+  an existing graph volume only re-runs the changed tasks.
+- **`--region ph` publishes into `data/build/gtfs/ph`**, so the NCR feed and its pinned sha256 are
+  not overwritten. Ruling R25: the *NCR feed sha changes deliberately* in this pass because the
+  synthesized schedule is now distance-consistent and shapes are trimmed to their served stops; the
+  build report that justifies the re-pin lives with the rebuilt feed.
+- Region counts in `coverage-regional.json` use the documented approximate boxes in
+  `pipelines/pipeline/regions.py` (copied into
+  `docs/research/2026-11-04-ph-wide-coverage-recon.md` §3): stops are assigned exactly once, a route
+  counts in every region its served stops touch, and `unassigned` is reported, never hidden.
