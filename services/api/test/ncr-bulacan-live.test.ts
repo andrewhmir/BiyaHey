@@ -6,28 +6,20 @@ import { FALLBACK_HEADER, IMPLAUSIBLE_DROPPED_HEADER } from '../src/routes/plan.
 /**
  * Task 6B acceptance marker: NCR -> Bulacan (Lane A feed handoff).
  *
- * `it.fails` is deliberate. On the NCR feed built 2026-11-03 (sha256 pinned in
- * `data/build/gtfs/manifest.json`) every raw MOTIS itinerary for
- * Cubao -> Meycauayan carries at least one corrupt transit leg, so the
- * plausibility guard drops all of them and `/plan` serves only the synthesised
- * walk fallback:
+ * This was written as `it.fails` against the 2026-11-03 NCR feed, where every
+ * raw MOTIS itinerary for Cubao -> Meycauayan carried at least one corrupt
+ * transit leg (a `rail-1` shape whose 3,016 m pre-spur made an 8,553 m / 180 s
+ * leg, and two-stop landmark routes scheduled in a fixed 2 minutes), so the
+ * plausibility guard dropped all of them and `/plan` served only the
+ * synthesised walk fallback (dropped=22, fallback=walk).
  *
- *   itineraries=1 (walk, 288 min), x-biyahey-implausible-dropped=22,
- *   x-biyahey-motis-calls=4, x-biyahey-fallback=walk
+ * The 2026-11-05 feed rebuild fixed both defects (shape trimmed to the served
+ * stops; distance-derived segment times) and the same request now returns real
+ * transit itineraries with `x-biyahey-implausible-dropped: 0` and no fallback
+ * header (measured 2026-11-05 02:32 on the national graph: 5 itineraries,
+ * first `walk > bus > lrt1`, 83 min). The `.fails` was removed at that point and
+ * the assertions below are the acceptance row.
  *
- * Two feed defects account for it (evidence: `ncr-bulacan-feed-defect.test.ts`
- * and the Task 6B report):
- *  1. `rail-1:shape:0` starts 3,016 m before its first stop, so MOTIS's leg
- *     geometry prepends the jump: 8,553 m in 180 s = 171 km/h. Eight unique
- *     itineraries are blocked by this alone.
- *  2. Routes with only two synthesized landmark stops (`jeep-101`, `jeep-t165`,
- *     `uv-m01`, `bus-victoryliner`, `bus-pitxmtng`, `bus-cubaobalayan`, ...) get
- *     one fixed 2-minute segment (`SEGMENT_MINUTES` in `pipeline/gtfs.py`), so
- *     the whole route is scheduled in two minutes.
- *
- * When Lane A rebuilds the feed, this test starts passing -- Vitest then
- * reports `it.fails` as a failure ("expected test to fail, but it passed").
- * Delete `.fails` at that point and keep the assertions as the acceptance row.
  * Tagged `integration`, so `npm test` / `npm run ci` never require MOTIS.
  */
 const motisUrl = process.env.MOTIS_URL;
@@ -36,7 +28,7 @@ describe.skipIf(motisUrl === undefined)(
   'NCR -> Bulacan acceptance marker (Task 6B)',
   { tags: ['integration'] },
   () => {
-    it.fails(
+    it(
       'serves a transit itinerary Cubao -> Meycauayan and drops none (Lane A feed fix)',
       async () => {
         const app = buildApp();

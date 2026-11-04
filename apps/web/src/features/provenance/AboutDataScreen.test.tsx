@@ -330,7 +330,9 @@ describe('About-data entry points', () => {
       name: /tingnan ang detalye ng rutang \d+ min/i,
     })[0]!;
     await user.click(detail);
-    expect(await screen.findByText('Detalye ng biyahe')).toBeInTheDocument();
+    // The trip-detail route is lazy-loaded; a cold render under full-suite load
+    // can exceed the default 5 s wait without any assertion failing.
+    expect(await screen.findByText('Detalye ng biyahe', undefined, { timeout: 15_000 })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: /about data/i }));
 

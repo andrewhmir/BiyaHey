@@ -4,9 +4,11 @@
  *
  * Exits non-zero unless:
  *   1. GET /api/v1/geocode?text=Cubao returns at least one result, and
- *   2. GET /api/v6/plan Cubao (14.619,121.053) -> Ayala (14.554,121.024) at a
- *      fixed 2026-11-02T08:00:00+08:00 returns at least one itinerary with a
- *      non-WALK leg.
+ *   2. GET /api/v6/plan Cubao (14.619,121.053) -> Ayala (14.554,121.024) at the
+ *      next 08:00 Asia/Manila returns at least one itinerary with a non-WALK
+ *      leg. The departure is computed, not pinned: a pinned date eventually
+ *      falls outside MOTIS's loaded timetable window (config `first_day:
+ *      TODAY`) and makes the smoke fail for a reason unrelated to the feed.
  *
  * Override the endpoint with MOTIS_URL (default http://localhost:8080).
  */
@@ -15,7 +17,19 @@ const base = (process.env.MOTIS_URL ?? 'http://localhost:8080').replace(/\/+$/, 
 const GEOCODE_TEXT = 'Cubao';
 const FROM_PLACE = '14.619,121.053';
 const TO_PLACE = '14.554,121.024';
-const DEPARTURE = '2026-11-02T08:00:00+08:00';
+/** ISO-8601 UTC of the next 08:00 Asia/Manila (UTC+8). */
+function nextMorningDeparture() {
+  const offsetMs = 8 * 3_600_000;
+  const nowPht = Date.now() + offsetMs;
+  const dayStartPht = Math.floor(nowPht / 86_400_000) * 86_400_000;
+  let targetPht = dayStartPht + 8 * 3_600_000;
+  if (targetPht <= nowPht) {
+    targetPht += 86_400_000;
+  }
+  return new Date(targetPht - offsetMs).toISOString();
+}
+
+const DEPARTURE = nextMorningDeparture();
 const REQUEST_TIMEOUT_MS = Number(process.env.MOTIS_TIMEOUT_MS ?? 30_000);
 
 /**

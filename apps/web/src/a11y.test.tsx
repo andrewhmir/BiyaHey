@@ -15,6 +15,12 @@ import { saveTrip } from './lib/savedTripsStore';
 import { AppRoutes } from './routes';
 import { planCubaoAyalaResponse, planMrt3CubaoAyalaResponse } from './test/msw/handlers';
 
+// Axe scans of map/sheet-bearing screens take well over the 5 s default on a
+// loaded machine (and a slow scan is not an accessibility violation). The
+// default produced load-sensitive failures when the full suite ran alongside a
+// data build; 30 s keeps the assertion honest without the flake.
+vi.setConfig({ testTimeout: 30_000 });
+
 /**
  * Aggregate WCAG 2.2 AA pass over the key screens (plan Task 9).
  *

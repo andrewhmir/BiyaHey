@@ -327,7 +327,7 @@ async function main() {
     const golden = await run(
       'golden integration suite',
       process.execPath,
-      [vitestCli, 'run', 'services/api/test/golden.test.ts'],
+      [vitestCli, 'run', '--tagsFilter=integration', 'services/api/test/golden.test.ts'],
       {
         env: {
           ...process.env,
