@@ -71,12 +71,26 @@ The whole Philippines extract carries **2** `route=tricycle` relations:
 Laguna / Bicol van associations — nothing in the tag set identifies a tricycle service. So the
 honest baseline for tricycles is **no citable tricycle route with service evidence exists in OSM
 today**, and a synthesized tricycle headway would fabricate a schedule for a demand-responsive
-service. What does exist in OSM is tricycle **terminals**: `amenity=tricycle_station` is the only mapped
-tricycle amenity, and nationally there are **3** (NCR 1, Region IV-A 2, **0** in Quezon City, Cebu
-City, Iloilo City and Davao City). Text-keyword matches for tricycle/traysikel in route tags: 18
-relations nation-wide (mostly non-transit route values); 2 share_taxi relations mention a tricycle
-word. So the honest deliverable is a data-driven terminal hint that will almost never fire in this
-snapshot, an empty curated route/fare path, and this negative finding — not a fabricated corridor.
+service. What does exist in OSM tricycle-adjacent space, from the full keyword pass (`scan-notes.md` §tricycle):
+
+- **2 NCR `route=share_taxi` relations for the Wilson E-trike System** (Wilson St, San Juan/QC area) —
+  both **ingestible** (≥2 stop members, way geometry, name). This is the only mapped tricycle-class
+  service with usable corridor data in the country, and it is *e-trike* (electric tricycle) data, not
+  the usual gasoline tricycle.
+- **10 `route=bus` relations in Bulacan named "Baliwag/Bustos Tricycle"** — TODA routes mistagged as
+  bus, **no stop nodes**, so they are not ingestible and must not be relabelled as a bus service.
+- `route=tricycle` itself: the 2 unusable relations in the table above.
+- Tricycle **terminals**: `amenity=tricycle_station` is the only mapped tricycle amenity and there are
+  **3 nationally** (NCR 1, Region IV-A 2; **0** in Quezon City, Cebu City, Iloilo City and Davao
+  City; no `tricycle_stand`, `motorcycle_taxi` or `taxi_stand` anywhere).
+- Pilot-city context: QC — 0 tricycle terminals / 211 taxi ranks / 58 bus stations / 203 ingestible
+  routes in box; Cebu City — 0 / 16 / 13 / 76; Iloilo City — 0 / 7 / 2 / 6; Davao City — 0 / 1 / 0 / 0.
+
+So the honest tricycle deliverable is: ingest the OSM-mapped **e-trike** corridors as real
+`trike-` routes with a synthesized headway (the feed-wide documented convention, never presented as
+realtime), exclude `route=tricycle` and the mistagged Bulacan relations with reasons, ship an empty
+curated route/fare path ("fare not published"), and use the 3 mapped terminals for a rare,
+data-driven walk-leg hint. No fabricated corridor, no invented fare.
 
 The plan's Task 8 therefore ships: the tricycle ingestion path + schema (proven with fixtures), an
 empty curated `data/fares/tricycle-fares.yaml` (no published fare matrix found — never reuse the
