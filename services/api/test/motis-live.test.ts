@@ -13,6 +13,23 @@ import { buildApp } from '../src/app.js';
  */
 const motisUrl = process.env.MOTIS_URL;
 
+/**
+ * The live probe must depart inside MOTIS's loaded timetable window (the
+ * service config starts at `first_day: TODAY`). A computed "next 08:00
+ * Asia/Manila" keeps this test meaningful on any day; a pinned date eventually
+ * falls outside the window and fails for an unrelated reason.
+ */
+function nextMorningDeparture(): string {
+  const offsetMs = 8 * 3_600_000;
+  const nowPht = Date.now() + offsetMs;
+  const dayStartPht = Math.floor(nowPht / 86_400_000) * 86_400_000;
+  let targetPht = dayStartPht + 8 * 3_600_000;
+  if (targetPht <= nowPht) {
+    targetPht += 86_400_000;
+  }
+  return new Date(targetPht - offsetMs).toISOString();
+}
+
 describe.skipIf(motisUrl === undefined)(
   'live MOTIS integration',
   { tags: ['integration'] },
@@ -26,7 +43,7 @@ describe.skipIf(motisUrl === undefined)(
           payload: {
             origin: { lat: 14.619, lon: 121.053 },
             destination: { lat: 14.554, lon: 121.024 },
-            departAt: '2026-11-02T08:00:00+08:00',
+            departAt: nextMorningDeparture(),
           },
         });
         expect(res.statusCode).toBe(200);

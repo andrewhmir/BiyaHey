@@ -97,9 +97,27 @@ interface GoldenReport {
   searchSamples: Array<{ query: string; ms: number; stops: number; landmarks: number }>;
 }
 
+/** ISO-8601 UTC of the next 08:00 Asia/Manila, inside MOTIS's loaded window. */
+function nextMorningDeparture(): string {
+  const offsetMs = 8 * 3_600_000;
+  const nowPht = Date.now() + offsetMs;
+  const dayStartPht = Math.floor(nowPht / 86_400_000) * 86_400_000;
+  let targetPht = dayStartPht + 8 * 3_600_000;
+  if (targetPht <= nowPht) {
+    targetPht += 86_400_000;
+  }
+  return new Date(targetPht - offsetMs).toISOString();
+}
+
+// Keep the recorded fixture date while it is still in the future (it documents
+// the acceptance run); once it would fall outside MOTIS's loaded timetable
+// window, depart at the next 08:00 Asia/Manila instead of failing for a reason
+// unrelated to the feed.
+const departure = Date.parse(suite.departAt) > Date.now() ? suite.departAt : nextMorningDeparture();
+
 const report: GoldenReport = {
   apiUrl: apiUrl ?? '',
-  departAt: suite.departAt,
+  departAt: departure,
   trips: [],
   planP95Ms: 0,
   searchP95Ms: 0,
@@ -132,7 +150,7 @@ describe.skipIf(apiUrl === undefined)('golden NCR acceptance (live API)', { tags
           body: JSON.stringify({
             origin: trip.origin,
             destination: trip.destination,
-            departAt: suite.departAt,
+            departAt: departure,
           }),
         });
         const planMs = Math.round(performance.now() - started);
