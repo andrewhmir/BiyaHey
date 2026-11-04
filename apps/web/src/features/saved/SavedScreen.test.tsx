@@ -6,7 +6,7 @@ import { axe } from 'vitest-axe';
 import type { PlanResponse } from '@biyahey/shared';
 import { defaultT } from '../../i18n/strings';
 import { WALK_FALLBACK_NOT_REALISTIC_KM, WALK_FALLBACK_NOT_REALISTIC_M } from '../../components/transit/WalkFallback';
-import { makeWalkFallbackItinerary } from '../../test/fixtures/itinerary';
+import { makeTricycleItinerary, makeWalkFallbackItinerary } from '../../test/fixtures/itinerary';
 import {
   RECENT_TRIPS_KEY,
   SAVED_TRIPS_KEY,
@@ -115,6 +115,73 @@ describe('SavedScreen card v2', () => {
     // The saved date is labelled as the save action's date (not a live ETA).
     // `formatLongDate` renders in Asia/Manila via the en-PH formatter.
     expect(screen.getByTestId('saved-date')).toHaveTextContent(/na-save noong sep 1, 2026/i);
+  });
+
+  it('labels a partial saved fare instead of dating it as a complete fare', async () => {
+    const itinerary = makeTricycleItinerary({ pricedAmount: 14 });
+    seedSaved([
+      {
+        itinerary,
+        sources: [],
+        fareSnapshot: itinerary.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const fare = await screen.findByTestId('saved-fare');
+    // Only the jeepney leg is priced; the tricycle leg has no published fare.
+    // The partial sum must not carry a complete matrix-effectivity claim.
+    expect(fare).toHaveTextContent('Bahagyang pamasahe: ₱14');
+    expect(fare).toHaveAttribute('data-partial', 'true');
+    expect(fare).not.toHaveTextContent(/fare effective/i);
+    expect(fare).not.toHaveTextContent('2026-09-28');
+  });
+
+  it('says no fare is published when every transit leg is unpriced', async () => {
+    const itinerary = makeTricycleItinerary();
+    seedSaved([
+      {
+        itinerary,
+        sources: [],
+        fareSnapshot: itinerary.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const fare = await screen.findByTestId('saved-fare');
+    expect(fare).toHaveTextContent('Walang publikadong pamasahe');
+    expect(fare).not.toHaveTextContent('₱');
+    expect(fare).not.toHaveTextContent(/fare effective/i);
+  });
+
+  it('keeps the complete fare date while a partial row beside it is labelled', async () => {
+    const partial = makeTricycleItinerary({ pricedAmount: 14 });
+    seedSaved([
+      storedRow(MRT_PLAN, '2026-10-30T08:00:00.000Z'),
+      {
+        itinerary: partial,
+        sources: [],
+        fareSnapshot: partial.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const fares = await screen.findAllByTestId('saved-fare');
+    // Control: a complete fare keeps its own amount and matrix date.
+    expect(fares[0]).toHaveTextContent('₱10.50');
+    expect(fares[0]).toHaveTextContent('2026-03-23');
+    expect(fares[0]).not.toHaveAttribute('data-partial');
+    expect(fares[1]).toHaveTextContent('Bahagyang pamasahe: ₱14');
+    expect(fares[1]).not.toHaveTextContent(/fare effective/i);
   });
 
   it('marks a saved walk fallback without a fare amount', async () => {

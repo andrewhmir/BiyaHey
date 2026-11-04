@@ -7,7 +7,7 @@ import {
   WALK_FALLBACK_NOT_REALISTIC_M,
 } from '../../components/transit/WalkFallback';
 import { defaultT } from '../../i18n/strings';
-import { makeWalkFallbackItinerary, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import { makeTricycleItinerary, makeWalkFallbackItinerary, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
 import { planMrt3CubaoAyalaResponse } from '../../test/msw/handlers';
 import { clearPlanCache, rememberPlan } from '../routes/planCache';
 import {
@@ -254,6 +254,24 @@ describe('TripLiveScreen walkthrough', () => {
 
     // A fallback has no transit legs to step through.
     expect(screen.queryByTestId('leg-strip')).toBeNull();
+  });
+
+  it('labels a partial fare in the live summary instead of a bare amount', () => {
+    render(<TripLiveScreen itinerary={makeTricycleItinerary()} />);
+
+    const summary = screen.getByTestId('live-trip-summary');
+    // The tricycle leg has no published fare, so the zero is a partial sum, not
+    // a free ride. The summary must carry the qualifier, never a bare `₱0`.
+    expect(summary).toHaveTextContent('Bahagyang pamasahe ₱0');
+    expect(summary).not.toHaveTextContent(/· ₱0/);
+  });
+
+  it('keeps the partial qualifier when a priced leg exists', () => {
+    render(<TripLiveScreen itinerary={makeTricycleItinerary({ pricedAmount: 14 })} />);
+
+    const summary = screen.getByTestId('live-trip-summary');
+    expect(summary).toHaveTextContent('Bahagyang pamasahe ₱14');
+    expect(summary).not.toHaveTextContent('· ₱14');
   });
 
   it('warns on a live fallback over 25 km while still showing the estimate', () => {

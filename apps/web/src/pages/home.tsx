@@ -13,6 +13,7 @@ import {
   walkFallbackStat,
 } from '../components/transit/WalkFallback';
 import { useT } from '../i18n/useT';
+import { fareRowLabel } from '../lib/farePresentation';
 import { formatFare } from '../lib/format';
 import { itineraryEndpoints } from '../lib/itinerary';
 import { readRecentTrips, type SavedTrip } from '../lib/savedTripsStore';
@@ -97,6 +98,11 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
     from.length === 0 && to.length === 0 ? itinerary.id : t('saved.titleLabel', { from, to });
   const arrival = formatClockTime(itinerary.endTime);
   const fare = formatFare(trip.fareSnapshot.amount);
+  // R33/CRITICAL: a `fareIncomplete` snapshot's amount is a partial sum (or no
+  // published fare at all). The row must say so, and its accessible name must
+  // carry the same qualifier — never a bare `₱0`.
+  const incomplete = itinerary.fareIncomplete === true;
+  const fareText = incomplete ? fareRowLabel(itinerary, trip.fareSnapshot, t) : `₱${fare}`;
   const savedOn = formatLongDate(trip.savedAt);
   const walkFallback = isWalkFallback(itinerary);
   // R45/R63: a stored snapshot's fare must carry its own matrix effectivity date
@@ -104,13 +110,12 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
   // saved list enforces, now on the Home surface too. A walk fallback has no
   // fare to date: its compact notice below carries the estimate, the honest
   // sentence and the >25 km warning, so this line only dates the recent view.
+  // A partial/unpublished fare also has no complete matrix date to show; the
+  // badge above carries its honest partial/unpublished state instead.
   const savedLine = savedOn === null ? null : t('saved.recentOn', { date: savedOn });
   const provenance = walkFallback
     ? savedLine
-    : [
-        t('saved.fareLine', { amount: fare, date: trip.fareSnapshot.effective_from }),
-        savedLine,
-      ]
+    : [incomplete ? null : fareRowLabel(itinerary, trip.fareSnapshot, t), savedLine]
         .filter((part): part is string => part !== null)
         .join(' · ');
   // The row's accessible name is the honest summary; the leg ribbon/notice and
@@ -118,7 +123,7 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
   // fare: it names the badge and the walking estimate instead.
   const accessibleName = walkFallback
     ? `${t('walkFallback.badge')}, ${title}, ${walkFallbackStat(itinerary, t)}`
-    : `${title}, ${itinerary.durationMin} min, ₱${fare}`;
+    : `${title}, ${itinerary.durationMin} min, ${fareText}`;
 
   return (
     <li
@@ -148,8 +153,8 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
           {walkFallback ? (
             <WalkEstimateBadge />
           ) : (
-            <span className="shrink-0 rounded-pill border border-fare-border bg-fare-bg px-2.5 py-1 text-sm font-semibold tabular-nums text-on-fare-bg">
-              {`₱${fare}`}
+            <span className="max-w-[60%] shrink-0 rounded-pill border border-fare-border bg-fare-bg px-2.5 py-1 text-right text-sm font-semibold tabular-nums text-on-fare-bg">
+              {fareText}
             </span>
           )}
         </div>

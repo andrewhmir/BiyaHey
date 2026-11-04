@@ -686,6 +686,15 @@ describe('TripDetailScreen', () => {
       'Bahagyang pamasahe ₱0',
     );
     expect(screen.getByTestId('fare-incomplete')).toHaveTextContent(/hindi kasama sa total/i);
+    // A zero total with no breakdown lines is not a free route and has no
+    // matrix date of its own: the empty-fare and effectivity copy must be gone,
+    // replaced by the honest unpublished sentence.
+    expect(screen.getByTestId('fare-unpublished')).toHaveTextContent(
+      'Walang publikadong pamasahe',
+    );
+    expect(screen.queryByText('Walang bayad sa rutang ito.')).toBeNull();
+    expect(screen.queryByText(/^Effective /)).toBeNull();
+    expect(screen.queryByText(/Effective 2026-03-23/)).toBeNull();
   });
 
   it('shows the terminal hint only on a walk leg that carries one', () => {

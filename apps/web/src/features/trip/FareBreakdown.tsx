@@ -53,6 +53,12 @@ export interface FareBreakdownProps {
 export function FareBreakdown({ fare, sources, incomplete = false }: FareBreakdownProps) {
   const { t } = useT();
   const links = fareSourceRows(fare, sources);
+  // A zero total with no breakdown lines is the BFF's shape for an itinerary
+  // whose every transit leg is unpriced (today: tricycle-only). It is not a
+  // free route, so the empty-fare sentence and the matrix effectivity line
+  // (the quote falls back to the LTFRB date) would both be false; the honest
+  // sentence is that no fare is published.
+  const unpublished = incomplete && fare.breakdown.length === 0;
 
   return (
     <footer
@@ -95,7 +101,11 @@ export function FareBreakdown({ fare, sources, incomplete = false }: FareBreakdo
         </p>
       </div>
 
-      {fare.breakdown.length === 0 ? (
+      {unpublished ? (
+        <p data-testid="fare-unpublished" className="mt-2 text-sm">
+          {t('fare.notPublished')}
+        </p>
+      ) : fare.breakdown.length === 0 ? (
         <p className="mt-2 text-sm">{t('fare.empty')}</p>
       ) : (
         <ul
@@ -123,14 +133,16 @@ export function FareBreakdown({ fare, sources, incomplete = false }: FareBreakdo
         </p>
       ) : null}
 
-      <p className="mt-2 text-xs leading-4">
-        {t('fare.effective', { date: fare.effective_from })}
-        {fare.source_id === null && fare.breakdown.length > 0
-          ? ` · ${t('routes.fareMixed')}`
-          : ''}
-      </p>
+      {unpublished ? null : (
+        <p className="mt-2 text-xs leading-4">
+          {t('fare.effective', { date: fare.effective_from })}
+          {fare.source_id === null && fare.breakdown.length > 0
+            ? ` · ${t('routes.fareMixed')}`
+            : ''}
+        </p>
+      )}
 
-      {links.length > 0 ? (
+      {!unpublished && links.length > 0 ? (
         <p
           data-testid="fare-sources"
           className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"

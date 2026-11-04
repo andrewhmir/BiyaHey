@@ -868,11 +868,12 @@ describe('POST /plan', () => {
         extract: 'ph.osm.pbf',
         terminals: [
           {
-            osm_id: 'node/1',
+            // The real artifact row shape: integer OSM id, nullable name, kind.
+            osm_id: 6901,
             name: 'Wilson E-trike Terminal',
             lat: 14.62058,
             lon: 121.0528,
-            kind: 'e-trike',
+            kind: 'tricycle_station',
           },
         ],
       }),

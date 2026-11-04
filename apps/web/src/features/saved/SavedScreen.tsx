@@ -16,7 +16,8 @@ import {
 } from '../../components/transit/WalkFallback';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
-import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
+import { transfersLabel, walkLabel } from '../../lib/format';
+import { fareRowLabel } from '../../lib/farePresentation';
 import { itineraryEndpoints } from '../../lib/itinerary';
 import type { SavedTrip } from '../../lib/savedTripsStore';
 import { formatClockTime, formatLongDate } from '../../lib/time';
@@ -35,7 +36,9 @@ import { useSavedTrips } from './useSavedTrips';
  * - A saved ETA is never rendered without a label: "Saved route (no live data)"
  *   offline, "Saved snapshot (no live ETA)" online. Both are mandated English
  *   copy inside the Taglish UI and are tagged `lang="en"` (R44).
- * - Every fare shows its own `effective_from` date (global constraint).
+ * - Every complete fare shows its own `effective_from` date (global constraint).
+ *   A `fareIncomplete` snapshot instead says it is a partial sum, or that no
+ *   fare is published, and never dates it as a complete matrix fare.
  * - When the matrix date is unknown, the fare note says it *may* have changed
  *   instead of certifying freshness.
  * - The row title comes from the stored itinerary's own endpoints
@@ -260,12 +263,10 @@ function SavedTripCard({
         {walkFallback ? null : (
           <p
             data-testid="saved-fare"
+            data-partial={trip.itinerary.fareIncomplete === true ? 'true' : undefined}
             className="mt-2 flex w-fit max-w-full flex-wrap items-center rounded-pill border border-fare-border bg-fare-bg px-3 py-1 text-sm font-semibold text-on-fare-bg"
           >
-            {t('saved.fareLine', {
-              amount: formatFare(trip.fareSnapshot.amount),
-              date: trip.fareSnapshot.effective_from,
-            })}
+            {fareRowLabel(trip.itinerary, trip.fareSnapshot, t)}
           </p>
         )}
 

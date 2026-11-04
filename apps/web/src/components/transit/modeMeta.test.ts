@@ -1,4 +1,5 @@
 import type { LegMode } from '@biyahey/shared';
+import { Bus, CarFront, Motorbike } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
 import { defaultT } from '../../i18n/strings';
 import {
@@ -78,7 +79,13 @@ describe('modeMeta', () => {
 
   it('finalizes the tricycle presentation distinct from jeepney and bus', () => {
     expect(modeLabel('tricycle', defaultT)).toBe('Traysikel');
-    expect(modeIcon('tricycle')).toBe(MODE_ICONS.tricycle);
+    // The tricycle icon is its own (Motorbike), not a generic ride fallback:
+    // pin the real component and prove it differs from the jeepney/bus icons.
+    expect(modeIcon('tricycle')).toBe(Motorbike);
+    expect(modeIcon('jeepney')).toBe(CarFront);
+    expect(modeIcon('bus')).toBe(Bus);
+    expect(modeIcon('tricycle')).not.toBe(modeIcon('jeepney'));
+    expect(modeIcon('tricycle')).not.toBe(modeIcon('bus'));
     // Final PH-wide-coverage palette value; colour is never the only carrier.
     expect(MODE_COLORS.tricycle).toBe('#9d174d');
     for (const other of ['jeepney', 'bus'] as const) {

@@ -12,6 +12,7 @@ import {
   makeItinerary,
   makeLeg,
   makeRailTrip,
+  makeTricycleItinerary,
   makeWalkFallbackItinerary,
 } from '../test/fixtures/itinerary';
 import { RECENT_TRIPS_KEY } from '../lib/savedTripsStore';
@@ -167,6 +168,54 @@ describe('HomePage recent trips', () => {
     // must say when it was opened — the same honesty rule as the saved list.
     expect(row).toHaveTextContent(/fare effective \d{4}-\d{2}-\d{2}/);
     expect(row).toHaveTextContent(/Huling binuksan|Na-save noong/);
+  });
+
+  it('labels a partial fare instead of dating it as a complete fare', () => {
+    seedRecents([recentRow(makeTricycleItinerary({ pricedAmount: 14 }))]);
+
+    render(<HomePage />);
+
+    const row = screen.getByTestId('recent-trip');
+    // The amount is only the priced jeepney leg; the tricycle leg has no
+    // published fare. Never present the partial sum as a complete matrix fare.
+    expect(row).toHaveTextContent('Bahagyang pamasahe: ₱14');
+    expect(row).not.toHaveTextContent(/fare effective/i);
+    expect(row).not.toHaveTextContent('2026-09-28');
+    // The whole row is one button: its accessible name carries the qualifier,
+    // never a bare peso amount that reads as the full fare.
+    expect(within(row).getByRole('button')).toHaveAccessibleName(
+      /Bahagyang pamasahe: ₱14/,
+    );
+  });
+
+  it('never announces a bare ₱0 when every transit leg is unpriced', () => {
+    seedRecents([recentRow(makeTricycleItinerary())]);
+
+    render(<HomePage />);
+
+    const row = screen.getByTestId('recent-trip');
+    expect(row).toHaveTextContent('Walang publikadong pamasahe');
+    expect(row).not.toHaveTextContent('₱');
+    expect(row).not.toHaveTextContent(/fare effective/i);
+    expect(within(row).getByRole('button')).toHaveAccessibleName(
+      /Walang publikadong pamasahe/,
+    );
+  });
+
+  it('keeps complete and partial recents side by side with distinct fare copy', () => {
+    seedRecents([
+      recentRow(makeTricycleItinerary({ pricedAmount: 14 })),
+      recentRow(itineraryBetween('recent-complete', 'Cubao', 'Ayala')),
+    ]);
+
+    render(<HomePage />);
+
+    const rows = screen.getAllByTestId('recent-trip');
+    expect(rows[0]).toHaveTextContent('Bahagyang pamasahe: ₱14');
+    expect(rows[0]).not.toHaveTextContent(/fare effective/i);
+    // Control: a complete fare is unchanged — amount plus its own matrix date.
+    expect(rows[1]).toHaveTextContent('₱29');
+    expect(rows[1]).toHaveTextContent(/fare effective 2026-03-23/);
   });
 
   it('renders a rail recent with its own endpoint title and fare', () => {

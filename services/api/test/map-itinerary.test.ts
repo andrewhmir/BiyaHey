@@ -832,6 +832,16 @@ describe('tricycle terminal hints on walk legs', () => {
     return { name, lat, lon };
   }
 
+  /** Whole-metre north offset from the walk start (same sphere as `haversineM`). */
+  const METRES_PER_DEGREE_LAT = (Math.PI / 180) * 6_371_000;
+
+  function terminalAtDistance(distanceM: number): MapContext['tricycleTerminals'][number] {
+    return terminalAt(
+      `Terminal at ${distanceM} m`,
+      WALK_START.lat + distanceM / METRES_PER_DEGREE_LAT,
+    );
+  }
+
   function walkLeg(
     from = WALK_START,
     to = { name: 'STOP', lat: 14.6185, lon: 121.0528 },
@@ -883,13 +893,24 @@ describe('tricycle terminal hints on walk legs', () => {
     });
   });
 
-  it('does not attach a hint beyond 300 m', () => {
-    const itinerary = mapOne(
-      [walkLeg()],
-      contextWith([terminalAt('Too Far Terminal', 14.624)]),
-    );
-
-    expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
+  it('pins the 300 m hint boundary: 299 m and 300 m hint, 301 m does not', () => {
+    for (const [distanceM, expected] of [
+      [299, true],
+      [300, true],
+      [301, false],
+    ] as const) {
+      const itinerary = mapOne(
+        [walkLeg()],
+        contextWith([terminalAtDistance(distanceM)]),
+      );
+      const hint = itinerary?.legs[0]?.tricycleHint;
+      if (expected) {
+        expect(hint, `${distanceM} m must be inside the radius`).toBeDefined();
+        expect(hint?.distanceM).toBe(distanceM);
+      } else {
+        expect(hint, `${distanceM} m must be outside the radius`).toBeUndefined();
+      }
+    }
   });
 
   it('prefers the nearest terminal when more than one is in range', () => {

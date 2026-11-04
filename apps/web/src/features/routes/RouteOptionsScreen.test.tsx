@@ -17,6 +17,7 @@ import {
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
 import {
+  makeTricycleItinerary,
   makeWalkFallbackItinerary,
   makeWalkOnlyItinerary,
   WALK_ESTIMATE_SOURCE,
@@ -235,6 +236,88 @@ describe('RouteOptionsScreen', () => {
 
     // The filter is a local re-rank: the plan was fetched exactly once.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('never ranks or badges a partial fare as the cheapest (R33)', async () => {
+    const base = planCubaoAyalaResponse.itineraries[0]!;
+    const complete: ItineraryDto = {
+      ...base,
+      id: 'plan-complete',
+      durationMin: 40,
+      transfers: 1,
+      walkDistanceM: 800,
+      endTime: '2026-11-02T08:40:00+08:00',
+      fare: {
+        ...base.fare,
+        amount: 30,
+        breakdown: [{ label: 'Complete fare', amount: 30 }],
+      },
+    };
+    // The partial option wins duration, amount and walking on raw values; its
+    // ₱0 is only the unpriced tricycle total, so it must not lead either view.
+    const incomplete: ItineraryDto = {
+      ...makeTricycleItinerary({ durationMin: 20 }),
+      id: 'plan-incomplete',
+      endTime: '2026-11-02T08:20:00+08:00',
+    };
+    const mixedPlan: PlanResponse = {
+      ...planCubaoAyalaResponse,
+      itineraries: [incomplete, complete],
+    };
+    server.use(http.post('*/plan', () => HttpResponse.json(mixedPlan)));
+
+    const { user } = renderRouteOptions();
+    await screen.findAllByTestId('route-card');
+    const etas = () => screen.getAllByTestId('route-eta').map((node) => node.textContent);
+
+    // Recommended: the complete fare leads even though the partial one is faster.
+    expect(etas()).toEqual(['40 min', '20 min']);
+    expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
+
+    await user.click(screen.getByRole('button', { name: 'Cheapest' }));
+
+    // Cheapest: complete-before-incomplete, and CHEAPEST on the complete card.
+    expect(etas()).toEqual(['40 min', '20 min']);
+    const cards = screen.getAllByTestId('route-card');
+    expect(within(cards[0]!).getByTestId('route-badge')).toHaveTextContent('CHEAPEST');
+    expect(within(cards[0]!).queryByTestId('fare-partial')).toBeNull();
+    // The partial card keeps its explanatory chip and never gets the badge.
+    expect(within(cards[1]!).getByTestId('fare-partial')).toHaveTextContent(
+      'Bahagyang pamasahe',
+    );
+    expect(within(cards[1]!).queryByTestId('route-badge')).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('awards no CHEAPEST badge when every returned fare is incomplete', async () => {
+    const slow: ItineraryDto = {
+      ...makeTricycleItinerary({ durationMin: 30 }),
+      id: 'plan-incomplete-slow',
+    };
+    const fast: ItineraryDto = {
+      ...makeTricycleItinerary({ durationMin: 20 }),
+      id: 'plan-incomplete-fast',
+    };
+    server.use(
+      http.post('*/plan', () =>
+        HttpResponse.json({
+          ...planCubaoAyalaResponse,
+          itineraries: [slow, fast],
+        }),
+      ),
+    );
+
+    const { user } = renderRouteOptions();
+    await screen.findAllByTestId('route-card');
+    await user.click(screen.getByRole('button', { name: 'Cheapest' }));
+
+    expect(screen.getAllByTestId('route-eta').map((node) => node.textContent)).toEqual([
+      '20 min',
+      '30 min',
+    ]);
+    // Every card is a partial sum: none of them may be called the cheapest.
+    expect(screen.queryByTestId('route-badge')).toBeNull();
+    expect(screen.getAllByTestId('fare-partial')).toHaveLength(2);
   });
 
   it('leads with the consensus winner when one option wins three of the four criteria', async () => {

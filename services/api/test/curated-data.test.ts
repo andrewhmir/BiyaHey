@@ -39,22 +39,24 @@ describe('loadCuratedData tricycle terminals', () => {
 
   it('loads the mapped terminals with their published names and coordinates', () => {
     const dir = dataDir();
+    // The real artifact row shape (`pipelines/pipeline/publish.py`): integer
+    // `osm_id`, `name: str | null`, `kind` from the mapped amenity.
     writeTerminals(
       dir,
       terminalsDocument([
         {
-          osm_id: 'node/1',
+          osm_id: 6901,
           name: 'Wilson E-trike Terminal',
           lat: 14.62058,
           lon: 121.0528,
-          kind: 'e-trike',
+          kind: 'tricycle_station',
         },
         {
-          osm_id: 'node/2',
-          name: 'Baliwag Tricycle Station',
+          osm_id: 6902,
+          name: null,
           lat: 14.9542,
           lon: 120.8965,
-          kind: 'tricycle',
+          kind: 'motorcycle_taxi',
         },
       ]),
     );
@@ -62,9 +64,18 @@ describe('loadCuratedData tricycle terminals', () => {
     const terminals = loadCuratedData(dir).tricycleTerminals;
     expect(terminals).toHaveLength(2);
     expect(terminals[0]).toMatchObject({
+      osmId: '6901',
       name: 'Wilson E-trike Terminal',
       lat: 14.62058,
       lon: 121.0528,
+      kind: 'tricycle_station',
+    });
+    // A nameless node keeps `null` in the artifact; the loader carries it as ''
+    // so the mapper can use the generic terminal label instead of dropping it.
+    expect(terminals[1]).toMatchObject({
+      osmId: '6902',
+      name: '',
+      kind: 'motorcycle_taxi',
     });
   });
 
@@ -80,19 +91,22 @@ describe('loadCuratedData tricycle terminals', () => {
         { name: 'Text coordinates', lat: 'north', lon: 121 },
         { name: 'Out of range', lat: 95, lon: 121 },
         { name: 'Out of range', lat: 14, lon: 181 },
-        { name: 'Kept, no name fallback', lat: 14.6, lon: 121.0 },
-        // A terminal may be published without a display name; the hint mapper
-        // supplies the generic label rather than dropping a real terminal.
-        { osm_id: 'node/3', lat: 14.7, lon: 121.1 },
+        // The real artifact's nameless row: kept with the generic-label marker.
+        { osm_id: 6903, name: null, lat: 14.6, lon: 121.0, kind: 'tricycle_stand' },
+        // Tolerance for hand-written/legacy rows without `osm_id` or `kind`.
+        { name: 'Kept, no name fallback', lat: 14.7, lon: 121.1 },
+        { osm_id: 'node/9', name: 'String id row', lat: 14.8, lon: 121.2 },
       ]),
     );
 
     const terminals = loadCuratedData(dir).tricycleTerminals;
-    expect(terminals).toHaveLength(2);
+    expect(terminals).toHaveLength(3);
     expect(terminals.map((terminal) => terminal.name)).toEqual([
-      'Kept, no name fallback',
       '',
+      'Kept, no name fallback',
+      'String id row',
     ]);
+    expect(terminals[2]?.osmId).toBe('node/9');
   });
 
   it('ignores a corrupt artifact instead of failing boot', () => {

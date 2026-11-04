@@ -108,8 +108,21 @@ function withBuffer(itinerary: ItineraryDto, bufferMin: number): ItineraryDto {
   return { ...itinerary, legs, durationMin: itinerary.durationMin + added };
 }
 
+/**
+ * R33: a `fareIncomplete` itinerary's amount is a partial sum, so it is never
+ * ranked as the cheapest fare. Complete itineraries sort first and the partial
+ * ones after them; within each group the existing fare/duration order applies.
+ */
+function completenessRank(itinerary: ItineraryDto): number {
+  return itinerary.fareIncomplete === true ? 1 : 0;
+}
+
 function byFare(a: ItineraryDto, b: ItineraryDto): number {
-  return a.fare.amount - b.fare.amount || a.durationMin - b.durationMin;
+  return (
+    completenessRank(a) - completenessRank(b) ||
+    a.fare.amount - b.fare.amount ||
+    a.durationMin - b.durationMin
+  );
 }
 
 function byTransfers(a: ItineraryDto, b: ItineraryDto): number {
@@ -117,7 +130,12 @@ function byTransfers(a: ItineraryDto, b: ItineraryDto): number {
 }
 
 function byFareThenTransfers(a: ItineraryDto, b: ItineraryDto): number {
-  return a.fare.amount - b.fare.amount || a.transfers - b.transfers || a.durationMin - b.durationMin;
+  return (
+    completenessRank(a) - completenessRank(b) ||
+    a.fare.amount - b.fare.amount ||
+    a.transfers - b.transfers ||
+    a.durationMin - b.durationMin
+  );
 }
 
 /**

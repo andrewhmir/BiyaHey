@@ -156,6 +156,67 @@ export function makeWalkOnlyItinerary(): ItineraryDto {
   return makeItinerary([makeLeg({ mode: 'walk', durationMin: 18, distanceM: 1400 })]);
 }
 
+export interface TricycleItineraryOptions {
+  /**
+   * Amount of the priced jeepney leg in front of the tricycle leg. `0` (default)
+   * makes every transit leg unpriced — the tricycle-only shape whose fare total
+   * is zero with an empty breakdown.
+   */
+  pricedAmount?: number;
+  /** Override the summed duration (ranking tests need distinct ETAs). */
+  durationMin?: number;
+}
+
+/**
+ * The BFF's `fareIncomplete` itinerary shape: a tricycle leg has no published
+ * fare source, so the total is only the sum of the priced legs (zero when the
+ * tricycle is the only ride). The quote keeps the BFF's `walkOnlyFare()`
+ * fallback date and an empty breakdown for the unpriced shape.
+ */
+export function makeTricycleItinerary({
+  pricedAmount = 0,
+  durationMin,
+}: TricycleItineraryOptions = {}): ItineraryDto {
+  const legs: LegDto[] = [makeLeg({ mode: 'walk' })];
+  if (pricedAmount > 0) {
+    legs.push(
+      makeLeg({
+        mode: 'jeepney',
+        routeShortName: 'JEEP',
+        headsign: 'Novaliches',
+        durationMin: 15,
+        distanceM: 3000,
+      }),
+    );
+  }
+  legs.push(
+    makeLeg({
+      mode: 'tricycle',
+      routeShortName: 'Wilson E-trike',
+      headsign: 'Greenhills',
+      durationMin: 10,
+      distanceM: 2500,
+      fareNotPublished: true,
+    }),
+  );
+  return makeItinerary(legs, {
+    ...(durationMin === undefined ? {} : { durationMin }),
+    fareIncomplete: true,
+    fare: {
+      amount: pricedAmount,
+      currency: 'PHP',
+      confidence: 'official',
+      effective_from: '2026-09-28',
+      source_id: pricedAmount > 0 ? 'ltfrb-fares' : null,
+      breakdown:
+        pricedAmount > 0
+          ? [{ label: 'Traditional jeepney base fare', amount: pricedAmount }]
+          : [],
+    },
+    sources: pricedAmount > 0 ? ['osm', 'ltfrb-fares'] : ['osm'],
+  });
+}
+
 export interface WalkFallbackOptions {
   /** Whole-metre walking distance (`itinerary.walkDistanceM`). */
   distanceM?: number;

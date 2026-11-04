@@ -34,10 +34,22 @@ export const FILTER_OPTIONS: readonly RouteFilterOption[] = [
  */
 const CONSENSUS_CRITERIA: readonly ((itinerary: ItineraryDto) => number)[] = [
   (itinerary) => itinerary.durationMin,
-  (itinerary) => itinerary.fare.amount,
+  // R33: a partial sum is not a cheap fare. It never wins the fare criterion;
+  // the partial chip on the card still explains the amount.
+  (itinerary) =>
+    itinerary.fareIncomplete === true ? Number.POSITIVE_INFINITY : itinerary.fare.amount,
   (itinerary) => itinerary.transfers,
   (itinerary) => itinerary.walkDistanceM,
 ];
+
+/** R33: an incomplete fare sorts after every complete one, stable otherwise. */
+function completenessRank(itinerary: ItineraryDto): number {
+  return itinerary.fareIncomplete === true ? 1 : 0;
+}
+
+function byCompleteness(a: ItineraryDto, b: ItineraryDto): number {
+  return completenessRank(a) - completenessRank(b);
+}
 
 /**
  * A value's competition rank within one criterion: 1 + the number of values
@@ -100,10 +112,12 @@ function consensusProfiles(
  * can cause a refetch.
  *
  * Recommended is deliberately not pure ETA order: the screen offers four chips,
- * so Recommended has to agree with what they say. It ranks by two consensus
- * keys over the same four criteria the chips expose (durationMin, fare,
- * transfers, walkDistanceM), each scored with a competition rank (1 + the
- * number of strictly better values; ties share the best rank):
+ * so Recommended has to agree with what they say. Complete fares lead (R33): a
+ * `fareIncomplete` option's amount is a partial sum, so it never outranks a
+ * complete one. Within each group it ranks by two consensus keys over the same
+ * four criteria the chips expose (durationMin, fare, transfers,
+ * walkDistanceM), each scored with a competition rank (1 + the number of
+ * strictly better values; ties share the best rank):
  *   1. `wins` DESCENDING — the number of criteria the itinerary is outright
  *      best on. This is primary because it is what the chips converge on: a
  *      rider who presses Cheapest, then Less walking, must not go back to
@@ -132,6 +146,7 @@ export function rankItineraries(
     switch (filter) {
       case 'cheapest':
         return (
+          byCompleteness(a, b) ||
           a.fare.amount - b.fare.amount ||
           a.durationMin - b.durationMin ||
           a.walkDistanceM - b.walkDistanceM
@@ -154,6 +169,7 @@ export function rankItineraries(
         const profileA = profiles?.get(a) ?? NO_PROFILE;
         const profileB = profiles?.get(b) ?? NO_PROFILE;
         return (
+          byCompleteness(a, b) ||
           profileB.wins - profileA.wins ||
           profileA.score - profileB.score ||
           a.durationMin - b.durationMin ||
@@ -173,12 +189,18 @@ export function rankItineraries(
  * criterion instead, so the fare lead and the Recommended lead can never both
  * claim `BEST`.
  */
-export function badgeFor(filter: RouteFilter, index: number): RouteBadge | undefined {
+export function badgeFor(
+  filter: RouteFilter,
+  index: number,
+  itinerary: ItineraryDto,
+): RouteBadge | undefined {
   if (index !== 0) {
     return undefined;
   }
   if (filter === 'cheapest') {
-    return 'CHEAPEST';
+    // R33: never award CHEAPEST to a partial sum, even when every returned
+    // option is incomplete and this one happens to lead the sort.
+    return itinerary.fareIncomplete === true ? undefined : 'CHEAPEST';
   }
   if (filter === 'fewest-transfers') {
     return 'FEWEST TRANSFERS';
@@ -508,7 +530,7 @@ function RouteOptionsContent({
                       sources={plan.sources}
                       selected={selected}
                       onSelect={onSelect}
-                      badge={badgeFor(filter, index)}
+                      badge={badgeFor(filter, index, itinerary)}
                     />
                     {/* Exactly one detail action, directly under the selected
                         card, so the rider always knows which route it opens. */}
