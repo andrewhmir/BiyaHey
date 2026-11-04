@@ -143,6 +143,7 @@ const TL = {
   'mode.ferry': 'Ferry',
   'mode.uv-express': 'UV Express',
   'mode.p2p': 'P2P',
+  'mode.tricycle': 'Traysikel',
 
   // --- Trip detail --------------------------------------------------------
   'trip.title': 'Detalye ng biyahe',
@@ -488,6 +489,7 @@ const EN: Record<StringKey, string> = {
   'mode.ferry': 'Ferry',
   'mode.uv-express': 'UV Express',
   'mode.p2p': 'P2P',
+  'mode.tricycle': 'Tricycle',
 
   'trip.title': 'Trip details',
   'trip.summaryArrive': '{minutes} min · arrive {arrival}',

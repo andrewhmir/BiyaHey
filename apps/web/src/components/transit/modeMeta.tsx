@@ -4,6 +4,7 @@ import {
   CarFront,
   CarTaxiFront,
   Footprints,
+  Motorbike,
   Route,
   Ship,
   TrainFront,
@@ -36,6 +37,10 @@ export const MODE_COLORS: Record<LegMode, string> = {
   ferry: '#1565c0',
   'uv-express': '#c2410c',
   p2p: '#475569',
+  // Provisional: Task 10 owns the final tricycle palette/label. The value is
+  // dark enough for the 3:1 map-casing contrast gate below and distinguishable
+  // from the rail purple.
+  tricycle: '#9d174d',
 };
 
 /** One line icon per mode, sized by the consumer. */
@@ -49,6 +54,7 @@ export const MODE_ICONS: Record<LegMode, LucideIcon> = {
   ferry: Ship,
   'uv-express': CarTaxiFront,
   p2p: Route,
+  tricycle: Motorbike,
 };
 
 /**

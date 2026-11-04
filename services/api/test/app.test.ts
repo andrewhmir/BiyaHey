@@ -18,7 +18,7 @@ describe('api', () => {
     const app = buildApp();
     const res = await app.inject({ method: 'GET', url: '/sources' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toHaveLength(10);
+    expect(res.json()).toHaveLength(11);
     expect(res.json()[0]).toMatchObject({ id: 'osm' });
     await app.close();
   });

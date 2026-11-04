@@ -266,6 +266,21 @@ describe('fetchSources', () => {
     await expect(fetchSources()).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
+  it('accepts a derived row that publishes no licence URL', () => {
+    const derived = {
+      ...row,
+      id: 'walk-estimate',
+      name: 'BiyaHey! walking-time estimate',
+      url: '—',
+      licence_spdx: 'NOASSERTION',
+      kind: 'derived',
+      method: 'haversine distance at 4.5 km/h',
+    } as Record<string, unknown>;
+    delete derived.licence_url;
+
+    expect(isDataSourceRow(derived)).toBe(true);
+  });
+
   it('rejects a malformed row instead of letting a card render undefined (M3)', async () => {
     server.use(http.get('*/sources', () => HttpResponse.json([row, { id: 'broken' }])));
 

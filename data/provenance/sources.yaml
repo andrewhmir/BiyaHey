@@ -131,3 +131,21 @@ sources:
     attribution: "Community reports — BiyaHey! contributors"
     used_for:
       - "crowd reports (phase 4)"
+
+  # Derived row (`kind: "derived"`): computed by the BFF, not sourced from a
+  # dataset. It therefore claims no dataset licence — SPDX `NOASSERTION`
+  # ("no licence asserted"), with no `licence_url` — and uses the same `"—"`
+  # no-URL sentinel as `crowd-reports`. The schema's derived branch enforces
+  # that shape; see schema/sources.schema.json.
+  - id: "walk-estimate"
+    kind: "derived"
+    name: "BiyaHey! walking-time estimate"
+    publisher: "BiyaHey! contributors"
+    url: "—"
+    licence_spdx: "NOASSERTION"
+    coverage: "Any origin/destination pair — computed on request, no external dataset"
+    last_checked: "2026-11-04"
+    attribution: "BiyaHey!-computed walking estimate — haversine distance at 4.5 km/h; straight-line only when no walking path exists"
+    method: "Haversine distance between the requested origin and destination divided by a 4.5 km/h walking speed; geometry stays straight-line only when no walking path exists"
+    used_for:
+      - "walk fallback distance and duration estimates"

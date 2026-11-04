@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
-/** Stable id for every dataset or service the app draws on (spec §8.1). */
+/** Stable id for every dataset, service or computed estimate the app draws on (spec §8.1). */
 export type SourceId =
   | 'osm'
   | 'osm-wiki-jeepney'
@@ -14,9 +14,20 @@ export type SourceId =
   | 'photon'
   | 'openfreemap'
   | 'motis'
-  | 'crowd-reports';
+  | 'crowd-reports'
+  /** BiyaHey!-computed walking estimate (derived; no external dataset). */
+  | 'walk-estimate';
 
-/** One row of the provenance registry. */
+/**
+ * One row of the provenance registry.
+ *
+ * The registry can also hold a `kind: 'derived'` row (`walk-estimate`): it is
+ * computed by BiyaHey! rather than sourced from a dataset, so it claims no
+ * dataset licence (`licence_spdx: NOASSERTION`, no `licence_url`) and uses the
+ * registry's `"—"` sentinel for "no external URL". Its `method` field states
+ * the computation. The schema in `data/provenance/schema/sources.schema.json`
+ * is the authority for that branch.
+ */
 export interface DataSource {
   id: SourceId;
   name: string;

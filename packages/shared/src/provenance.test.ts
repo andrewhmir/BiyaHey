@@ -15,8 +15,8 @@ import {
 } from './provenance.js';
 
 describe('provenance', () => {
-  it('loads exactly the 10 registered sources', () => {
-    expect([...loadProvenance().keys()]).toHaveLength(10);
+  it('loads exactly the 11 registered sources', () => {
+    expect([...loadProvenance().keys()]).toHaveLength(11);
   });
   it('uses the OSM attribution string fixed by the spec', () => {
     expect(loadProvenance().get('osm')!.attribution)
@@ -39,7 +39,7 @@ describe('provenance', () => {
   });
   it('is importable through the @biyahey/shared/provenance package subpath', () => {
     const registry = loadProvenanceFromSubpath();
-    expect(registry.size).toBe(10);
+    expect(registry.size).toBe(11);
     expect(attributionForFromSubpath(['osm'])).toContain(
       '© OpenStreetMap contributors — data available under the Open Database License (ODbL) 1.0',
     );

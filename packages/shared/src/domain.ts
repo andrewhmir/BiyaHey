@@ -12,9 +12,22 @@ export type { DataSource, SourceId } from './provenance.js';
  * `p2p` is part of the shared vocabulary but the MOTIS adapter does not emit it
  * yet: MOTIS exposes PT2-style routes as ordinary `bus-` route ids and publishes
  * no per-route fare, which the p2p fare rule requires.
+ *
+ * `tricycle` is the PH-wide-coverage vocabulary member for the `trike-` route
+ * family. No current feed emits it, so it is additive at the wire level: a
+ * payload that carries it is new, and old payloads that do not stay valid.
  */
 export type LegMode =
-  'walk' | 'jeepney' | 'bus' | 'mrt3' | 'lrt1' | 'lrt2' | 'ferry' | 'uv-express' | 'p2p';
+  | 'walk'
+  | 'jeepney'
+  | 'bus'
+  | 'mrt3'
+  | 'lrt1'
+  | 'lrt2'
+  | 'ferry'
+  | 'uv-express'
+  | 'p2p'
+  | 'tricycle';
 
 /** One endpoint of a leg, as the PWA renders it. */
 export interface LegPlaceDto {
@@ -101,6 +114,35 @@ export interface LegDto {
    */
   geometry?: LegGeometryDto;
   /**
+   * True when this leg's geometry is a straight-line estimate rather than a
+   * routed path — the honest minimum for a walk fallback whose walking graph
+   * has no path. Additive and optional: a routed leg omits the field rather
+   * than sending `false`, so older payloads and cached itineraries keep
+   * rendering and no `v` bump is needed.
+   */
+  approximate?: true;
+  /**
+   * True when this transit leg's fare has no published source, so the
+   * itinerary total excludes it (see {@link ItineraryDto.fareIncomplete}). It
+   * is never a guessed amount: the field marks the gap instead of pricing it.
+   * Additive and optional: a priced leg omits the field rather than sending
+   * `false`, so older payloads remain valid.
+   */
+  fareNotPublished?: true;
+  /**
+   * Present on a walk leg whose endpoint passes within 300 m of a mapped
+   * tricycle terminal (PH-wide coverage D5). It is a hint, not a leg: the
+   * route is not in the dataset, and the PWA must label it as not being one.
+   * Additive and optional: walk legs with no nearby terminal omit it, so older
+   * payloads and cached itineraries stay valid.
+   */
+  tricycleHint?: {
+    /** Display name of the mapped terminal. */
+    terminalName: string;
+    /** Distance from the walk endpoint to the terminal, in whole metres. */
+    distanceM: number;
+  };
+  /**
    * True for a walk leg that is a transfer between two transit legs (spec §9's
    * `informal_transfer` leg type). The PWA labels it as a transfer and applies
    * the presentation buffer; ordinary access/egress walks and lone walk-only
@@ -122,6 +164,14 @@ export interface LegDto {
 /** One journey option returned by `POST /plan`. */
 export interface ItineraryDto {
   id: string;
+  /**
+   * Set to `'walk'` only when this itinerary is a BiyaHey!-synthesised walking
+   * estimate because the router found no transit option (PH-wide coverage D4).
+   * Additive and optional: a routed itinerary omits the field rather than
+   * sending `false`, so older payloads and cached itineraries stay valid and
+   * `v` stays 1.
+   */
+  fallback?: 'walk';
   durationMin: number;
   startTime: string;
   endTime: string;
@@ -130,6 +180,13 @@ export interface ItineraryDto {
   /** Distinct modes in travel order, including `walk`. */
   modes: string[];
   fare: FareQuote;
+  /**
+   * True when {@link fare} excludes at least one leg whose fare has no
+   * published source (see {@link LegDto.fareNotPublished}). Additive and
+   * optional: a fully priced itinerary omits the field rather than sending
+   * `false`, so older payloads remain valid and no `v` bump is needed.
+   */
+  fareIncomplete?: true;
   /** Union of the leg source ids, in provenance registry order. */
   sources: SourceId[];
   legs: LegDto[];

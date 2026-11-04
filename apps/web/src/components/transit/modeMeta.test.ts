@@ -23,6 +23,7 @@ const ALL_MODES: readonly LegMode[] = [
   'ferry',
   'uv-express',
   'p2p',
+  'tricycle',
 ];
 
 function channel(value: number): number {

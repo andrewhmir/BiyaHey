@@ -320,6 +320,7 @@ def test_load_sources_reads_the_committed_registry_in_canonical_order():
         "openfreemap",
         "motis",
         "crowd-reports",
+        "walk-estimate",
     ]
     assert sources["osm"]["licence_spdx"] == "ODbL-1.0"
     assert sources["osm"]["attribution"] == SPEC_APPENDIX_A_ATTRIBUTION

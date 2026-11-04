@@ -267,26 +267,38 @@ export async function planTrip(
  * (or carries a non-string id) must reach the screen's error/retry state rather
  * than a card that crashes on `undefined`. This mirrors `isFareStatusDto`:
  * plain TypeScript, no Node-only imports, safe in the PWA bundle.
+ *
+ * A `kind: 'derived'` row (`walk-estimate`) is computed by BiyaHey! rather than
+ * sourced from a dataset, so it legitimately publishes no dataset source URL or
+ * licence URL; those rows may omit `url` and `licence_url` (the registry uses
+ * `"—"` as the no-URL sentinel). `licence_spdx` is still required: SPDX's
+ * `NOASSERTION` is how such a row states that it claims no licence.
  */
 export function isDataSourceRow(value: unknown): value is DataSource {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const row = value as Partial<DataSource>;
-  const requiredStrings = [
+  const row = value as Partial<DataSource> & { kind?: unknown };
+  const identityStrings = [
     'id',
     'name',
     'publisher',
-    'url',
     'licence_spdx',
-    'licence_url',
     'coverage',
     'last_checked',
     'attribution',
   ] as const;
-  for (const field of requiredStrings) {
+  for (const field of identityStrings) {
     if (typeof row[field] !== 'string' || row[field].length === 0) {
       return false;
+    }
+  }
+  if (row.kind !== 'derived') {
+    const datasetStrings = ['url', 'licence_url'] as const;
+    for (const field of datasetStrings) {
+      if (typeof row[field] !== 'string' || row[field].length === 0) {
+        return false;
+      }
     }
   }
   return (
