@@ -192,8 +192,10 @@ zero duration is evaluated with a 30-second floor rather than dividing by zero. 
 geometry-to-straight-line ratio rule is deliberately not used: a route crossing the
 Pasig River can legitimately drive several kilometres between stops 1 km apart.
 
-Each `/plan` response carries `x-biyahey-motis-calls` (the fan-out: base, +10 min,
-direct-only) and `x-biyahey-implausible-dropped` (unique dropped options), and the
+Each `/plan` response carries `x-biyahey-motis-calls` (every logical MOTIS `/plan`
+call: the base, +10 min and direct-only fan-out, plus the fallback's walk-route call
+when no itinerary existed), `x-biyahey-implausible-dropped` (unique dropped options)
+and `x-biyahey-fallback` (`walk` for a labelled walking estimate), and the
 golden suite asserts every returned itinerary passes the same guard. On the pre-fix feed
 that net dropped 62 impossible options; on the rebuilt feed the golden corridors drop
 **51** (6 Cubao→Ayala, 3 Cubao→Manila, 12 Pasay→Taguig, 15 Fairview→Manila, 15 Las

@@ -15,10 +15,15 @@ response can carry the datasets it actually used (spec §7, §10).
 | `POST` | `/fares/quote` | price one leg (2026 matrix, rail bands, free-ride overrides); adds `stale` |
 | `GET` | `/fares/status` | fare matrix `effective_from` + `stale` (183-day rule) |
 
-`POST /plan` sets three diagnostic headers: `x-biyahey-motis-calls` (fan-out
-count), `x-biyahey-implausible-dropped` (bad-geometry guard, R10) and
-`x-biyahey-unsupported-dropped` (PNR / non-PRFS ferry / other unpriced modes).
-It returns at most 5 itineraries (spec §9), after ranking and dedupe.
+`POST /plan` sets diagnostic headers: `x-biyahey-motis-calls` (every logical MOTIS
+`/plan` call the request made — the fan-out, plus the fallback's walk-route call when
+one was needed), `x-biyahey-implausible-dropped` (bad-geometry guard, R10),
+`x-biyahey-unsupported-dropped` (PNR / non-PRFS ferry / other unpriced modes) and
+`x-biyahey-fallback` (`walk` only when the response is the labelled walking estimate
+returned because the router had no usable itinerary).
+It returns at most 5 itineraries (spec §9), after ranking and dedupe; when there are
+none it returns one `fallback: 'walk'` estimate instead of an empty list (see
+`src/routing/walk-fallback.ts`).
 
 ## Configuration
 

@@ -105,7 +105,11 @@ They contribute fare amounts and attribution strings, not geometry.
 Before adding or changing a data source:
 
 1. Record it in `sources.yaml` with `licence_spdx`, `licence_url`, attribution
-   and coverage; run `npm run validate:data`.
+   and coverage; run `npm run validate:data`. Datasets use `kind: dataset` (the
+   default) and require `url` + `licence_url`. A **derived** source that is not a
+   dataset (e.g. `walk-estimate`, a BiyaHey!-computed walking estimate) uses
+   `kind: derived`, requires `method`, must use `licence_spdx: NOASSERTION`, and must
+   **not** carry a `licence_url` — never invent a licence for computed output.
 2. If it is not redistributable, **do not register it** — it stays in this file's
    never-shipped list instead.
 3. Run `python -m pytest` from `pipelines/` and
