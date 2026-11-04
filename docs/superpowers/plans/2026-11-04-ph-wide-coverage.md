@@ -372,5 +372,7 @@ All tasks executed; the acceptance record is `docs/runbooks/ph-wide-coverage-acc
   files), R30/R31/R32 (keeper/reverse/nameless + counters), R33 (incomplete fares never ranked
   cheapest), R34 (mistagged tricycle-bus exclusion), R35 (national config selected via local `.env`).
 - Known gaps: Cebu/Baguio/Davao OSM transit absent; IV-A tricycle terminals outside the NCR
-  landmark extract; 12 two-point shapes (6B 3c); tricycle-only zero-fare quote shape; Lighthouse
-  PARTIAL; PNR/long-distance ferries/P2P excluded; no realtime claims.
+  landmark extract; 12 NCR / 13 national two-point shapes (6B 3c); tricycle-only zero-fare quote shape; Lighthouse
+  PARTIAL; PNR/long-distance ferries excluded and P2P deferred as a leg mode — the national feed
+  still carries OSM-mapped P2P shuttles as `bus-` ids priced by the ordinary city-bus formula
+  (recorded pricing caveat; fix = feed-level `p2p-` marker + rebuild); no realtime claims.

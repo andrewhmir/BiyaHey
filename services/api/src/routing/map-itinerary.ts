@@ -146,6 +146,27 @@ export function normalizeRouteId(routeId: string): string | undefined {
 }
 
 /**
+ * Standalone `P2P` token in a route's published labels.
+ *
+ * P2P (premium point-to-point) shuttles exist in the national OSM feed as
+ * ordinary `bus-` route ids: GTFS carries no P2P marker, OSM only labels them
+ * through `network=P2P` and their names. v1 has no machine-readable P2P route
+ * fare (ruling R48), so such a leg must be served but **not** priced by the
+ * ordinary-city-bus matrix — that would state a fare no operator publishes and
+ * contradict the record that P2P is deferred. Detection is deliberately narrow:
+ * only the labels MOTIS publishes (displayName / routeShortName / headsign) with
+ * the token `P2P` delimited from other characters; never inferred from shape,
+ * distance or operator.
+ */
+const P2P_LABEL_PATTERN = /(?:^|[^a-z0-9])p2p(?:[^a-z0-9]|$)/i;
+
+function isP2pServiceLabel(record: JsonRecord): boolean {
+  return [asString(record.displayName), asString(record.routeShortName), asString(record.headsign)].some(
+    (label) => label !== undefined && P2P_LABEL_PATTERN.test(label),
+  );
+}
+
+/**
  * Map a leg mode to the fare engine's mode.
  *
  * `bus-` legs are priced as ordinary city buses and `uv-` legs as traditional
@@ -571,11 +592,16 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
   const freeRideOverride =
     normalizedRouteId !== undefined && context.freeRideRouteIds.has(normalizedRouteId);
 
+  // A P2P service has no machine-readable route fare (ruling R48) and is not an
+  // ordinary city bus, so it is carried unpriced instead of mispriced.
+  const p2pService = mode !== 'walk' && isP2pServiceLabel(record);
+  const fareNotPublished = mode === 'tricycle' || p2pService;
   let quote: FareQuote | null = null;
-  if (mode === 'tricycle') {
-    // No published tricycle fare source exists (PH-wide coverage R4/R11). The
-    // leg is carried with `fareNotPublished` below and excluded from the
-    // itinerary sum; pricing it with the jeepney matrix would invent an amount.
+  if (fareNotPublished) {
+    // No published fare source exists for this leg (tricycle: PH-wide coverage
+    // R4/R11; P2P: R48). It is carried with `fareNotPublished` below and
+    // excluded from the itinerary sum; pricing it with another mode's matrix
+    // would invent an amount.
   } else if (mode !== 'walk') {
     const fareMode = FARE_MODE_BY_LEG[mode];
     if (fareMode === undefined) {
@@ -618,7 +644,7 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
     distanceM: Math.round(distanceM),
     sourceIds,
   };
-  if (mode === 'tricycle') {
+  if (fareNotPublished) {
     // Additive marker, never an amount: the itinerary total excludes this leg
     // and carries `fareIncomplete` (see `mapItinerary`).
     dto.fareNotPublished = true;

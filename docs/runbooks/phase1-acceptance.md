@@ -375,6 +375,11 @@ Two different reports use the word "coverage"; do not confuse them:
   `p2p` leg and `/plan` never claims P2P service: the feed carries no machine-readable
   per-route P2P fare, so any such shuttle would be mispriced as an ordinary city bus.
   P2P is absent from v1 options; it is a data-acquisition task, not a code gap.
+  **2026-11-05 update:** the national feed contains OSM-mapped P2P shuttles as ordinary `bus-`
+  routes (33 nationally) and MOTIS v6 does not expose their long-name label, so v1 currently
+  prices them with the ordinary city-bus formula — a recorded pricing caveat, not a served P2P
+  fare. The BFF marks a leg `fareNotPublished` whenever a P2P label is present in the payload
+  (guard added 2026-11-05); a feed-level `p2p-` route-id marker plus a rebuild is the follow-up.
 - **`gtfs-validator` was not executed locally (R46).** Java 21 is present and the
   pinned v8.0.1 CLI jar was downloaded with a verified sha256
   (`19293ddd…1000e2`), but this host's JVM fails to resolve the validator's own
@@ -418,14 +423,14 @@ Plan 1 now ships the services the spec §7 local-first promise needs:
 ## 2026-11-05 — gate repairs and deliberate re-pins from the PH-wide pass
 
 Re-run on the national stack: `npm run verify:phase1` exits 0 with **PARTIAL** (5 pass, 2 partial,
-0 deferred? no — 1 deferred, 0 fail), the same honest shape as the 2026-11-01 record.
+(5 pass, 2 partial, 1 deferred, 0 fail), the same honest shape as the 2026-11-01 record.
 
 - The NCR feed sha256 in this runbook was re-pinned `0dff35d2…` → **`6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c`** because the
   national pass corrected the synthesized schedule (distance-consistent segment times) and trimmed
   route shapes to their served stops. The NCR→Bulacan zero from Task 6B is fixed: the marker test
   in `services/api/test/ncr-bulacan-live.test.ts` is no longer `it.fails`, it is a hard assertion
   that Cubao→Meycauayan returns a transit itinerary with 0 implausible drops and no fallback.
-- **Golden suite:** six corridor fare bands were widened and two `requiredModes` re-pinned
+- **Golden suite:** all ten corridor fare bands were re-set (widened caps around the live observed min/max) and two `requiredModes` re-pinned
   (ferry coverage stays required on Cubao→Pasig, jeepney coverage on Novaliches→Cubao). The
   national feed legitimately adds long-bus alternatives (a ~45 km leg at the documented ordinary
   city-bus formula reaches ~₱122) and MOTIS's multi-threaded search varies the exact alternative

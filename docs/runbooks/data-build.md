@@ -289,20 +289,23 @@ magnitude). The 2026-11-03 geometry fix republished the feed in the same window.
 console output:
 
 ```
-publish: 489 routes, 160392 trips, 4562 stops
+publish: 623 routes, 204344 trips, 5656 stops
 curated: 12/16 modelled, 4 skipped, 4 unresolved landmarks
 coverage: 12/16 curated routes in the feed (75.0%)
 aliases: 8 used, 0 invalid (data\routes\landmark-aliases.yaml)
-fare tables: 6 fares, 469 route rules, 3 unrepresentable
+fare tables: 6 fares, 599 route rules, 3 unrepresentable
 gtfs: data\build\gtfs\gtfs.zip
 manifest: data\build\manifest.json (sha256 6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c)
 report: data\build\build-report.json
 licence gate: ok (blocked datasets checked, ODbL-1.0 and CC BY-SA 2.0 notices present in artifact)
 ```
 
-The five fewer routes than the pre-gate 494 are the excluded families (7 unique route
-ids; the extract carries duplicate relations for `rail-ss`/`rail-mnc`/`rail-mrt9`). The
-zip sha256 is byte-identical across rebuilds of the same inputs (deterministic).
+The block above is the 2026-11-05 national-pass rebuild (ruling R25): 623 routes is 489 +
+146 distinct same-slug corridors published as `<id>-osm<osm id>` + recovered keeper corridors
+- 226 exact-reverse duplicate directions - excluded families (7 unique rail/ferry ids; the
+extract carries duplicate relations for `rail-ss`/`rail-mnc`/`rail-mrt9`). The counters that
+reconcile it are in `build-report.json` under `osm_ingest`. The zip sha256 is byte-identical
+across rebuilds of the same inputs (deterministic).
 
 **Shapes (`shapes.txt`).** Since 2026-11-03 the feed publishes **one shape per travel
 direction** — `<route_id>:shape:0` and its exact reverse `<route_id>:shape:1`, with each
@@ -315,7 +318,8 @@ node before it becomes a shape (`osm_routes._resolve_shape`): relation order and
 direction can no longer splice detached fragments into a straight jump. After the fix,
 **zero** OSM-derived shapes have a consecutive-point gap above 1.5 km; the only remaining
 straight-line shapes are the 11 curated jeep/UV routes whose inventory carries landmark
-endpoints but no way geometry (12 two-point shapes, one per direction).
+endpoints but no way geometry (12 two-point shapes in the NCR feed / 13 in the national
+build's `build_stats.two_point_shapes`, one per direction plus one national-only route).
 
 Artifacts:
 
@@ -519,7 +523,7 @@ acceptance default; `--region ncr` (the default) still produces `data/build/osm/
 ```powershell
 # Full national chain (reuses the downloaded extract; no re-download when it exists)
 npm run data:build -- --region ph
-# Rebuild only the national feed from the existing national extract (~minutes)
+# Rebuild only the national feed from the existing national extract (~33 min measured)
 npm run data:build -- --region ph --publish-only
 ```
 

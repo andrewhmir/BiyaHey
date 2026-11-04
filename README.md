@@ -209,17 +209,19 @@ without a reuse grant are **never shipped**.
   (measured, not repaired); tricycle-only itineraries reuse the zero-fare quote shape and the UI
   labels them partial; the phase-2 Lighthouse verdict stays PARTIAL (TBT 7.6 s in the 2026-11-05 run).
 
-- **Performance is PARTIAL.** The paint-only budget passes (104.4 KB gzip vs
+- **Performance is PARTIAL.** The current paint-only budget passes (112.3 KB gzip vs
   250 KB), but the spec §11 "cold start → interactive map ≤ 3 s" target is **not
   met**, TBT is above the Lighthouse "good" guidance, the ≤ 40 tiles/viewport
   budget is measured but not enforced, and the `saveData` raster fallback is not
   implemented. The CI `perf` job is authoritative; see
   `docs/runbooks/phase2-acceptance.md` §6.
 - **Data gaps.** Coverage is 12/16 curated routes; PNR and non-PRFS ferries are
-  excluded from the v1 feed and counted; P2P is formally deferred; the LRT-2 fare
-  band is provisional (`needs_verification: true`); a plausibility guard mitigates
-  bad OSM shapes until the GTFS is rebuilt. See
-  `docs/runbooks/phase1-acceptance.md` §8.
+  excluded from the v1 feed and counted; P2P is deferred as a leg mode (R48), but the
+  national feed carries OSM-mapped P2P shuttles as ordinary `bus-` ids that the router
+  cannot yet distinguish, so they are priced by the ordinary city-bus formula — a recorded
+  pricing caveat with a feed-level `p2p-` id marker as the planned fix; the LRT-2 fare band
+  is provisional (`needs_verification: true`). See `docs/runbooks/phase1-acceptance.md` §8
+  and `docs/runbooks/ph-wide-coverage-acceptance.md`.
 - **UI gaps for public beta.** Home's peek sheet does not yet list recent trips
   (spec screen 1), the English-fallback toggle has no settings UI (spec §11), and
   mixed Taglish/English sentences are tagged as one primary language (R81). All

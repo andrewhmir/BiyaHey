@@ -412,6 +412,9 @@ dev server.
   next 08:00 Asia/Manila, and `verify:phase1`'s golden invocation gained the missing
   `--tagsFilter=integration`.
 - **Known gaps carried forward:** Cebu/Baguio/Davao transit absent in OSM (labelled fallback);
-  Region IV-A tricycle terminals outside the NCR landmark extract; 12 two-point shapes (6B 3c);
+  Region IV-A tricycle terminals outside the NCR landmark extract; 12 NCR / 13 national two-point shapes (6B 3c);
   tricycle-only itineraries reuse the zero-fare quote shape (UI labels it partial); PNR,
-  long-distance ferries and P2P stay excluded; Lighthouse PARTIAL; no realtime claims anywhere.
+  long-distance ferries stay excluded and P2P is deferred as a leg mode — but the national feed
+carries OSM-mapped P2P shuttles as `bus-` ids that MOTIS v6 cannot label, so they are currently
+priced by the ordinary city-bus formula (recorded pricing caveat; feed-level `p2p-` marker + rebuild
+is the fix); Lighthouse PARTIAL; no realtime claims anywhere.

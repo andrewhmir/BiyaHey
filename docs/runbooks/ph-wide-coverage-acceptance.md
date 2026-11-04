@@ -26,12 +26,23 @@ Branch: `feature/ph-wide-coverage` (from `main` @ `3bd0684`); no remote, nothing
 |---|---|---|
 | NCR feed (re-pinned) | `node scripts/data-build.mjs --publish-only --skip-download` | sha256 **`6aea510b1ce35e48820812b5b9b49c936533c395eec21b8e84d407493a46be7c`**, 623 routes / 5,656 stops / 204,344 trips / 1,855,168 stop_times, 15,090,974 B |
 | National feed | `node scripts/data-build.mjs --region ph --publish-only` | sha256 **`fb70d1aba7d933c209277484c9380b8386b787ea2440bdd9ec455d386e050794`**, **1,073 routes / 10,941 stops / 351,944 trips**, 45,247,959 B, **~33 min** on a loaded machine (national shape resolution dominates; reader 507 s of that) |
-| NCR MOTIS import (cold, recon) | recon §4 command | 1006.6 s, 3.047 GiB peak RSS, exit 0, 890 MB graph |
+| National MOTIS import, cold, measured in recon **with the pre-D3 recon config**
+(`extend_missing_footpaths: false`, `max_footpath_length: 15`) | recon §4 command |
+1006.6 s, 3.047 GiB peak RSS, exit 0, 890 MB graph. The D3 settings (true / 30) were not
+cold-imported in this pass; the final stack re-ran only timetable/matching/footpath tasks on
+the primed volume (~37 s). |
 | National MOTIS import (primed) | `BIYAHEY_ROUTING_CONFIG=/etc/motis/config.ph.yml docker compose up -d --force-recreate routing` | ~37 s to healthy (timetable/matches/footpath re-run only) |
 
 The national feed's `manifest.json` records the OSM extract sha
 `327f7407441e345824aa7d269615a4fcb8a6a5b1bc543b27cbab34c6a2725158` (ODbL 1.0), the NCR landmark
 extract, the CC BY-SA 2.0 curated inventory and the LTFRB matrix; the licence gate is ok.
+
+The NCR feed grew from 489 to 623 routes by design (ruling R25): the rebuilt feed restores
+keeper corridors that the old duplicate-id rule silently dropped (`bus-p28`/`p31`/`p35`, the
+nameless `bus-osm8250541`, etc.), publishes distinct same-slug corridors as `<id>-osm<osm id>`
+(146 renamed collisions), drops 226 exact-reverse duplicate directions (the feed already emits
+both travel directions per relation), and renames the two Wilson E-trike corridors from
+`jeep-` to `trike-`. The counts reconcile in `build-report.json` under `osm_ingest`.
 
 Per-region counts (from `data/build/gtfs/ph/coverage-regional.json`; approximate boxes, see recon §3):
 NCR 525 routes / 5,334 stops, IV-A 316 / 2,207, CAR 103 / 1,112, VII 85 / 1,105, V 66 / 112,
@@ -72,9 +83,12 @@ here.
 
 ## 3. Walk fallback — live behaviour
 
-- Routed road geometry where a walking path exists: Cubao → Meycauayan returns a **4,311-character
-  road polyline** (20,743 m, 288 min) with `sources: ["osm","walk-estimate"]` and no
-  `approximate` flag.
+- Routed road geometry where a walking path exists: **Cebu City → Lapu-Lapu** (raw MOTIS: 0
+  itineraries) returns a **3,168-character routed road polyline**, 15,472 m, with
+  `sources: ["osm","walk-estimate"]` and no `approximate` flag (measured 2026-11-05). A
+  routed Cubao → Meycauayan fallback (4,311-character/20,743 m) was measured earlier the same
+  day, before the feed fix made that corridor return transit; it must not be quoted as the
+  current state.
 - Straight-line only when the graph has no walking path: Fairview → Las Piñas returns a 2-point
   polyline, `approximate: true`, `sources: ["walk-estimate"]`.
 - `x-biyahey-fallback: walk` is set only on the fallback; served corridors return normal transit
@@ -139,12 +153,14 @@ the BFF's three-attempt fan-out now usually resolves on the base call.
   now distance-consistent (a 40 km two-stop route takes 41 min, not 2 min) and shapes are trimmed
   to their served stops, which also fixed the NCR→Bulacan zero (the marker test flipped from
   `it.fails` to a hard assertion). Riders see corrected fares/durations, not a cosmetic change.
-- **Golden fare bands re-pinned** (six trips widened, two `requiredModes` re-pinned): the national
-  feed adds legitimate long-bus alternatives (up to ~₱122 on a 45 km leg at the documented ordinary
-  city-bus formula), and MOTIS's multi-threaded search varies the exact alternative set between
-  runs. The bands now guard against pricing defects while ferry coverage is still required on
-  Cubao → Pasig and jeepney coverage on Novaliches → Cubao. Recorded in
-  `docs/runbooks/phase1-acceptance.md`.
+- **Golden fare bands re-pinned** (ALL TEN trips: the bands are now widened caps around the
+live observed min/max, e.g. Cubao→Ayala max 39 vs the old 11 because the national feed adds
+long-bus alternatives; observed ranges 2026-11-05 included Cubao→Ayala 10.5–38.69,
+Fairview→Manila 61.19–122.39, Pasay→Taguig 71.62–86.62, Cubao→Divisoria 27.03). Two
+`requiredModes` were re-pinned: Pasay→Taguig is now bus-only on this feed (its ferry/jeepney
+alternatives no longer appear among the fastest options), while ferry coverage stays required
+on Cubao→Pasig and jeepney coverage on Novaliches→Cubao. Recorded in
+`docs/runbooks/phase1-acceptance.md`.
 - **Time-bomb and flake repairs in the gates** (documented in the same runbook): the smoke/stress/
   live/golden harnesses pinned departure dates that fell outside MOTIS's `first_day: TODAY` window;
   they now compute the next 08:00 Asia/Manila. `verify:phase1`'s golden invocation was missing
@@ -158,15 +174,30 @@ the BFF's three-attempt fan-out now usually resolves on the base call.
    BARMM 0 — recon §1/§3); improving these needs more route data, not a routing change.
 2. **Region IV-A tricycle terminals** are not in the terminal artifact (NCR-clip landmark pass);
    follow-up: a national/IV-A landmark pass.
-3. **Two-point shapes**: 12 routes still publish a two-point straight-line shape (6B defect 3c,
-   measured and counted, not repaired).
+3. **Two-point shapes**: 12 routes in the NCR feed (13 in the national build's
+   `build_stats.two_point_shapes`) still publish a two-point straight-line shape (6B defect
+   3c, measured and counted, not repaired).
 4. **Tricycle-only itineraries reuse the zero-fare quote shape** (amount 0 with the walk-only
    confidence/effective date); the UI labels the total as partial and the leg "fare not published",
    but a dedicated `unpriced` quote shape would be cleaner.
-5. **PNR, long-distance ferries and P2P** stay excluded (suspended / no sourced fares / formally
-   deferred); no realtime claims anywhere.
+5. **PNR and long-distance ferries** stay excluded from the feed (suspended / no sourced
+   fares). **P2P is deferred as a leg mode (R48), but the national feed contains OSM-mapped P2P
+   shuttles as ordinary `bus-` route ids** (33 nationally): MOTIS's v6 payload does not carry
+   the route long name that labels them, so the BFF cannot yet distinguish them from ordinary
+   buses and prices them with the documented ordinary-city-bus formula. That is a recorded
+   **pricing caveat**, not a served P2P fare; the fix is a feed-level `p2p-` route-id marker
+   plus a rebuild (follow-up). The BFF already marks a leg `fareNotPublished` when MOTIS does
+   supply a P2P label in displayName/routeShortName/headsign (guard added 2026-11-05).
+   No realtime claims anywhere.
 6. **`x-biyahey-motis-calls`** now counts the fallback's walk request when one is made (R22);
    README and the phase-1 runbook say so.
-7. **Backend performance**: Lighthouse remains PARTIAL (this run: median LCP 2,537 ms, **TBT
+7. **Counter scopes differ**: the national `osm_ingest.skipped_members` (reader scope, 1,782)
+   and `build_stats.dangling_members` (builder scope, 1,757) are different measurements and are
+   intentionally not equal.
+8. **D3 engine bridging** was applied (30-minute footpaths) and the graph re-imported, but no
+   live plan on the eleven matrix pairs needed an inter-transit walk above 616 m, so the
+   "beyond the old footpath" branch is demonstrated by the full-fallback branch and a unit/
+   contract guarantee (max_footpath_length 30), not by a live >1.2 km transfer.
+9. **Backend performance**: Lighthouse remains PARTIAL (this run: median LCP 2,537 ms, **TBT
    7,628 ms FAIL**, TTI 11,796 ms, transfer 809 KB, score 57/100 — slightly worse than the
    phase-2 recorded run, recorded honestly; the perf verdict is not re-badged green).

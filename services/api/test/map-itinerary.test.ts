@@ -966,3 +966,64 @@ describe('tricycle terminal hints on walk legs', () => {
     expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
   });
 });
+
+describe('P2P services are served but never priced as an ordinary city bus', () => {
+  const emptyContext: MapContext = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
+  };
+  const start = '2026-11-02T08:00:00Z';
+  const end = '2026-11-02T08:30:00Z';
+  const FROM = { name: 'START', lat: 14.5515, lon: 121.0148 };
+  const TO = { name: 'STOP', lat: 14.441, lon: 121.013 };
+
+  function busLeg(displayName: string, headsign?: string): Record<string, unknown> {
+    return {
+      mode: 'BUS',
+      routeId: 'gtfs_bus-p29',
+      routeShortName: 'P29',
+      displayName,
+      headsign,
+      from: FROM,
+      to: TO,
+      startTime: start,
+      endTime: end,
+      duration: 1_800,
+      distance: 12_000,
+    };
+  }
+
+  function mapOne(displayName: string, headsign?: string): ItineraryDto | undefined {
+    return mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs: [busLeg(displayName, headsign)] }] },
+      emptyContext,
+    )[0];
+  }
+
+  it('marks a P2P-labelled bus leg fareNotPublished and excludes it from the sum', () => {
+    // OSM tags P2P shuttles with network=P2P and a "P2P" label; GTFS keeps them
+    // as bus- route ids, so the label is the only machine-readable signal. A
+    // city-bus price here would state a fare no operator publishes (R48).
+    const itinerary = mapOne('Greenbelt 1-Las Piñas P2P');
+    expect(itinerary?.legs[0]?.mode).toBe('bus');
+    expect(itinerary?.legs[0]?.fareNotPublished).toBe(true);
+    expect(itinerary?.fareIncomplete).toBe(true);
+    expect(itinerary?.fare.amount).toBe(0);
+    expect(itinerary?.fare.breakdown).toEqual([]);
+  });
+
+  it('detects the P2P token in the headsign too', () => {
+    const itinerary = mapOne('Greenbelt 1-Las Piñas', 'P2P via Skyway');
+    expect(itinerary?.legs[0]?.fareNotPublished).toBe(true);
+    expect(itinerary?.fareIncomplete).toBe(true);
+  });
+
+  it('prices an ordinary bus leg with the documented city-bus matrix', () => {
+    const itinerary = mapOne('Greenbelt 1-Las Piñas');
+    expect(itinerary?.legs[0]?.fareNotPublished).toBeUndefined();
+    expect(itinerary?.fareIncomplete).toBeUndefined();
+    expect(itinerary?.fare.amount).toBeGreaterThan(0);
+  });
+});

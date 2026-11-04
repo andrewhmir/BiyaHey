@@ -7,10 +7,11 @@
 #   - `timetable.datasets.gtfs.path: /data/gtfs/ph/gtfs/gtfs.zip` (the feed
 #     published by `npm run data:build -- --region ph`)
 # Everything else - `server.port: 8080`, the absent `tiles:` block, and the
-# timetable footpath settings (`extend_missing_footpaths: false`,
-# `max_footpath_length: 15`) - is identical to `config.yml`. The footpath
-# settings stay identical until Task 4's measured national tuning, so the two
-# configs differ only in those two paths for now.
+# timetable footpath settings, too: this file enables walk bridging
+# (`extend_missing_footpaths: true`, `max_footpath_length: 30`, plan
+# decision D3) while `config.yml` keeps the NCR 15-minute inline footpaths,
+# so the two configs differ in the two input paths and the two footpath
+# settings (docs/research/2026-11-04-ph-wide-coverage-recon.md §4).
 #
 # For reference only, the pinned container's generator would name the same
 # national inputs as (the doubled `gtfs/` is intentional: publish writes
