@@ -41,6 +41,7 @@ from pipeline.publish import (
     DEFAULT_ALIASES,
     FEED_END,
     FEED_START,
+    TRICYCLE_TERMINALS_FILENAME,
     UNSUPPORTED_RAIL_ROUTE_IDS,
     exclude_unsupported_routes,
     merge_curated_routes,
@@ -439,6 +440,49 @@ def test_merge_curated_routes_does_not_let_an_unwritable_osm_id_shadow_a_curated
     ]
 
 
+def test_build_report_carries_the_osm_ingest_counters(published):
+    """The reader's national counters must reach ``build-report.json``.
+
+    Lane A R30/R31/R32: the reviewer found the R19 counters were not exposed in
+    the published report, so a route lost by the id assignment could not be seen
+    in the artifact. This pins the whole ingest accounting block for a fixture
+    build, including the per-reason skipped-member breakdown the builder keeps.
+    """
+    _, report = published
+    ingest = report["osm_ingest"]
+
+    assert ingest["relations_read"] == 5
+    assert ingest["route_relations"] == 5
+    assert ingest["unsupported_route"] == 0
+    assert ingest["relations_without_name"] == 0
+    assert ingest["candidates"] == 5
+    assert ingest["accepted"] == 5
+    assert ingest["route_id_collisions"] == 0
+    assert ingest["routes_renamed_collision"] == 0
+    assert ingest["routes_skipped_duplicate_direction"] == 0
+    assert ingest["groups_without_feed_ready_keeper"] == 0
+    # the per-reason skip breakdown travels with the counters
+    assert ingest["skipped_members"] == 1
+    assert ingest["skipped_member_reasons"] == {"dangling_way": 1}
+
+    # the builder's own skip accounting is in the same report
+    build = report["build_stats"]
+    for key in (
+        "routes_in",
+        "routes_written",
+        "routes_skipped_no_geometry",
+        "routes_skipped_too_few_stops",
+        "routes_skipped_duplicate_id",
+        "dangling_members",
+        "shapes_trimmed",
+        "shapes_untrimmed_stop_not_found",
+        "two_point_shapes",
+    ):
+        assert key in build
+    assert build["dangling_members"] == 1
+    assert build["routes_skipped_no_geometry"] == 1  # bus-b2's way is dangling
+
+
 def test_build_report_carries_the_coverage_contract(published):
     _, report = published
     inventory = load_inventory(INVENTORY)
@@ -796,3 +840,207 @@ def test_cli_publish_reports_a_missing_landmarks_extract_as_input_error(
     stderr = capsys.readouterr().err
     assert "landmarks" in stderr
     assert "missing.osm.pbf" in stderr
+
+
+# ---------------------------------------------------------------------------
+# R11: tricycle terminals artifact and trike route pricing
+# ---------------------------------------------------------------------------
+
+#: Terminal features + one e-trike share_taxi relation + one unusable
+#: ``route=tricycle`` relation, injected into a copy of the NCR fixture. The
+#: taxi stand proves unrelated amenities are ignored; 6902/6903 have no usable
+#: name so the artifact must say ``null`` rather than invent one.
+TERMINAL_NODES = """  <node id="6901" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6100" lon="121.0100">
+    <tag k="amenity" v="tricycle_station"/>
+    <tag k="name" v="Wilson E-trike Terminal"/>
+  </node>
+  <node id="6902" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6110" lon="121.0110">
+    <tag k="amenity" v="motorcycle_taxi"/>
+  </node>
+  <node id="6903" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6120" lon="121.0120">
+    <tag k="amenity" v="tricycle_stand"/>
+    <tag k="name" v="   "/>
+  </node>
+  <node id="6904" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6130" lon="121.0130">
+    <tag k="amenity" v="taxi_stand"/>
+    <tag k="name" v="Not a tricycle terminal"/>
+  </node>
+"""
+
+TRIKE_RELATIONS = """  <relation id="7006" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6101" role=""/>
+    <member type="node" ref="5018" role="stop"/>
+    <member type="node" ref="5019" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="share_taxi"/>
+    <tag k="ref" v="E1"/>
+    <tag k="name" v="Wilson E-trike System"/>
+  </relation>
+  <relation id="7007" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6101" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="tricycle"/>
+    <tag k="name" v="Tuguegarao to Callao Cave"/>
+  </relation>
+"""
+
+TRICYCLE_TERMINALS_SOURCE = (
+    "OSM amenity=tricycle_station|tricycle_stand|motorcycle_taxi (ODbL 1.0)"
+)
+
+
+def _terminal_fixture(tmp_path):
+    """The NCR fixture plus terminal nodes, an e-trike route and route=tricycle."""
+    text = PBF.read_text(encoding="utf-8")
+    text = text.replace('  <way id="6101"', TERMINAL_NODES + '  <way id="6101"', 1)
+    text = text.replace("</osm>", TRIKE_RELATIONS + "</osm>", 1)
+    path = tmp_path / "publish_terminals.osm"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_tricycle_terminals_artifact_is_written_empty_when_none_are_mapped(published):
+    """Absent amenities are data (an empty list), never a build error."""
+    out, report = published
+    path = out / TRICYCLE_TERMINALS_FILENAME
+
+    assert path.is_file()
+    artifact = json.loads(path.read_text(encoding="utf-8"))
+    assert artifact == {
+        "generated_at": BUILT_AT,
+        "source": TRICYCLE_TERMINALS_SOURCE,
+        "extract": str(PBF),
+        "terminals": [],
+    }
+    assert report["tricycle_terminals"] == {
+        "path": str(path),
+        "canonical_path": None,
+        "extract": str(PBF),
+        "count": 0,
+        "by_kind": {
+            "tricycle_station": 0,
+            "tricycle_stand": 0,
+            "motorcycle_taxi": 0,
+        },
+    }
+
+
+def test_tricycle_terminals_artifact_is_written_at_both_paths(tmp_path, monkeypatch):
+    """The region copy and the build-root copy are byte-identical (R11/R28)."""
+    build_root = tmp_path / "data-build"
+    monkeypatch.setattr(publish_module, "DEFAULT_BUILD_DIR", build_root)
+    out = build_root / "gtfs" / "ph"
+    fixture = _terminal_fixture(tmp_path)
+
+    report = run_stage_publish(
+        fixture,
+        out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
+    )
+
+    region_path = out / TRICYCLE_TERMINALS_FILENAME
+    canonical_path = build_root / TRICYCLE_TERMINALS_FILENAME
+    assert region_path.is_file()
+    assert canonical_path.is_file()
+    assert region_path.read_bytes() == canonical_path.read_bytes()
+
+    artifact = json.loads(region_path.read_text(encoding="utf-8"))
+    assert set(artifact) == {"generated_at", "source", "extract", "terminals"}
+    assert artifact["generated_at"] == BUILT_AT
+    assert artifact["source"] == TRICYCLE_TERMINALS_SOURCE
+    assert artifact["extract"] == str(fixture)
+    assert artifact["terminals"] == [
+        {
+            "osm_id": 6901,
+            "name": "Wilson E-trike Terminal",
+            "lat": 14.61,
+            "lon": 121.01,
+            "kind": "tricycle_station",
+        },
+        {
+            "osm_id": 6902,
+            "name": None,
+            "lat": 14.611,
+            "lon": 121.011,
+            "kind": "motorcycle_taxi",
+        },
+        {
+            "osm_id": 6903,
+            "name": None,
+            "lat": 14.612,
+            "lon": 121.012,
+            "kind": "tricycle_stand",
+        },
+    ]
+    # the taxi stand is not a tricycle terminal
+    assert 6904 not in {terminal["osm_id"] for terminal in artifact["terminals"]}
+
+    summary = report["tricycle_terminals"]
+    assert summary["path"] == str(region_path)
+    assert summary["canonical_path"] == str(canonical_path)
+    assert summary["count"] == 3
+    assert summary["by_kind"] == {
+        "tricycle_station": 1,
+        "tricycle_stand": 1,
+        "motorcycle_taxi": 1,
+    }
+
+    # route=tricycle is counted/excluded; the e-trike relation is in the feed.
+    ingest = report["osm_ingest"]
+    assert ingest["tricycle_relations_seen"] == 1
+    excluded = ingest["excluded_tricycle_relations"]
+    assert len(excluded) == 1
+    assert excluded[0]["osm_id"] == 7007
+    assert excluded[0]["name"] == "Tuguegarao to Callao Cave"
+    assert "route=tricycle" in excluded[0]["reason"]
+    assert "never auto-ingested" in excluded[0]["reason"]
+    assert "trike-e1" in report["feed"]["route_ids"]
+
+
+def test_etrike_route_enters_the_feed_without_a_fare_rule(tmp_path):
+    """R4/R11/R28: trike legs show no fare; never the jeepney matrix."""
+    fixture = _terminal_fixture(tmp_path)
+    out = tmp_path / "out"
+
+    report = run_stage_publish(
+        fixture,
+        out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
+    )
+
+    trike_route_ids = [
+        route_id
+        for route_id in report["feed"]["route_ids"]
+        if route_id.startswith("trike-")
+    ]
+    assert trike_route_ids == ["trike-e1"]
+
+    with zipfile.ZipFile(out / "gtfs" / "gtfs.zip") as archive:
+        routes = _csv_rows(archive, "routes.txt")
+        rules = _csv_rows(archive, FARE_RULES_FILENAME)
+        fares = _csv_rows(archive, FARE_ATTRIBUTES_FILENAME)
+
+    route = {row["route_id"]: row for row in routes}["trike-e1"]
+    assert route["route_type"] == "3"
+    assert route["route_short_name"] == "E1"
+
+    assert all(not row["route_id"].startswith("trike-") for row in rules)
+    assert {row["fare_id"] for row in fares} == {
+        "jeepney-traditional",
+        "jeepney-modern",
+        "city-bus-ordinary",
+        "city-bus-aircon",
+        "provincial-bus-ordinary",
+        "ferry-pasig-river",
+    }
+    # no invented tricycle fare row exists in the matrix or the feed
+    assert not any("trike" in row["fare_id"].lower() for row in fares)
+    assert not any("tricycle" in row["route_id"].lower() for row in routes)

@@ -28,7 +28,12 @@ This stage is that link. It:
    coverage report Task 11 consumes) and ``<out>/coverage-regional.json`` (the
    per-region and per-island-group counts plus the curated coverage embedded
    verbatim; additive, ruling R6);
-5. refuses to publish if the provenance registry names a blocked dataset, or if
+5. reads the mapped tricycle/motorcycle-taxi terminals from the same landmark
+   extract (one node-only pass) and writes ``<out>/tricycle-terminals.json``;
+   when ``<out>`` sits under the repository build root it also writes the
+   canonical ``data/build/tricycle-terminals.json`` the BFF reads regardless of
+   region. Amenities are optional data: a clip with none yields ``terminals: []``;
+6. refuses to publish if the provenance registry names a blocked dataset, or if
    the manifest or the written feed loses the ODbL notice or the CC BY-SA 2.0
    inventory attribution (spec 8.1/8.2; rulings R22, R32).
 
@@ -57,6 +62,15 @@ Build-report contract
     excluded_routes_total       n
     excluded_routes             [{route_id, reason}]
     blocked_datasets_checked    true
+    osm_ingest                  {relations_read, route_relations, unsupported_route,
+                                 relations_without_name, candidates, accepted,
+                                 route_id_collisions,
+                                 routes_skipped_duplicate_direction,
+                                 routes_renamed_collision, fallback_route_ids,
+                                 groups_without_feed_ready_keeper,
+                                 skipped_members, skipped_member_reasons,
+                                 tricycle_relations_seen, excluded_tricycle_relations}
+    tricycle_terminals          {path, canonical_path, extract, count, by_kind}
 
 plus per-route records (``curated_routes``) that preserve each inventory row's
 ``source_url`` and ``needs_verification`` flag - ``to_route_def`` drops them, so
@@ -83,6 +97,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+import osmium
 import yaml
 
 from .fares import (
@@ -124,7 +139,7 @@ from .manifest import (
     load_sources,
     sha256_file,
 )
-from .osm_routes import iter_route_relations
+from .osm_routes import read_route_relations
 from .regions import regional_counts
 
 __all__ = [
@@ -137,8 +152,12 @@ __all__ = [
     "DEFAULT_SOURCES",
     "FEED_END",
     "FEED_START",
+    "TRICYCLE_TERMINALS_FILENAME",
+    "TRICYCLE_TERMINAL_AMENITIES",
     "UNSUPPORTED_RAIL_ROUTE_IDS",
+    "canonical_tricycle_terminals_path",
     "exclude_unsupported_routes",
+    "load_tricycle_terminals",
     "merge_curated_routes",
     "normalise_curated_route",
     "run_stage_publish",
@@ -162,6 +181,25 @@ DEFAULT_INVENTORY = REPO_ROOT / "data" / "routes" / "jeepney-inventory.yaml"
 DEFAULT_ALIASES = REPO_ROOT / "data" / "routes" / "landmark-aliases.yaml"
 DEFAULT_FARES = REPO_ROOT / "data" / "fares" / "fares-2026-09-28.yaml"
 DEFAULT_SOURCES = REPO_ROOT / "data" / "provenance" / "sources.yaml"
+
+#: OSM ``amenity=*`` values that map a tricycle / motorcycle-taxi terminal.
+#: Recon §2: ``tricycle_station`` is the only one used nationally (3 nodes:
+#: 1 NCR, 2 Region IV-A); the other two are accepted because they are the same
+#: kind of terminal and mapping may grow.
+TRICYCLE_TERMINAL_AMENITIES: Tuple[str, ...] = (
+    "tricycle_station",
+    "tricycle_stand",
+    "motorcycle_taxi",
+)
+
+#: Region-copy filename; the build-root copy is the canonical artifact the BFF
+#: reads as ``/data/build/tricycle-terminals.json`` for every region.
+TRICYCLE_TERMINALS_FILENAME = "tricycle-terminals.json"
+
+#: ``source`` field of the terminal artifact (ODbL attribution is required).
+TRICYCLE_TERMINALS_SOURCE = (
+    "OSM amenity=tricycle_station|tricycle_stand|motorcycle_taxi (ODbL 1.0)"
+)
 
 #: Provenance registry ids the publish stage reads, in attribution order.
 USED_SOURCE_IDS: Tuple[str, ...] = (
@@ -274,6 +312,115 @@ def merge_curated_routes(
     return merged
 
 
+def load_tricycle_terminals(path: Path) -> List[Dict[str, Any]]:
+    """Read mapped tricycle/motorcycle-taxi terminals from an OSM extract.
+
+    One node-only pass over the same extract the landmark resolution reads
+    (``--landmarks-pbf`` when supplied), so the terminal artifact is produced by
+    the publish stage itself rather than by a separate build step. Only nodes
+    carrying one of :data:`TRICYCLE_TERMINAL_AMENITIES` count; a node without a
+    ``name`` keeps ``name: null`` instead of an invented label, and a node
+    without a valid location is skipped (it cannot be a walk-leg hint).
+
+    Args:
+        path: ``.osm``/``.osm.pbf`` extract (the landmark extract in production).
+
+    Returns:
+        Terminal records sorted by OSM id:
+        ``{osm_id, name (str|None), lat, lon, kind}``. A clip with no terminal
+        amenities yields ``[]`` - absence is data, not an error.
+
+    Raises:
+        FileNotFoundError: if ``path`` is not a file.
+        osmium.RuntimeError: if pyosmium cannot parse the extract.
+    """
+    source = Path(path)
+    if not source.is_file():
+        raise FileNotFoundError(f"OSM extract not found for tricycle terminals: {source}")
+
+    terminals: List[Dict[str, Any]] = []
+    for obj in osmium.FileProcessor(str(source), osmium.osm.NODE):
+        tags = dict(obj.tags)
+        kind = tags.get("amenity", "")
+        if kind not in TRICYCLE_TERMINAL_AMENITIES:
+            continue
+        location = obj.location
+        if not location.valid():
+            continue
+        name = (tags.get("name") or "").strip()
+        terminals.append(
+            {
+                "osm_id": int(obj.id),
+                "name": name or None,
+                "lat": float(location.lat),
+                "lon": float(location.lon),
+                "kind": kind,
+            }
+        )
+    terminals.sort(key=lambda terminal: terminal["osm_id"])
+    return terminals
+
+
+def canonical_tricycle_terminals_path(out_dir: Path) -> Optional[Path]:
+    """The build-root terminal artifact when ``out_dir`` is below ``data/build``.
+
+    The BFF reads ``/data/build/tricycle-terminals.json`` for every region, but a
+    region build may publish into a nested root (the national feed lives in
+    ``data/build/gtfs/ph``). The canonical copy is written whenever the publish
+    root is inside :data:`DEFAULT_BUILD_DIR`; a test or ad-hoc build in an
+    unrelated directory only writes its own ``<out>`` artifact.
+
+    Returns:
+        ``data/build/tricycle-terminals.json`` or ``None`` when the output is not
+        under the repository build root.
+    """
+    try:
+        Path(out_dir).resolve().relative_to(DEFAULT_BUILD_DIR.resolve())
+    except ValueError:
+        return None
+    return DEFAULT_BUILD_DIR / TRICYCLE_TERMINALS_FILENAME
+
+
+def _tricycle_terminals_artifact(
+    terminals: Sequence[Mapping[str, Any]],
+    extract: Path,
+    generated_at: str,
+) -> Dict[str, Any]:
+    """The canonical JSON document written at the region and build-root paths."""
+    return {
+        "generated_at": generated_at,
+        "source": TRICYCLE_TERMINALS_SOURCE,
+        "extract": str(extract),
+        "terminals": [dict(terminal) for terminal in terminals],
+    }
+
+
+def _write_tricycle_terminals(
+    out_dir: Path,
+    extract: Path,
+    terminals: Sequence[Mapping[str, Any]],
+    generated_at: str,
+) -> Tuple[Path, Optional[Path]]:
+    """Write the region artifact and, when applicable, the canonical build copy.
+
+    Both files receive byte-identical content, so a consumer cannot observe a
+    regional difference. Returns ``(region_path, canonical_path)``; the canonical
+    path is ``None`` when ``out_dir`` is outside the repository build root or is
+    already the build root itself (the same file is not written twice).
+    """
+    artifact = _tricycle_terminals_artifact(terminals, extract, generated_at)
+    text = json.dumps(artifact, indent=2, ensure_ascii=False) + "\n"
+    region_path = Path(out_dir) / TRICYCLE_TERMINALS_FILENAME
+    paths = [region_path]
+    canonical = canonical_tricycle_terminals_path(out_dir)
+    if canonical is not None and canonical.resolve() != region_path.resolve():
+        paths.append(canonical)
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return region_path, canonical
+
+
 def run_stage_publish(
     pbf: Path,
     out_dir: Path,
@@ -293,7 +440,10 @@ def run_stage_publish(
             build, ``data/build/osm/ph.osm.pbf`` for the national one, a
             committed fixture in tests).
         out_dir: build directory; writes ``gtfs/gtfs.zip``, ``manifest.json``,
-            ``build-report.json`` and ``coverage-regional.json`` below it.
+            ``build-report.json``, ``coverage-regional.json`` and
+            ``tricycle-terminals.json`` below it. When the directory is under
+            ``data/build`` the identical terminal artifact is also written to the
+            build root (the canonical path the BFF reads for every region).
         inventory_path: curated inventory YAML.
         fares_path: hand-curated fare matrix YAML.
         sources_path: provenance registry YAML.
@@ -312,7 +462,9 @@ def run_stage_publish(
         agency: GTFS publisher metadata (the committed synthetic agency).
 
     Returns:
-        The build report mapping (also written to ``build-report.json``).
+        The build report mapping (also written to ``build-report.json``). It
+        carries the terminal summary and the OSM ingest counters, including the
+        ``route=tricycle`` relations that were excluded with a reason (R11).
 
     Raises:
         FileNotFoundError: an input file, the OSM extract, or the landmarks
@@ -363,6 +515,10 @@ def run_stage_publish(
     # Resolve curated terminals against named stop features in the landmark
     # extract (the main extract unless a national build supplies the NCR clip).
     named_stops = load_named_stops(landmarks)
+    # R11 terminal pass: the same extract, one node-only scan, so the artifact is
+    # produced inside the publish stage. Amenities are optional - a clip with no
+    # tricycle/motorcycle-taxi nodes yields an empty list, never a build error.
+    terminals = load_tricycle_terminals(landmarks)
     stop_lookup = build_stop_lookup(named_stops)
     alias_lookup, invalid_aliases = alias_coordinates(
         alias_list, stop_feature_lookup(named_stops)
@@ -373,7 +529,8 @@ def run_stage_publish(
     # cannot price out of the feed, and report each exclusion. The BFF also
     # guards this at response time (defence in depth), but shipping the routes
     # would silently turn their corridors into dropped-itinerary holes.
-    all_osm_routes = list(iter_route_relations(pbf))
+    ingest = read_route_relations(pbf)
+    all_osm_routes = list(ingest.relations)
     osm_routes, excluded_routes = exclude_unsupported_routes(all_osm_routes)
 
     # R29 says OSM wins a collision "because measured geometry beats a
@@ -526,6 +683,12 @@ def run_stage_publish(
         encoding="utf-8",
     )
 
+    # R11: the terminal artifact is written only after the feed and manifest
+    # succeeded, so a failed build never leaves a stale terminal file behind.
+    terminal_path, canonical_terminal_path = _write_tricycle_terminals(
+        out_dir, landmarks, terminals, built_at
+    )
+
     used_names = {
         normalise_name(landmark)
         for entry in inventory
@@ -589,6 +752,23 @@ def run_stage_publish(
         "blocked_datasets_checked": True,
         "datasets_used": [dataset["id"] for dataset in manifest["datasets"]],
         "attributions": manifest["attributions"],
+        # Additive R11 evidence: the route-ingest counters (including the
+        # excluded route=tricycle relations) and the terminal artifact summary.
+        "osm_ingest": ingest.stats.as_dict(),
+        "tricycle_terminals": {
+            "path": str(terminal_path),
+            "canonical_path": (
+                str(canonical_terminal_path)
+                if canonical_terminal_path is not None
+                else None
+            ),
+            "extract": str(landmarks),
+            "count": len(terminals),
+            "by_kind": {
+                kind: sum(1 for terminal in terminals if terminal["kind"] == kind)
+                for kind in TRICYCLE_TERMINAL_AMENITIES
+            },
+        },
         "ambiguous_landmarks": ambiguous_landmarks,
         "fare_tables": {
             "fare_attributes_rows": _row_count(fare_tables[FARE_ATTRIBUTES_FILENAME]),

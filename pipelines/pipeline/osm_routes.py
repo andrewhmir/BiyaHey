@@ -33,7 +33,8 @@ subway           ``rail-``                 1               ``rail-lrt2``
 train            ``rail-``                 1               ``rail-pnr``
 ferry            ``ferry-``                4               ``ferry-pasig``
 bus              ``bus-``                  3               ``bus-b1``
-share_taxi       ``jeep-`` or ``uv-``      3               ``jeep-t1010``
+share_taxi       ``jeep-``, ``uv-``,       3               ``trike-e1``
+                 ``trike-``
 jeepney          ``jeep-``                 3               ``jeep-t1010``
 ===============  =======================  ==============  =====================
 
@@ -42,26 +43,61 @@ The slug after the prefix is the relation's ``ref`` tag (falling back to
 ``rail-mrt3`` and ``ref=Pasig`` becomes ``ferry-pasig``. ``share_taxi`` is
 ambiguous in OSM; relations whose name or ref mentions "UV Express" become
 ``uv-`` (the curated inventory in Task 7 is authoritative for jeepney/UV
-coverage). A label with no ASCII alphanumerics falls back to the OSM id
-(``bus-osm7080``). A relation with neither a ``name`` nor a ``ref`` is skipped
-and counted (``skipped_no_name``), because the feed could not give it a name.
+coverage). The UV Express test keeps priority exactly as it always had it, so a
+relation naming both stays ``uv-``. A ``share_taxi`` relation whose ``name``,
+``ref``, ``operator`` or ``description`` names an e-trike/tricycle/traysikel
+service becomes ``trike-`` (ruling R11): that is the only mapped tricycle-class
+corridor in OSM (the NCR Wilson E-trike System), and ``share_taxi`` is how it is
+tagged. Everything else keeps the historical ``jeep-`` prefix. A label with no
+ASCII alphanumerics falls back to the OSM id (``bus-osm7080``). A relation with
+neither a ``name`` nor a ``ref`` is still ingested, under ``<family>-osm<id>``
+and with no short name (ruling R31): the OSM id is a resolvable identity, so it
+is counted in ``relations_without_name`` and treated like every other candidate
+(feed-readiness and route-id assignment included) instead of being dropped.
+
+``route=tricycle`` is deliberately **not** an ingestible mode: nationally there
+are two such relations and neither carries usable service evidence (one is a
+tourist excursion citing a blog, one has only an operator tag). Pass 1 counts
+them (``tricycle_relations_seen``) and records each one with an explicit reason
+(``excluded_tricycle_relations``); they are never auto-ingested (ruling R11).
 
 Unique ids at national scale
 ----------------------------
 Nationally the same slug recurs a lot - ``ref=1`` in two cities, one name shared
 by a northbound and a southbound relation - and GTFS requires unique
 ``route_id`` values. Assignment is one deterministic pass over the candidates,
-grouped by base id. The relation with the **lowest OSM id** in a group keeps the
-bare ``<family>-<slug>`` (in a normal extract that is also the first relation in
-file order). A later relation in the group is disambiguated by its ``from``/``to``
-tags:
+grouped by base id. The keeper of a group is the **lowest OSM id among the
+feed-ready candidates** (ruling R30); only a group with no feed-ready candidate
+falls back to its lowest OSM id (that relation is skipped later by the GTFS
+builder, which counts the skip; ``groups_without_feed_ready_keeper`` records the
+fallback). A candidate is feed-ready when the builder can publish it:
 
-* when both relations carry both tags and the later relation's normalized
-  ``from``/``to`` are exactly the kept relation's ``to``/``from``, it is the same
-  corridor mapped in the opposite direction. It is **dropped** and counted in
+* its ``route=*`` family is supported (every candidate is, by the pass-1
+  filter) and its id is resolvable (a ``ref``/``name`` slug, else the
+  ``osm<id>`` fallback - see ruling R31 for nameless relations);
+* it has at least one way member outside the stop roles, which can contribute
+  shape geometry; and
+* it carries **two or more** stop-ish members (node/way members with a stop
+  role), or **none at all** - the latter publishes via the synthesized landmark
+  stops. Exactly one stop-ish member is not feed-ready: the stops resolver keeps
+  that one stop, landmark synthesis does not fire, and the builder then skips
+  the relation as "too few stops". Picking the lowest id without this check is
+  how three NCR routes (``bus-p28``/``bus-p31``/``bus-p35``) once disappeared:
+  the keeper had one stop member while a later, landmark-publishable relation
+  was dropped as a duplicate direction.
+
+``from``/``to`` decide what happens to the rest of the group. Every other
+relation - feed-ready or not - is compared with **every relation already kept**
+in the same base group, not only the bare keeper (ruling R32):
+
+* when its normalized ``from``/``to`` are exactly a kept relation's
+  ``to``/``from`` and all four labels are non-empty, it is the same corridor
+  mapped in the opposite direction. It is **dropped** and counted in
   ``routes_skipped_duplicate_direction``: the feed already emits both travel
   directions for one relation (``shape:0``/``shape:1`` and the reversed trip), so
-  keeping it would duplicate every trip on the corridor;
+  keeping it would duplicate every trip on the corridor. Checking only the bare
+  keeper let a reverse pair whose first relation had been renamed publish both
+  directions as two corridors (20 NCR pairs);
 * otherwise - a genuinely different corridor, a same-direction duplicate, or a
   missing/blank ``from`` or ``to`` (empty means not comparable) - it gets
   ``<family>-<slug>-osm<osm id>`` and is counted in
@@ -69,11 +105,11 @@ tags:
 
 ``from``/``to`` normalization lowercases, drops punctuation and collapses
 whitespace, so ``"North End"`` and ``" north-end!! "`` are the same endpoint.
-OSM id order - not file position - decides which relation is kept, so writing the
-extract as XML or PBF (which may reorder objects) cannot rename a route and
-re-running the reader always yields the same ids. A suffixed id can never equal a
-bare one because a slug contains no hyphen; the kept relation keeps its id
-exactly, so an extract with no collision is untouched.
+OSM id order - not file position - decides the keeper, so writing the extract as
+XML or PBF (which may reorder objects) cannot rename a route and re-running the
+reader always yields the same ids. A suffixed id can never equal a bare one
+because a slug contains no hyphen; the kept relation keeps its id exactly, so an
+extract with no collision is untouched.
 
 Stops and shapes
 ----------------
@@ -123,7 +159,9 @@ National counters
 
 * ``relations_read`` splits into non-route relations and ``route_relations``;
 * ``route_relations`` splits into ``unsupported_route`` (counted by value),
-  ``skipped_no_name`` and ``candidates``;
+  ``tricycle_relations_seen`` and ``candidates``;
+* ``relations_without_name`` is a sub-count of ``candidates`` (ruling R31: they
+  are ingested under ``<family>-osm<id>``, so they are not a separate bucket);
 * ``candidates`` splits into ``accepted`` and
   ``routes_skipped_duplicate_direction``;
 * the GTFS builder then splits ``accepted`` into written routes, routes with no
@@ -133,9 +171,11 @@ National counters
 
 Collision composition is reported by ``route_id_collisions`` (groups with more
 than one candidate), ``routes_skipped_duplicate_direction`` (exact reverse
-pairs) and ``renamed_route_ids`` / ``routes_renamed_collision`` (non-reverse
-pairs). :func:`read_route_relation_composition` computes the same counters from
-a relation-only pass (no way/node scan), which is how the NCR and national
+pairs), ``renamed_route_ids`` / ``routes_renamed_collision`` (non-reverse pairs)
+and ``groups_without_feed_ready_keeper`` (groups whose keeper had to fall back
+to the lowest OSM id because no candidate was feed-ready; ruling R30).
+:func:`read_route_relation_composition` computes the same counters from a
+relation-only pass (no way/node scan), which is how the NCR and national
 composition is measured without a full feed build.
 
 ``skipped_members`` is the total number of relation members that could not be
@@ -154,6 +194,7 @@ are read in the existing three streaming passes.
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -192,6 +233,22 @@ ROUTE_TYPE_BY_OSM_ROUTE: Dict[str, int] = {
     "jeepney": 3,
 }
 
+#: ``share_taxi`` tags that can name an e-trike/tricycle/traysikel service
+#: (ruling R11: OSM maps the Wilson E-trike System as ``route=share_taxi``).
+TRIKE_SERVICE_TAGS: Tuple[str, ...] = ("name", "ref", "operator", "description")
+
+#: E-trike/tricycle/traysikel wording in any :data:`TRIKE_SERVICE_TAGS` value.
+TRIKE_SERVICE_PATTERN = re.compile(r"tricycl|traysikel|trike|e-?trike", re.IGNORECASE)
+
+#: ``route=tricycle`` is counted and excluded, never ingested (ruling R11).
+TRICYCLE_ROUTE_VALUE = "tricycle"
+
+#: The exclusion reason recorded for every ``route=tricycle`` relation.
+TRICYCLE_EXCLUSION_REASON = (
+    "route=tricycle has no usable service evidence in OSM (no stops, schedule "
+    "or verifiable source); counted and excluded, never auto-ingested (ruling R11)"
+)
+
 #: Member roles that describe a stop/platform rather than route geometry.
 STOP_ROLES = frozenset(
     {"stop", "platform", "stop_position", "boarding_position", "stop_area"}
@@ -229,9 +286,11 @@ class RouteIngestStats:
 
     The counters account for every relation: ``relations_read`` splits into
     non-route relations and ``route_relations``; ``route_relations`` splits into
-    ``unsupported_route``, ``skipped_no_name`` and ``candidates``; ``candidates``
-    splits into ``accepted`` and ``routes_skipped_duplicate_direction``. The GTFS
-    builder then splits ``accepted`` into written routes and its own skip reasons.
+    ``unsupported_route``, ``tricycle_relations_seen`` and ``candidates``;
+    ``relations_without_name`` is a sub-count of ``candidates`` (they are
+    ingested under ``<family>-osm<id>``, ruling R31); ``candidates`` splits into
+    ``accepted`` and ``routes_skipped_duplicate_direction``. The GTFS builder
+    then splits ``accepted`` into written routes and its own skip reasons.
     Nothing is dropped silently.
     """
 
@@ -243,20 +302,30 @@ class RouteIngestStats:
     unsupported_route: int = 0
     #: The unsupported values themselves, sorted by value (``""`` = no route tag).
     unsupported_route_values: Tuple[Tuple[str, int], ...] = ()
-    #: Transit relations skipped because they have neither a ``name`` nor a ``ref``.
-    skipped_no_name: int = 0
+    #: Candidates with neither a ``name`` nor a ``ref``. They are still ingested,
+    #: under ``<family>-osm<id>`` with no short name (ruling R31), so this is a
+    #: sub-count of :attr:`candidates`, not a skip bucket.
+    relations_without_name: int = 0
+    #: ``route=tricycle`` relations seen. Unusable service evidence, so excluded.
+    tricycle_relations_seen: int = 0
+    #: The excluded ``route=tricycle`` relations with the documented reason.
+    excluded_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
     #: Transit relations yielded by pass 1 (the candidate list size).
     candidates: int = 0
     #: Candidates emitted after the duplicate-direction drop.
     accepted: int = 0
-    #: Slug groups with more than one relation.
+    #: Base-id groups with more than one relation.
     route_id_collisions: int = 0
-    #: Candidates dropped as the exact reverse direction of the kept relation.
+    #: Candidates dropped as the exact reverse direction of an already-kept
+    #: relation in the same base group (R19/R32).
     routes_skipped_duplicate_direction: int = 0
     #: Relations that got the ``-osm<id>`` suffix (legacy name).
     renamed_route_ids: int = 0
     #: Relations whose label has no ASCII slug and used the ``osm<id>`` fallback.
     fallback_route_ids: int = 0
+    #: Base-id groups whose keeper is not feed-ready (R30 fallback: the lowest
+    #: OSM id kept the bare id; the GTFS builder counts the later skip).
+    groups_without_feed_ready_keeper: int = 0
     #: Candidates with no stop/platform member (landmark stops get synthesized).
     candidates_without_stop_members: int = 0
     #: Total skipped members across all candidates.
@@ -276,7 +345,11 @@ class RouteIngestStats:
             "route_relations": self.route_relations,
             "unsupported_route": self.unsupported_route,
             "unsupported_route_values": dict(self.unsupported_route_values),
-            "skipped_no_name": self.skipped_no_name,
+            "relations_without_name": self.relations_without_name,
+            "tricycle_relations_seen": self.tricycle_relations_seen,
+            "excluded_tricycle_relations": [
+                dict(entry) for entry in self.excluded_tricycle_relations
+            ],
             "candidates": self.candidates,
             "accepted": self.accepted,
             "route_id_collisions": self.route_id_collisions,
@@ -284,6 +357,7 @@ class RouteIngestStats:
             "routes_renamed_collision": self.routes_renamed_collision,
             "renamed_route_ids": self.renamed_route_ids,
             "fallback_route_ids": self.fallback_route_ids,
+            "groups_without_feed_ready_keeper": self.groups_without_feed_ready_keeper,
             "candidates_without_stop_members": self.candidates_without_stop_members,
             "skipped_members": self.skipped_members,
             "skipped_member_reasons": dict(self.skipped_member_reasons),
@@ -322,18 +396,21 @@ class _CandidateScan:
     route_relations: int = 0
     unsupported_route: int = 0
     unsupported_route_values: Tuple[Tuple[str, int], ...] = ()
-    skipped_no_name: int = 0
+    relations_without_name: int = 0
+    tricycle_relations_seen: int = 0
+    excluded_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
 class _IdAssignment:
-    """The deterministic route ids plus R19 collision composition counters."""
+    """The deterministic route ids plus R19/R30/R32 collision composition counters."""
 
     route_ids: Dict[int, str] = field(default_factory=dict)
     collisions: int = 0
     renamed: int = 0
     duplicate_direction: int = 0
     fallbacks: int = 0
+    groups_without_feed_ready_keeper: int = 0
 
 
 def route_type_for(osm_route: str) -> int:
@@ -381,7 +458,8 @@ def read_route_relations(path: Path) -> RouteIngest:
         and :class:`RouteIngestStats`. A relation with no resolvable geometry is
         still yielded (with an empty shape) so the GTFS builder can count the
         skip; a transit relation with neither a ``name`` nor a ``ref`` is
-        skipped here and counted.
+        ingested under ``<family>-osm<id>`` with no short name and counted in
+        ``relations_without_name`` (ruling R31).
 
     Raises:
         FileNotFoundError: if ``path`` is not a file.
@@ -458,14 +536,19 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
     """Pass 1: copy tags and members of every ingestible ``type=route`` relation.
 
     This is the only pass that sees *all* relations, so it also counts the ones
-    the reader will not yield: non-route relations, unsupported ``route=*`` values
-    and supported transit relations with no name/ref to name them.
+    the reader will not yield: non-route relations, unsupported ``route=*``
+    values and ``route=tricycle`` (excluded with a reason, R11). Relations with
+    no ``name``/``ref`` are **not** dropped: they become candidates like any
+    other (their id falls back to ``<family>-osm<id>``) and are counted in
+    ``relations_without_name`` (ruling R31).
     """
     candidates: List[_Candidate] = []
     relations_read = 0
     route_relations = 0
     unsupported: Dict[str, int] = {}
-    skipped_no_name = 0
+    relations_without_name = 0
+    tricycle_relations_seen = 0
+    excluded_tricycle_relations: List[Dict[str, Any]] = []
 
     for obj in osmium.FileProcessor(str(source), osmium.osm.RELATION):
         relations_read += 1
@@ -476,12 +559,23 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
             continue
         route_relations += 1
         osm_route = tags.get("route", "")
+        if osm_route == TRICYCLE_ROUTE_VALUE:
+            # R11: counted and excluded with an explicit reason, never ingested.
+            tricycle_relations_seen += 1
+            excluded_tricycle_relations.append(
+                {
+                    "osm_id": obj.id,
+                    "name": tags.get("name") or tags.get("ref") or None,
+                    "reason": TRICYCLE_EXCLUSION_REASON,
+                }
+            )
+            continue
         if osm_route not in ROUTE_TYPE_BY_OSM_ROUTE:
             unsupported[osm_route] = unsupported.get(osm_route, 0) + 1
             continue
         if not _has_name(tags):
-            skipped_no_name += 1
-            continue
+            # R31: not a skip. The OSM id gives it a resolvable identity.
+            relations_without_name += 1
         members: List[_Member] = [
             (member.type, member.ref, member.role or "") for member in obj.members
         ]
@@ -493,7 +587,9 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
         route_relations=route_relations,
         unsupported_route=sum(unsupported.values()),
         unsupported_route_values=_sorted_counts(unsupported),
-        skipped_no_name=skipped_no_name,
+        relations_without_name=relations_without_name,
+        tricycle_relations_seen=tricycle_relations_seen,
+        excluded_tricycle_relations=tuple(excluded_tricycle_relations),
     )
 
 
@@ -1121,22 +1217,35 @@ def _dedupe_stops(stops: Sequence[StopRef]) -> Tuple[StopRef, ...]:
 
 
 def _assign_route_ids(candidates: Sequence[_Candidate]) -> _IdAssignment:
-    """Assign a unique, deterministic route id to every candidate (ruling R19).
+    """Assign a unique, deterministic route id to every candidate (R19/R30/R32).
 
-    The relation with the lowest OSM id in a base-id group keeps the bare
-    ``<family>-<slug>`` (in a normal extract that is also the first relation in
-    file order). Every later relation in the group is either:
+    Grouping is by base id (``<family>-<slug>``). The keeper is the **lowest
+    OSM id among the feed-ready candidates** (ruling R30); it keeps the bare
+    base id. When no candidate in the group is feed-ready the lowest OSM id
+    keeps it anyway - the GTFS builder later skips that relation and counts the
+    skip, and ``groups_without_feed_ready_keeper`` records the fallback.
+
+    Every other relation - feed-ready or not - is either:
 
     * dropped as the same corridor's opposite direction when its normalized
-      ``from``/``to`` are exactly the kept relation's ``to``/``from`` and all
-      four labels are non-empty (``routes_skipped_duplicate_direction``); or
-    * suffixed ``<family>-<slug>-osm<osm id>``
+      ``from``/``to`` are exactly the ``to``/``from`` of **any relation already
+      kept in this group**, bare keeper or already-renamed (ruling R32), and
+      all four labels are non-empty (``routes_skipped_duplicate_direction``);
+    * suffixed ``<family>-<slug>-osm<osm id>`` and kept
       (``routes_renamed_collision``).
 
-    OSM id order (not file position) decides, so rewriting the extract as XML or
-    PBF cannot rename a route and re-running the reader always yields the same
-    ids. A suffixed id cannot collide with a bare one because a slug holds no
-    hyphen, and two suffixed ids differ by construction.
+    OSM id order (not file position) decides the keeper, so rewriting the
+    extract as XML or PBF cannot rename a route and re-running the reader always
+    yields the same ids. A suffixed id cannot collide with a bare one because a
+    slug holds no hyphen, and two suffixed ids differ by construction.
+
+    Args:
+        candidates: every ingestible relation copied by pass 1 (file order).
+
+    Returns:
+        The per-OSM-id route ids plus the composition counters. An OSM id absent
+        from :attr:`_IdAssignment.route_ids` was dropped as a duplicate
+        direction.
     """
     bases: Dict[int, str] = {}
     by_id: Dict[int, _Candidate] = {}
@@ -1155,26 +1264,92 @@ def _assign_route_ids(candidates: Sequence[_Candidate]) -> _IdAssignment:
     collisions = 0
     renamed = 0
     duplicate_direction = 0
+    without_feed_ready_keeper = 0
     for base, osm_ids in groups.items():
         if len(osm_ids) > 1:
             collisions += 1
-        kept = by_id[osm_ids[0]]
-        route_ids[kept.osm_id] = base
-        kept_from, kept_to = _normalised_ends(kept)
-        for osm_id in osm_ids[1:]:
+        keeper_id, keeper_is_feed_ready = _keeper_for(by_id, osm_ids)
+        if not keeper_is_feed_ready:
+            without_feed_ready_keeper += 1
+        route_ids[keeper_id] = base
+        # R32: reverse-dedupe against every kept relation in this group, not only
+        # the bare keeper. The keeper is kept before any comparison, so a
+        # non-feed-ready lower id can still be dropped as its reverse direction.
+        kept_ends: List[Tuple[str, str]] = [_normalised_ends(by_id[keeper_id])]
+        for osm_id in osm_ids:
+            if osm_id == keeper_id:
+                continue
             later_from, later_to = _normalised_ends(by_id[osm_id])
-            if _is_reverse_direction(kept_from, kept_to, later_from, later_to):
+            if any(
+                _is_reverse_direction(kept_from, kept_to, later_from, later_to)
+                for kept_from, kept_to in kept_ends
+            ):
                 duplicate_direction += 1
                 continue
             route_ids[osm_id] = f"{base}-osm{osm_id}"
             renamed += 1
+            kept_ends.append((later_from, later_to))
     return _IdAssignment(
         route_ids=route_ids,
         collisions=collisions,
         renamed=renamed,
         duplicate_direction=duplicate_direction,
         fallbacks=fallbacks,
+        groups_without_feed_ready_keeper=without_feed_ready_keeper,
     )
+
+
+def _keeper_for(
+    by_id: Mapping[int, _Candidate], osm_ids: Sequence[int]
+) -> Tuple[int, bool]:
+    """The group's keeper and whether it is feed-ready (ruling R30).
+
+    Args:
+        by_id: OSM id -> candidate.
+        osm_ids: the group's OSM ids, ascending.
+
+    Returns:
+        ``(lowest feed-ready OSM id, True)`` when the group has a feed-ready
+        candidate, else ``(lowest OSM id, False)``.
+    """
+    for osm_id in osm_ids:
+        if _is_feed_ready(by_id[osm_id]):
+            return osm_id, True
+    return osm_ids[0], False
+
+
+def _is_feed_ready(candidate: _Candidate) -> bool:
+    """True when the GTFS builder can publish this candidate (ruling R30).
+
+    Feed-readiness is decided from the pass-1 member list, before any geometry
+    or stop is resolved, so it is a conservative *proxy*: a way member that is
+    dangling in the extract still counts here and is caught later by the
+    builder's ``routes_skipped_no_geometry`` counter.
+
+    A candidate is feed-ready when:
+
+    * its ``route=*`` family is supported (every candidate passed that filter)
+      and its id is resolvable (a ``ref``/``name`` slug, else the ``osm<id>``
+      fallback - always true, see :func:`_base_route_id`);
+    * it has at least one way member outside :data:`STOP_ROLES`, which is what
+      :func:`_resolve_shape` can turn into shape geometry; and
+    * it has two or more stop-ish members (``n``/``w`` members with a role in
+      :data:`STOP_ROLES`), or none at all. Two stops are what
+      :func:`pipeline.gtfs._clean_stops` needs to keep; with none it
+      synthesizes the two landmark stops from the shape ends. Exactly one is
+      the unpublishable case: the builder keeps that single stop and skips the
+      route as "too few stops".
+    """
+    has_geometry_way = any(
+        member_type == "w" and role not in STOP_ROLES
+        for member_type, _, role in candidate.members
+    )
+    stop_members = sum(
+        1
+        for member_type, _, role in candidate.members
+        if member_type in ("n", "w") and role in STOP_ROLES
+    )
+    return has_geometry_way and (stop_members == 0 or stop_members >= 2)
 
 
 def _normalised_ends(candidate: _Candidate) -> Tuple[str, str]:
@@ -1262,13 +1437,16 @@ def _stats_for(
         route_relations=scan.route_relations,
         unsupported_route=scan.unsupported_route,
         unsupported_route_values=scan.unsupported_route_values,
-        skipped_no_name=scan.skipped_no_name,
+        relations_without_name=scan.relations_without_name,
+        tricycle_relations_seen=scan.tricycle_relations_seen,
+        excluded_tricycle_relations=scan.excluded_tricycle_relations,
         candidates=len(scan.candidates),
         accepted=len(scan.candidates) - assignment.duplicate_direction,
         route_id_collisions=assignment.collisions,
         routes_skipped_duplicate_direction=assignment.duplicate_direction,
         renamed_route_ids=assignment.renamed,
         fallback_route_ids=assignment.fallbacks,
+        groups_without_feed_ready_keeper=assignment.groups_without_feed_ready_keeper,
         candidates_without_stop_members=sum(
             1
             for candidate in scan.candidates
@@ -1288,12 +1466,32 @@ def _mode_prefix(tags: Mapping[str, str]) -> str:
     if osm_route == "bus":
         return "bus"
     if osm_route in ("share_taxi", "jeepney"):
+        # Priority is unchanged: a relation that names UV Express stays ``uv-``,
+        # even when it also mentions an e-trike. Everything else on share_taxi
+        # keeps the historical jeepney prefix unless the service itself is an
+        # e-trike/tricycle/traysikel (R11), which is the only mapped
+        # tricycle-class corridor OSM carries.
         haystack = f"{tags.get('name', '')} {tags.get('ref', '')}".lower()
         if "uv express" in haystack or "uv-express" in haystack:
             return "uv"
+        if osm_route == "share_taxi" and _is_trike_service(tags):
+            return "trike"
         return "jeep"
     # Unreachable for candidates (filtered in pass 1), kept explicit.
     raise ValueError(f"unsupported OSM route value: {osm_route!r}")
+
+
+def _is_trike_service(tags: Mapping[str, str]) -> bool:
+    """True when the relation's name/ref/operator/description names a trike.
+
+    The keyword match is deliberately generous (``tricycl|traysikel|trike``):
+    OSM has no dedicated tricycle route value, so the service name is the only
+    signal that a ``share_taxi`` relation is the e-trike layer. The UV Express
+    test is applied *before* this one, so the historical family assignment of an
+    ambiguous relation cannot change.
+    """
+    haystack = " ".join(str(tags.get(tag, "")) for tag in TRIKE_SERVICE_TAGS)
+    return bool(TRIKE_SERVICE_PATTERN.search(haystack))
 
 
 def _slug(value: str) -> str:

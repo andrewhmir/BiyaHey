@@ -36,6 +36,12 @@
  * The NCR clip must therefore exist before `--region ph` publishes; the script
  * checks that explicitly instead of letting landmark resolution be skipped.
  *
+ * The tricycle terminal artifact (`data/build/tricycle-terminals.json`, ruling
+ * R11/R28) is canonical at the build root so the BFF can read it for either
+ * region. Publish writes the region copy and, because both publish roots live
+ * under `data/build`, the canonical copy too; this script verifies both layouts
+ * and promotes the region copy if only that one exists.
+ *
  * Timings on this machine (recorded in docs/runbooks/data-build.md §1.2): the
  * NCR clip takes ~72 minutes, publish ~6 minutes. The national region skips the
  * clip entirely (it copies the downloaded extract only when needed) and skips
@@ -45,7 +51,7 @@
  * download is explicit (this script) and never happens in tests or CI.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -130,6 +136,12 @@ const skipDownload = downloadFlag || (region === 'ph' && existsSync(downloadDest
 
 const feedPath = join(target.publishDir, 'gtfs', 'gtfs.zip');
 const manifestPath = join(target.publishDir, 'manifest.json');
+// R11/R28: the tricycle terminal artifact is canonical at the build root so the
+// BFF can read /data/build/tricycle-terminals.json for either region. The
+// publish stage writes it beside the feed and, when the publish root is under
+// data/build, at this canonical path too; the check below guarantees it for
+// both region layouts and copies the region file when only that one exists.
+const terminalsPath = join(buildDir, 'tricycle-terminals.json');
 
 // The routing service must be recreated after a build because MOTIS imports the
 // graph at startup. Both the label and the env override come from the region
@@ -279,12 +291,28 @@ runStage(
   publishArgs,
 );
 
+// Thread the canonical terminal artifact through both region layouts. NCR's
+// publish root *is* data/build, so the stage already wrote this exact path; the
+// national root is nested, so its region copy is promoted to the build root.
+const regionTerminals = join(target.publishDir, 'tricycle-terminals.json');
+if (regionTerminals !== terminalsPath && existsSync(regionTerminals)) {
+  copyFileSync(regionTerminals, terminalsPath);
+  console.log(`data:build: canonical terminals ${terminalsPath}`);
+} else if (!existsSync(terminalsPath)) {
+  console.error(
+    `data:build: publish did not write the tricycle terminal artifact; expected ` +
+      `${terminalsPath} or ${regionTerminals}.`,
+  );
+  process.exit(1);
+}
+
 console.log(`
 data:build: done (region ${region})
   feed      ${feedPath}
   manifest  ${manifestPath}
   report    ${join(target.publishDir, 'build-report.json')}
   coverage  ${join(target.publishDir, 'coverage-regional.json')}
+  terminals ${terminalsPath}
 ${
   target.landmarksPbf !== null
     ? `  landmarks ${target.landmarksPbf}\n`

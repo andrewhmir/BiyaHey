@@ -1,0 +1,197 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract used by pipelines/tests/test_osm_routes.py
+  to pin the route-id keeper rulings R30 (feed-ready keeper), R31 (nameless
+  relations are ingested) and R32 (reverse dedupe across the whole group).
+
+  It is NOT downloaded. Every relation is a deliberate minimal case; the nodes
+  and ways are shared where the point is the relation tags, not the geometry.
+
+  Nodes / ways:
+    8101, 8102   way 9201  geometry for the P28 / P31 / P35 groups
+    8301, 8302   way 9202  geometry for bus-rr (RR North)
+    8311, 8312   way 9203  geometry for bus-rr-osm7302 (RR East)
+    8321, 8322   way 9204  geometry for the dropped RR West direction (7303)
+    8401, 8402   way 9205  two real stops for the nameless 7401
+    8403, 8404   way 9206  single stop for the unnamed non-feed-ready 7402
+
+  Relations (file order is ascending OSM id, as in a real extract):
+    7201  bus ref=P28, 1 stop member (8101), from=Alpha to=Beta
+          -> NOT feed-ready (exactly one stop-ish member)
+    7202  bus ref=P28, 0 stop members (landmark stops synthesised),
+          from=Beta to=Alpha -> FEED-READY, and the exact reverse of 7201.
+          R30: 7202 is the keeper and keeps the bare id bus-p28 (pre-fix the
+          1-stop 7201 kept it and was then skipped as "too few stops", so
+          bus-p28 disappeared from the feed - the p28/p31/p35 regression).
+          R32: 7201 is dropped as the reverse of the already-kept 7202 and is
+          counted in routes_skipped_duplicate_direction.
+    7211  bus ref=P31, 1 stop member, from=Gamma to=Delta -> NOT feed-ready
+    7212  bus ref=P31, 0 stop members, from=Gamma to=Delta -> FEED-READY
+          R30: 7212 keeps bus-p31; 7211 is renamed bus-p31-osm7211 and the
+          GTFS builder then skips it as "too few stops".
+    7221  bus ref=P35, 1 stop member -> NOT feed-ready, and the only relation
+          in its group: R30 falls back to the lowest OSM id, so it keeps
+          bus-p35, is counted in groups_without_feed_ready_keeper, and the
+          builder skips it as "too few stops".
+    7301  bus ref=RR, from=North to=South -> keeper, bus-rr
+    7302  bus ref=RR, from=East to=West -> renamed bus-rr-osm7302
+    7303  bus ref=RR, from=West to=East -> exact reverse of the ALREADY-RENAMED
+          7302, so R32 drops it (routes_skipped_duplicate_direction). Pre-R32
+          it was compared only with the bare keeper (North/South) and published
+          as bus-rr-osm7303: the same corridor twice.
+    7401  route=bus with no name/ref, 2 stop members -> R31 ingests it as
+          bus-osm7401 with no short name; it is feed-ready and published.
+    7402  route=bus with no name/ref, 1 stop member -> R31 ingests it as
+          bus-osm7402 (relations_without_name counts it) but R30 says it is not
+          feed-ready, so the builder skips it as "too few stops".
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="8101" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.1100000" lon="121.1100000">
+    <tag k="name" v="P Start"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8102" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.1200000" lon="121.1200000"/>
+  <node id="8301" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3100000" lon="121.3100000"/>
+  <node id="8302" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3200000" lon="121.3200000"/>
+  <node id="8311" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3300000" lon="121.3300000"/>
+  <node id="8312" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3400000" lon="121.3400000"/>
+  <node id="8321" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3500000" lon="121.3500000"/>
+  <node id="8322" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3600000" lon="121.3600000"/>
+  <node id="8401" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4100000" lon="121.4100000">
+    <tag k="name" v="Nameless Start"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8402" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4150000" lon="121.4150000">
+    <tag k="name" v="Nameless End"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8403" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4200000" lon="121.4200000">
+    <tag k="name" v="Nameless Only"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8404" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4250000" lon="121.4250000"/>
+
+  <way id="9201" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8101"/>
+    <nd ref="8102"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="9202" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8301"/>
+    <nd ref="8302"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="9203" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8311"/>
+    <nd ref="8312"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="9204" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8321"/>
+    <nd ref="8322"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="9205" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8401"/>
+    <nd ref="8402"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="9206" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8403"/>
+    <nd ref="8404"/>
+    <tag k="highway" v="primary"/>
+  </way>
+
+  <!-- R30: 1-stop keeper candidate + 0-stop feed-ready reverse later. -->
+  <relation id="7201" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9201" role=""/>
+    <member type="node" ref="8101" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P28"/>
+    <tag k="name" v="P28 One Stop"/>
+    <tag k="from" v="Alpha"/>
+    <tag k="to" v="Beta"/>
+  </relation>
+  <relation id="7202" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9201" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P28"/>
+    <tag k="name" v="P28 Landmark"/>
+    <tag k="from" v="Beta"/>
+    <tag k="to" v="Alpha"/>
+  </relation>
+  <!-- R30: 1-stop candidate that is renamed, then skipped by the builder. -->
+  <relation id="7211" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9201" role=""/>
+    <member type="node" ref="8101" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P31"/>
+    <tag k="name" v="P31 One Stop"/>
+    <tag k="from" v="Gamma"/>
+    <tag k="to" v="Delta"/>
+  </relation>
+  <relation id="7212" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9201" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P31"/>
+    <tag k="name" v="P31 Landmark"/>
+    <tag k="from" v="Gamma"/>
+    <tag k="to" v="Delta"/>
+  </relation>
+  <!-- R30: group with no feed-ready candidate -> lowest id keeps the bare id. -->
+  <relation id="7221" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9201" role=""/>
+    <member type="node" ref="8101" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P35"/>
+    <tag k="name" v="P35 One Stop"/>
+  </relation>
+  <!-- R32: 7303 is the exact reverse of the already-renamed 7302, not of the
+       bare keeper bus-rr (North/South), so only a whole-group check drops it. -->
+  <relation id="7301" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9202" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="RR"/>
+    <tag k="name" v="RR North"/>
+    <tag k="from" v="North"/>
+    <tag k="to" v="South"/>
+  </relation>
+  <relation id="7302" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9203" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="RR"/>
+    <tag k="name" v="RR East"/>
+    <tag k="from" v="East"/>
+    <tag k="to" v="West"/>
+  </relation>
+  <relation id="7303" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9204" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="RR"/>
+    <tag k="name" v="RR West"/>
+    <tag k="from" v="West"/>
+    <tag k="to" v="East"/>
+  </relation>
+  <!-- R31: nameless relations are ingested under bus-osm<id>. -->
+  <relation id="7401" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9205" role=""/>
+    <member type="node" ref="8401" role="stop"/>
+    <member type="node" ref="8402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+  </relation>
+  <relation id="7402" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9206" role=""/>
+    <member type="node" ref="8403" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+  </relation>
+</osm>
