@@ -71,27 +71,41 @@ The whole Philippines extract carries **2** `route=tricycle` relations:
 Laguna / Bicol van associations — nothing in the tag set identifies a tricycle service. So the
 honest baseline for tricycles is **no citable tricycle route with service evidence exists in OSM
 today**, and a synthesized tricycle headway would fabricate a schedule for a demand-responsive
-service. What may exist in OSM (not yet counted, see §3) is tricycle **terminals**
-(`amenity=tricycle_station|tricycle_stand|motorcycle_taxi`), which are real point data usable for a
-"tricycle likely here — not in the dataset" hint on a walk leg.
+service. What does exist in OSM is tricycle **terminals**: `amenity=tricycle_station` is the only mapped
+tricycle amenity, and nationally there are **3** (NCR 1, Region IV-A 2, **0** in Quezon City, Cebu
+City, Iloilo City and Davao City). Text-keyword matches for tricycle/traysikel in route tags: 18
+relations nation-wide (mostly non-transit route values); 2 share_taxi relations mention a tricycle
+word. So the honest deliverable is a data-driven terminal hint that will almost never fire in this
+snapshot, an empty curated route/fare path, and this negative finding — not a fabricated corridor.
 
 The plan's Task 8 therefore ships: the tricycle ingestion path + schema (proven with fixtures), an
 empty curated `data/fares/tricycle-fares.yaml` (no published fare matrix found — never reuse the
 jeepney matrix), a terminal artifact from OSM point features, and this negative finding.
 
-## 3. Regional split — method and limitation
+## 3. Regional split
 
-The intended method was to resolve every route relation's stop-member coordinates in a second
-(node) pass and assign each relation to a region by those points. **The Python-callback node pass is
-too slow for a one-session recon**: measured 23,952–25,940 nodes/s; the pass is capped at 1,140 s and
-therefore partial (`data/build/recon/node-pass-progress.log`). Its lesson: a full-extract node pass
-needs pyosmium's C++ ID filtering or a much larger time budget.
+Method (final, `data/build/recon/regional-split.json`, `run-summary.json`): a relations pass
+(17.5 s) collects the stop-member node ids, then a **node pass with a C++-level ID filter** resolves
+all 6,847 stop nodes (16,596 refs, 0 unresolved) in **109.5 s** — the earlier naive Python-callback
+attempt measured ~24k nodes/s and was abandoned. Each relation is assigned to the region whose
+documented approximate box contains the median of its stop coordinates; relations with no stop
+coordinates (1,637, mostly non-transit route values) and points outside every box are reported as
+`no_stop_coords` / `unassigned`, never silently dropped.
 
-Consequence (recorded as ruling R9): **per-region route/stop counts are derived from the built
-national feed** by `pipelines/pipeline/regions.py` (Task 3, `coverage-regional.json`), where every
-stop already carries lat/lon from the same extract. The recon numbers that need no coordinates
-(§1, §2) are complete. Region boxes are approximate and are documented with that caveat in
-`regions.py`; the `unassigned` bucket is reported, never hidden.
+Route relations by assigned region (all route values; the pipeline ingest families subset in §1):
+NCR 499, Region IV-A 251, CAR 118, Region VII 111, Region VI 44, Region VIII 37, Region III 32,
+Region V 32, Region XIII 20, Region X 20, Region II 14, unassigned 13, Region IV-B 12, Region I 4,
+Region XII 4, Region IX 2, Region XI 1, **BARMM 0**, no stop coordinates 1,637. Island roll-up:
+Luzon 920, Visayas 227, Mindanao 67. Ingestible transit relations by region: NCR 472, IV-A 227,
+CAR 114, VII 105, VIII 34, III 29, VI 29, V 28, XIII 20, X 20, IV-B 12, II 7, I 4, XII 2, IX 2,
+XI 0, no-stop-coords 16.
+
+Caveats, stated rather than hidden: the boxes are axis-aligned approximations, so boundary-adjacent
+relations can be misclassified (e.g. Region XI's single coordinate-bearing relation looks like a
+box/median artefact — the national feed's per-stop counts in Task 3 are the displayable number, and
+they use the same boxes with the same caveat); BARMM genuinely has no route relations in this
+snapshot; 57 % of relations carry no stop coordinates because most `type=route` values are not
+transit. The recon numbers that matter for ingestion decisions (§1, §2) need no region assignment.
 
 ## 4. National MOTIS import — D1 gate result
 
@@ -192,8 +206,9 @@ Probed 2026-11-04 against the pinned build (evidence `data/build/recon/motis-end
    but it is an expectation, not a measurement.
 3. **Disk headroom.** Host `C:` free fell 17.11 → 14.94 GB during the import run; the kept evidence
    graph volume is 850 MB. The national feed and graph rebuilds need room — check before building.
-4. **Node-pass cost** (§3) applies to any future full-extract scan: use pyosmium C++ filters or
-   budget hours, not the naive Python callback.
+4. **Full-extract node passes are affordable with a C++ ID filter** (~110 s for all 6,847 stop
+   nodes, §3) and unaffordable with a per-node Python callback (~24k nodes/s). Any future scan must
+   use pyosmium's native filtering.
 5. **Tricycles remain a negative finding** (§2). The deliverable is honest UI/labels plus a tested
    ingestion path, not a fabricated corridor.
 
