@@ -10,6 +10,13 @@ services:
       # Inputs only. `motis import` writes the graph to /var/lib/motis/data in
       # the container, so this mount can stay read-only.
       - ./data/build:/data:ro
+      # The imported graph lives in a named volume, never a host bind mount:
+      # MOTIS ftruncates/mmaps sparse graph files and that fails on a
+      # Windows-backed bind mount ("resize error"). The volume also keeps the
+      # entrypoint's hash-keyed import a ~1.5 s no-op across container
+      # recreations (verified in the PH-wide-coverage recon, docs/research/
+      # 2026-11-04-ph-wide-coverage-recon.md §4).
+      - routing-data:/var/lib/motis/data
     environment:
       # NCR config by default. Select the national graph with, for example:
       #   BIYAHEY_ROUTING_CONFIG=/etc/motis/config.ph.yml docker compose up -d routing
@@ -19,8 +26,11 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
-      # First start imports the NCR graph before the server listens.
-      start_period: 600s
+      # First start imports the graph before the server listens: minutes for the
+      # NCR clip, ~17 min measured for the national PH graph (recon §4), so the
+      # start period must cover the national import or `--wait` reports failure
+      # while the import is still running.
+      start_period: 1800s
     restart: unless-stopped
 
   api:
@@ -59,4 +69,8 @@ services:
       retries: 10
       start_period: 20s
     restart: unless-stopped
+
+
+volumes:
+  routing-data:
 
