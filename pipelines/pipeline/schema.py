@@ -96,7 +96,10 @@ COVERAGE_SCHEMA: dict[str, Any] = {
             "minItems": 4,
             "maxItems": 4,
             "items": {"type": "number"},
-            "description": "NCR bbox as (min_lat, min_lon, max_lat, max_lon).",
+            "description": (
+                "Clipped bbox as (min_lat, min_lon, max_lat, max_lon); absent for the "
+                "national extract, which is the downloaded file unchanged."
+            ),
         },
         "bbox_text": {
             "type": "string",
@@ -105,13 +108,13 @@ COVERAGE_SCHEMA: dict[str, Any] = {
         "output": {
             "type": "string",
             "minLength": 1,
-            "description": "Path of the written NCR extract (build artifact, never committed).",
+            "description": "Path of the written region extract (build artifact, never committed).",
         },
         "extract": {
             "type": "object",
             "additionalProperties": False,
             "required": ["nodes", "ways", "relations"],
-            "description": "Objects written to the NCR extract.",
+            "description": "Objects written to the clipped extract (absent for the national copy).",
             "properties": {
                 "nodes": {"type": "integer", "minimum": 0},
                 "ways": {"type": "integer", "minimum": 0},

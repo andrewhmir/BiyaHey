@@ -56,7 +56,12 @@ from .manifest import (
     gate_sources,
     load_sources,
 )
-from .osm import CoverageError, download_geofabrik, run_stage_osm
+from .osm import (
+    CoverageError,
+    download_geofabrik,
+    resolve_region,
+    run_stage_osm,
+)
 from .publish import (
     DEFAULT_ALIASES,
     DEFAULT_BUILD_DIR,
@@ -411,6 +416,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"(download it first: python -m pipeline.cli download --dest {pbf})"
         )
 
+    # Resolve/validate the region before the stage runs: a bad selector is user
+    # error, while a ValueError from inside the stage (pyosmium, extract_bbox)
+    # is a bug. Catching the stage's ValueError would print the clean exit-2
+    # contract over a traceback-worthy defect, so only the selector is caught
+    # here and the stage's own errors surface normally.
+    try:
+        resolve_region(args.region)
+    except ValueError as exc:
+        return _fail(exc)
+
     # Documented contract (runbook §1.2): every missing or invalid input returns
     # exit code 2 with a one-line stderr message, never a traceback. run_stage_osm
     # validates the taginfo snapshot before clipping, so a bad snapshot never
@@ -429,7 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"taginfo snapshot fails the coverage schema: {args.taginfo} "
             f"({exc.message} at {exc.json_path})"
         )
-    except (FileNotFoundError, ValueError) as exc:
+    except FileNotFoundError as exc:
         return _fail(exc)
 
     print(f"region: {report['region']}  clip: {report['clip']}")

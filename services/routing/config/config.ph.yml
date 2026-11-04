@@ -1,25 +1,37 @@
 # MOTIS v2.11.4 configuration for the national (PH-wide) routing service.
 #
-# Generated inside the pinned container with the binary's own generator:
-#     motis config /data/osm/ph.osm.pbf /data/gtfs/ph/gtfs.zip
-# then edited for this deployment only:
-#   - `server.port: 8080` pins the HTTP port. `server.port` is documented in
-#     MOTIS docs/setup.md ("port (default = 8080)") and in the starter configs.
-#   - the generated `tiles:` block was removed: this service serves routing,
-#     geocoding and timetable APIs only; map tiles are not part of the MVP and
-#     the tiles import would dominate import time and memory.
+# Provenance: this is the NCR config (`config.yml`) copied and edited with
+# exactly two national input paths changed. It is NOT the output of a generator
+# run:
+#   - `osm: /data/osm/ph.osm.pbf` (the national extract; never clipped)
+#   - `timetable.datasets.gtfs.path: /data/gtfs/ph/gtfs/gtfs.zip` (the feed
+#     published by `npm run data:build -- --region ph`)
+# Everything else - `server.port: 8080`, the absent `tiles:` block, and the
+# timetable footpath settings (`extend_missing_footpaths: false`,
+# `max_footpath_length: 15`) - is identical to `config.yml`. The footpath
+# settings stay identical until Task 4's measured national tuning, so the two
+# configs differ only in those two paths for now.
 #
-# This is the national variant of `config.yml`. It is selected by docker-compose
-# through MOTIS_CONFIG (see docker-compose.yml):
+# For reference only, the pinned container's generator would name the same
+# national inputs as (the doubled `gtfs/` is intentional: publish writes
+# `<out>/gtfs/gtfs.zip` under `--out data/build/gtfs/ph`, which is mounted at
+# /data):
+#     motis config /data/osm/ph.osm.pbf /data/gtfs/ph/gtfs/gtfs.zip
+#
+# `server.port: 8080` pins the HTTP port (`server.port` is documented in MOTIS
+# docs/setup.md - "port (default = 8080)" - and in the starter configs). The
+# `tiles:` block is absent on purpose: this service serves routing, geocoding
+# and timetable APIs only; map tiles are not part of the MVP and the tiles
+# import would dominate import time and memory.
+#
+# This is the national variant of `config.yml`. It is selected at deploy time
+# through the MOTIS_CONFIG environment variable that docker-compose sets (see
+# docker-compose.yml):
 #     BIYAHEY_ROUTING_CONFIG=/etc/motis/config.ph.yml docker compose up -d routing
 #
 # Inputs are mounted read-only from ./data/build (see docker-compose.yml). The
 # graph is written by `motis import` to the container-local /var/lib/motis/data,
 # never into the read-only mount.
-#
-# The timetable footpath settings below are deliberately the same as the NCR
-# config for now; the national tuning (extend_missing_footpaths /
-# max_footpath_length) is Task 4's measured decision.
 server:
   port: 8080
 
@@ -46,7 +58,7 @@ timetable:
   preprocess_max_matching_distance: 250.000000
   datasets:
     gtfs:
-      path: /data/gtfs/ph/gtfs.zip
+      path: /data/gtfs/ph/gtfs/gtfs.zip
       extend_calendar: false
       default_bikes_allowed: false
       default_cars_allowed: false

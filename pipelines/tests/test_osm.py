@@ -461,6 +461,41 @@ def test_resolve_region_parses_an_explicit_bbox():
 
 
 @pytest.mark.parametrize(
+    ("selector", "expected"),
+    [
+        ("NCR", ("ncr", NCR_BBOX)),
+        ("  ncr  ", ("ncr", NCR_BBOX)),
+        ("PH", ("ph", None)),
+        ("\tPh\n", ("ph", None)),
+        # surrounding/embedded whitespace around the numbers is ignored too
+        ("BBox: 14.0, 120.5, 15.0, 121.5 ", ("bbox", (14.0, 120.5, 15.0, 121.5))),
+    ],
+)
+def test_resolve_region_is_case_and_whitespace_insensitive(selector, expected):
+    # osm.py's docstring promises this: selectors are normalised before matching.
+    assert resolve_region(selector) == expected
+
+
+@pytest.mark.parametrize(
+    "region",
+    [
+        # latitudes must stay within -90..90, longitudes within -180..180
+        "bbox:90.5,120.5,91.0,121.5",
+        "bbox:-91.0,120.5,-90.5,121.5",
+        "bbox:14.0,180.5,15.0,181.5",
+        "bbox:14.0,-181.5,15.0,-180.5",
+    ],
+)
+def test_resolve_region_rejects_an_out_of_range_bbox(region):
+    with pytest.raises(ValueError) as excinfo:
+        resolve_region(region)
+
+    assert "out of range" in str(excinfo.value)
+    # the error still names the accepted forms, like every resolver error
+    assert "bbox:min_lat,min_lon,max_lat,max_lon" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
     "region",
     [
         "mars",
@@ -603,3 +638,29 @@ def test_cli_osm_rejects_an_unknown_region_without_writing_anything(tmp_path, ca
     assert "Traceback" not in captured.err
     assert len(captured.err.strip().splitlines()) == 1
     assert not out_dir.exists()
+
+
+def test_cli_osm_does_not_hide_an_internal_stage_value_error(tmp_path, monkeypatch):
+    # Fix round 2: only a bad *selector* is user error (exit 2). A ValueError
+    # raised inside the stage itself (pyosmium, extract_bbox) is a bug and must
+    # surface as a traceback, not be reformatted into the clean exit-2 contract.
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    def explode(*args, **kwargs):
+        raise ValueError("internal stage bug")
+
+    monkeypatch.setattr("pipeline.cli.run_stage_osm", explode)
+
+    with pytest.raises(ValueError, match="internal stage bug"):
+        cli_main(
+            [
+                "osm",
+                "--pbf",
+                str(source),
+                "--out",
+                str(out_dir),
+                "--taginfo",
+                str(TAGINFO_FIXTURE),
+            ]
+        )

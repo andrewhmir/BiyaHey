@@ -5,7 +5,8 @@
  *
  * Usage:
  *   npm run data:build                  # full NCR chain (network: ~612 MB download)
- *   npm run data:build -- --region ph   # national chain (no clip: reuses the download)
+ *   npm run data:build -- --region ph   # national chain: no clip, and no download
+ *                                       # when data/build/philippines-latest.osm.pbf exists
  *   npm run data:build -- --skip-download   # reuse data/build/philippines-latest.osm.pbf
  *   npm run data:build -- --publish-only    # reuse the region extract, rebuild the feed
  *
@@ -16,6 +17,13 @@
  * `bbox:min_lat,min_lon,max_lat,max_lon` region, but this script only drives the
  * two named regional builds.
  *
+ * The printed next step recreates the `routing` service because MOTIS imports
+ * its graph at startup. NCR uses the image's default config, so its command is
+ * unchanged; `--region ph` selects the national config through
+ * `BIYAHEY_ROUTING_CONFIG` (mapped to `MOTIS_CONFIG` in docker-compose.yml), so
+ * an operator following the national build's output cannot leave the NCR graph
+ * serving by mistake.
+ *
  * Every stage runs from `pipelines/` with the repository virtualenv, because the
  * pipeline is a Python package (`python -m pipeline.cli`). The publish stage is
  * always invoked with `--aliases data/routes/landmark-aliases.yaml`, the
@@ -24,7 +32,10 @@
  *
  * Timings on this machine (recorded in docs/runbooks/data-build.md §1.2): the
  * NCR clip takes ~72 minutes, publish ~6 minutes. The national region skips the
- * clip entirely (it copies the downloaded extract only when needed). The
+ * clip entirely (it copies the downloaded extract only when needed) and skips
+ * the download whenever data/build/philippines-latest.osm.pbf already exists,
+ * so a repeat `--region ph` build is offline; only a missing download is
+ * fetched. NCR keeps today's behaviour (download unless --skip-download). The
  * download is explicit (this script) and never happens in tests or CI.
  */
 import { spawnSync } from 'node:child_process';
@@ -49,7 +60,8 @@ const venvPython = join(
 const python = existsSync(venvPython) ? venvPython : isWindows ? 'python' : 'python3';
 
 const argv = process.argv.slice(2);
-const skipDownload = argv.includes('--skip-download') || argv.includes('--publish-only');
+const downloadFlag =
+  argv.includes('--skip-download') || argv.includes('--publish-only');
 const publishOnly = argv.includes('--publish-only');
 
 /** Read a `--name value` or `--name=value` flag (undefined when absent). */
@@ -70,21 +82,63 @@ function flagValue(name) {
 // extract instead of clipping, so the second run is cheap.
 const region = (flagValue('region') ?? 'ncr').toLowerCase();
 const REGION_TARGETS = {
-  ncr: { pbf: join(buildDir, 'osm', 'ncr.osm.pbf'), publishDir: buildDir },
+  ncr: {
+    pbf: join(buildDir, 'osm', 'ncr.osm.pbf'),
+    publishDir: buildDir,
+    // null: the image's default MOTIS config (/etc/motis/config.yml).
+    routingConfig: null,
+  },
   ph: {
     pbf: join(buildDir, 'osm', 'ph.osm.pbf'),
     publishDir: join(buildDir, 'gtfs', 'ph'),
+    // Selected through the compose env override; see the next-step text below.
+    routingConfig: '/etc/motis/config.ph.yml',
   },
 };
-const target = REGION_TARGETS[region];
-if (target === undefined) {
+// Own-property check: `REGION_TARGETS[region]` would also find inherited names
+// such as `constructor`, then crash on `target.publishDir` instead of failing
+// with the clean unknown-region error.
+if (!Object.hasOwn(REGION_TARGETS, region)) {
   console.error(
     `data:build: unknown --region ${region}; accepted regions: ${Object.keys(REGION_TARGETS).join(', ')}`,
   );
   process.exit(1);
 }
+const target = REGION_TARGETS[region];
+
+// `--region ph` builds from the national extract that is already on disk: the
+// download *is* the national input, so a repeat build must not pull another
+// 612 MB. A missing download still falls through to the download stage below
+// (or to the --skip-download error), and NCR keeps today's behaviour.
+const skipDownload = downloadFlag || (region === 'ph' && existsSync(downloadDest));
+
 const feedPath = join(target.publishDir, 'gtfs', 'gtfs.zip');
 const manifestPath = join(target.publishDir, 'manifest.json');
+
+// The routing service must be recreated after a build because MOTIS imports the
+// graph at startup. Both the label and the env override come from the region
+// target, so a new region cannot silently print the NCR command.
+const ROUTING_SERVICE = 'routing';
+const ROUTING_CONFIG_ENV = 'BIYAHEY_ROUTING_CONFIG';
+
+function nextStepLines(regionTarget) {
+  const recreate = `docker compose up -d --force-recreate --wait ${ROUTING_SERVICE}`;
+  const national = regionTarget.routingConfig !== null;
+  const lines = [
+    `MOTIS only serves ${national ? 'the national feed' : 'the new feed'} after a container recreate:`,
+  ];
+  if (national) {
+    lines.push(
+      `  PowerShell:  $env:${ROUTING_CONFIG_ENV}='${regionTarget.routingConfig}'; ${recreate}`,
+      `  POSIX:       ${ROUTING_CONFIG_ENV}=${regionTarget.routingConfig} ${recreate}`,
+      `  feed:        ${feedPath}`,
+    );
+  } else {
+    lines.push(`  ${recreate}`);
+  }
+  lines.push('Then re-run the acceptance live suites:', '  npm run test:integration');
+  return lines;
+}
 
 function runStage(label, args) {
   console.log(`\ndata:build: ${label}`);
@@ -129,7 +183,13 @@ if (!skipDownload) {
     downloadDest,
   ]);
 } else {
-  console.log(`data:build: skipping download (using ${downloadDest})`);
+  let reason = `--region ${region} reuses the national extract`;
+  if (argv.includes('--skip-download')) {
+    reason = '--skip-download';
+  } else if (publishOnly) {
+    reason = '--publish-only';
+  }
+  console.log(`data:build: skipping download (${reason}; using ${downloadDest})`);
   if (!existsSync(downloadDest) && !publishOnly) {
     console.error(
       `data:build: --skip-download was passed but ${downloadDest} does not exist.`,
@@ -189,8 +249,5 @@ data:build: done (region ${region})
   manifest  ${manifestPath}
   report    ${join(target.publishDir, 'build-report.json')}
 
-MOTIS only serves the new feed after a container recreate:
-  docker compose up -d --force-recreate --wait routing
-Then re-run the acceptance live suites:
-  npm run test:integration
+${nextStepLines(target).join('\n')}
 `);
