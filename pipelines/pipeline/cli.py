@@ -4,8 +4,11 @@ Stages (run from the ``pipelines/`` directory with the venv interpreter):
 
 * ``download`` — fetch the Geofabrik Philippines extract. Network access; it is
   a separate, explicit action so no build or test ever downloads implicitly.
-* ``osm`` — clip an existing extract to the NCR bbox and write
-  ``<out>/osm/ncr.osm.pbf`` plus the schema-validated ``<out>/osm/coverage.json``.
+* ``osm`` — select the region extract and write
+  ``<out>/osm/<slug>.osm.pbf`` plus the schema-validated ``<out>/osm/coverage.json``.
+  ``--region ncr`` (default) clips to the Metro Manila bbox; ``--region ph`` uses
+  the downloaded national extract unchanged (no clip, no re-download);
+  ``--region bbox:min_lat,min_lon,max_lat,max_lon`` clips to an explicit box.
   Offline: it only reads local files.
 * ``publish`` — resolve the curated terminals against the clipped extract (with
   the documented landmark aliases, ruling R34), merge OSM + curated routes,
@@ -92,10 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     osm = stages.add_parser(
         "osm",
-        help="clip an extract to the NCR bbox and write the coverage report (offline)",
+        help="select the region extract and write the coverage report (offline)",
         description=(
-            "Clip an existing Philippines extract to the NCR bbox (ruling R5) and write "
-            "coverage.json from the pinned taginfo snapshot. Offline: reads local files only."
+            "Select the OSM extract for a region and write coverage.json from the "
+            "pinned taginfo snapshot. --region ncr (default) clips the source to the "
+            "NCR bbox (ruling R5); --region ph copies the national extract unchanged; "
+            "--region bbox:min_lat,min_lon,max_lat,max_lon clips to an explicit box. "
+            "Offline: reads local files only."
         ),
     )
     osm.add_argument(
@@ -112,6 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--taginfo",
         required=True,
         help="taginfo snapshot JSON for the coverage report, e.g. tests/fixtures/taginfo_philippines.json",
+    )
+    osm.add_argument(
+        "--region",
+        default="ncr",
+        help=(
+            "coverage preset: ncr (default, clipped to Metro Manila), ph (national "
+            "extract, no clipping), or bbox:min_lat,min_lon,max_lat,max_lon "
+            "(default: %(default)s)"
+        ),
     )
 
     publish = stages.add_parser(
@@ -401,7 +416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # validates the taginfo snapshot before clipping, so a bad snapshot never
     # leaves a partial build directory behind.
     try:
-        report = run_stage_osm(pbf, Path(args.out), Path(args.taginfo))
+        report = run_stage_osm(pbf, Path(args.out), Path(args.taginfo), args.region)
     except json.JSONDecodeError as exc:
         return _fail(
             f"invalid taginfo JSON: {args.taginfo} "
@@ -414,9 +429,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"taginfo snapshot fails the coverage schema: {args.taginfo} "
             f"({exc.message} at {exc.json_path})"
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         return _fail(exc)
 
+    print(f"region: {report['region']}  clip: {report['clip']}")
     print(f"route_relations: {report['route_relations']}  by_mode: {report['by_mode']}")
     print(
         f"ptv2_share: {report['ptv2_share']}  data_until: {report['data_until']} "

@@ -16,6 +16,7 @@ below asserts the interface that actually executes: ``extract_bbox``.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import osmium
@@ -26,12 +27,14 @@ from pipeline.cli import main as cli_main
 from pipeline.osm import (
     GEOFABRIK_PH_URL,
     GEOFABRIK_SNAPSHOT_DATE,
+    NCR_BBOX,
     CoverageError,
     bbox_text,
     download_geofabrik,
     extract_bbox,
     ncr_bbox,
     parse_coverage,
+    resolve_region,
     run_stage_osm,
 )
 from pipeline.schema import validate_coverage
@@ -430,3 +433,173 @@ def test_parse_coverage_rejects_a_malformed_taginfo_shape():
     }
     with pytest.raises(CoverageError, match="malformed"):
         parse_coverage(taginfo)
+
+
+# --------------------------------------------------------------------------
+# region presets (Task 1): ncr (default), ph (national, never clipped) and an
+# explicit bbox:min_lat,min_lon,max_lat,max_lon selector. The ph artifact is
+# the downloaded national extract itself, so the stage must not re-clip and
+# must not re-download it.
+# --------------------------------------------------------------------------
+
+
+def test_resolve_region_ncr_returns_the_ncr_bbox():
+    assert resolve_region("ncr") == ("ncr", NCR_BBOX)
+
+
+def test_resolve_region_ph_means_do_not_clip():
+    assert resolve_region("ph") == ("ph", None)
+
+
+def test_resolve_region_parses_an_explicit_bbox():
+    slug, bbox = resolve_region("bbox:14.0,120.5,15.0,121.5")
+
+    assert slug == "bbox"
+    # documented interface order: (min_lat, min_lon, max_lat, max_lon)
+    assert bbox == (14.0, 120.5, 15.0, 121.5)
+    assert bbox[:2] == (14.0, 120.5)  # lat first, then lon
+
+
+@pytest.mark.parametrize(
+    "region",
+    [
+        "mars",
+        "bbox:14.0,120.5,15.0",
+        "bbox:14.0,120.5,15.0,121.5,122.0",
+        "bbox:14.0,120.5,15.0,121.5x",
+        # max < min on the latitude axis is not a bbox
+        "bbox:15.0,120.5,14.0,121.5",
+    ],
+)
+def test_resolve_region_rejects_unknown_forms_naming_the_accepted_ones(region):
+    with pytest.raises(ValueError) as excinfo:
+        resolve_region(region)
+
+    message = str(excinfo.value)
+    assert "ncr" in message
+    assert "ph" in message
+    assert "bbox:min_lat,min_lon,max_lat,max_lon" in message
+
+
+def test_run_stage_osm_region_ph_copies_the_extract_without_clipping(tmp_path):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    report = run_stage_osm(source, out_dir, TAGINFO_FIXTURE, region="ph")
+
+    extract_path = out_dir / "osm" / "ph.osm.pbf"
+    assert extract_path.is_file()
+    # No bbox filtering: every object survives byte for byte, including the
+    # Visayas node 4, way 12 and ferry relation 101 the NCR clip drops.
+    assert extract_path.read_bytes() == source.read_bytes()
+    assert _read_ids(extract_path) == _read_ids(source)
+
+    written = json.loads(
+        (out_dir / "osm" / "coverage.json").read_text(encoding="utf-8")
+    )
+    validate_coverage(written)
+    assert written["region"] == "ph"
+    assert written["clip"] is False
+    # a national report has no bbox context: nothing was clipped
+    assert "bbox" not in written
+    assert "bbox_text" not in written
+    assert report["region"] == "ph"
+    assert report["clip"] is False
+
+
+def test_run_stage_osm_region_ph_reuses_an_existing_extract_of_the_same_size(tmp_path):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+    run_stage_osm(source, out_dir, TAGINFO_FIXTURE, region="ph")
+    extract_path = out_dir / "osm" / "ph.osm.pbf"
+
+    # A rebuild must not re-copy a ~612 MB extract. Backdate the destination:
+    # if the stage copied again, its mtime would move to now.
+    stale = 1_000_000_000  # 2001-09-09T01:46:40Z
+    os.utime(extract_path, (stale, stale))
+
+    run_stage_osm(source, out_dir, TAGINFO_FIXTURE, region="ph")
+
+    assert extract_path.stat().st_mtime == pytest.approx(stale, abs=0.01)
+
+
+def test_run_stage_osm_region_ph_recopies_a_stale_extract_of_a_different_size(tmp_path):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+    extract_path = out_dir / "osm" / "ph.osm.pbf"
+    extract_path.parent.mkdir(parents=True)
+    extract_path.write_bytes(b"stale truncation")
+
+    run_stage_osm(source, out_dir, TAGINFO_FIXTURE, region="ph")
+
+    assert extract_path.read_bytes() == source.read_bytes()
+
+
+def test_run_stage_osm_default_region_is_still_ncr(tmp_path):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    report = run_stage_osm(source, out_dir, TAGINFO_FIXTURE)
+
+    assert (out_dir / "osm" / "ncr.osm.pbf").is_file()
+    assert not (out_dir / "osm" / "ph.osm.pbf").exists()
+    assert report["region"] == "ncr"
+    assert report["clip"] is True
+    assert report["bbox"] == list(ncr_bbox())
+
+
+def test_cli_osm_region_ph_writes_the_national_extract(tmp_path):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    exit_code = cli_main(
+        [
+            "osm",
+            "--region",
+            "ph",
+            "--pbf",
+            str(source),
+            "--out",
+            str(out_dir),
+            "--taginfo",
+            str(TAGINFO_FIXTURE),
+        ]
+    )
+
+    assert exit_code == 0
+    assert (out_dir / "osm" / "ph.osm.pbf").is_file()
+    assert not (out_dir / "osm" / "ncr.osm.pbf").exists()
+    written = json.loads(
+        (out_dir / "osm" / "coverage.json").read_text(encoding="utf-8")
+    )
+    assert written["region"] == "ph"
+    assert written["clip"] is False
+
+
+def test_cli_osm_rejects_an_unknown_region_without_writing_anything(tmp_path, capsys):
+    source = _sample_pbf(tmp_path)
+    out_dir = tmp_path / "build"
+
+    exit_code = cli_main(
+        [
+            "osm",
+            "--region",
+            "mars",
+            "--pbf",
+            str(source),
+            "--out",
+            str(out_dir),
+            "--taginfo",
+            str(TAGINFO_FIXTURE),
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "mars" in captured.err
+    assert "ncr" in captured.err
+    assert "ph" in captured.err
+    assert "bbox:min_lat,min_lon,max_lat,max_lon" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(captured.err.strip().splitlines()) == 1
+    assert not out_dir.exists()

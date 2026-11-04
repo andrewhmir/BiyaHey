@@ -24,7 +24,7 @@ ENV PATH="/opt/motis:${PATH}" \
     MOTIS_CONFIG=/etc/motis/config.yml \
     MOTIS_DATA_DIR=/var/lib/motis/data
 
-COPY config/config.yml /etc/motis/config.yml
+COPY config/ /etc/motis/
 COPY docker-entrypoint.sh /usr/local/bin/motis-entrypoint
 # Normalize CRLF: Windows checkouts (core.autocrlf=true) would otherwise produce
 # a /bin/sh^M script that fails with "bad interpreter".

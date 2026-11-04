@@ -20,14 +20,18 @@ import jsonschema
 #             data_until: copied from the taginfo snapshot (a synthesized
 #             snapshot of the researched figures for now).
 #   derived — ptv2_share: ptv2_relations / ptv2_tagged_relations, rounded to 4 dp.
-#   context — bbox, bbox_text, output, extract: added by the osm stage.
+#   context — region, clip, bbox, bbox_text, output, extract: added by the osm
+#             stage. `region`/`clip` are optional so the taginfo-derived part of
+#             the report (parse_coverage) still validates on its own; the stage
+#             always writes both.
 COVERAGE_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://biyahey.local/schema/coverage.schema.json",
     "title": "OSM coverage report",
     "description": (
         "Coverage of OSM public-transport mapping in the Philippines, as carried by the "
-        "pinned taginfo snapshot, plus the context of the NCR bbox extract."
+        "pinned taginfo snapshot, plus the context of the extract selected by the build's "
+        "region (NCR bbox, national, or an explicit bbox)."
     ),
     "type": "object",
     "additionalProperties": False,
@@ -71,6 +75,21 @@ COVERAGE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": "Where the numbers came from; states that it is a snapshot, not a live query.",
+        },
+        "region": {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "Resolved region selector that produced the extract: 'ncr' (clipped), "
+                "'ph' (national, never clipped) or 'bbox' (explicit bbox clip)."
+            ),
+        },
+        "clip": {
+            "type": "boolean",
+            "description": (
+                "True when the source extract was clipped to a bbox; false for the "
+                "national artifact, which is the downloaded extract unchanged."
+            ),
         },
         "bbox": {
             "type": "array",

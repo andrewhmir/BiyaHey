@@ -10,6 +10,10 @@ services:
       # Inputs only. `motis import` writes the graph to /var/lib/motis/data in
       # the container, so this mount can stay read-only.
       - ./data/build:/data:ro
+    environment:
+      # NCR config by default. Select the national graph with, for example:
+      #   BIYAHEY_ROUTING_CONFIG=/etc/motis/config.ph.yml docker compose up -d routing
+      MOTIS_CONFIG: ${BIYAHEY_ROUTING_CONFIG:-/etc/motis/config.yml}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/v1/geocode?text=Cubao"]
       interval: 15s

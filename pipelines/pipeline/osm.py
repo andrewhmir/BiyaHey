@@ -1,4 +1,15 @@
-"""OSM stage: download the Geofabrik PH extract, clip it to the NCR bbox, report coverage.
+"""OSM stage: download the Geofabrik PH extract, select the NCR bbox or the national
+file unchanged, and report coverage.
+
+Region selectors
+----------------
+:func:`resolve_region` is the single entry point for the stage's coverage
+presets. ``"ncr"`` (the default) clips the downloaded extract to the Metro
+Manila bbox; ``"ph"`` keeps the downloaded national extract as-is — no clip, no
+re-download, just a cheap file copy that is skipped when the destination
+already matches the source size (the extract is ~612 MB); ``bbox:min_lat,min_lon,
+max_lat,max_lon`` clips to an explicit box. The resolved slug names the written
+artifact: ``<out_dir>/osm/<slug>.osm.pbf``.
 
 Why the bbox clipping is Python and not ``osmium extract --bbox``
 -----------------------------------------------------------------
@@ -42,6 +53,7 @@ downloads anything.
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Set, Tuple
@@ -86,6 +98,81 @@ class ExtractStats:
 def ncr_bbox() -> BBox:
     """Return the researched Metro Manila bbox as (min_lat, min_lon, max_lat, max_lon)."""
     return NCR_BBOX
+
+
+#: Accepted region selectors, repeated verbatim in every ``resolve_region``
+#: error so a typo names the forms that work.
+REGION_FORMS = "'ncr', 'ph', or 'bbox:min_lat,min_lon,max_lat,max_lon'"
+
+
+def resolve_region(region: str) -> Tuple[str, Optional[BBox]]:
+    """Resolve a region selector to ``(slug, bbox)``.
+
+    * ``"ncr"`` -> ``("ncr", NCR_BBOX)``: clip the source extract to Metro Manila.
+    * ``"ph"`` -> ``("ph", None)``: use the downloaded national extract unchanged;
+      ``None`` means "do not clip".
+    * ``"bbox:min_lat,min_lon,max_lat,max_lon"`` -> ``("bbox", bbox)``: clip to an
+      explicit box (interface order is lat,lon,lat,lon — ruling R5).
+
+    The slug names the written extract (``<out_dir>/osm/<slug>.osm.pbf``). The
+    selector is case- and surrounding-whitespace-insensitive.
+
+    Raises:
+        ValueError: for an unknown selector or a malformed/out-of-range bbox; the
+            message names the accepted forms.
+    """
+    selector = str(region).strip().lower()
+    if selector == "ncr":
+        return "ncr", NCR_BBOX
+    if selector == "ph":
+        return "ph", None
+    if selector.startswith("bbox:"):
+        parts = [part.strip() for part in selector[len("bbox:") :].split(",")]
+        try:
+            if len(parts) != 4:
+                raise ValueError(f"expected 4 comma-separated values, got {len(parts)}")
+            numbers = [float(part) for part in parts]
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid region {str(region)!r}: {exc}; "
+                f"accepted forms are {REGION_FORMS}"
+            ) from exc
+        values: BBox = (numbers[0], numbers[1], numbers[2], numbers[3])
+        min_lat, min_lon, max_lat, max_lon = values
+        if not (min_lat < max_lat and min_lon < max_lon):
+            raise ValueError(
+                f"invalid region {str(region)!r}: a bbox needs min_lat < max_lat "
+                f"and min_lon < max_lon; accepted forms are {REGION_FORMS}"
+            )
+        if not (
+            -90.0 <= min_lat <= 90.0
+            and -90.0 <= max_lat <= 90.0
+            and -180.0 <= min_lon <= 180.0
+            and -180.0 <= max_lon <= 180.0
+        ):
+            raise ValueError(
+                f"invalid region {str(region)!r}: bbox coordinates are out of "
+                f"range; accepted forms are {REGION_FORMS}"
+            )
+        return "bbox", values
+    raise ValueError(
+        f"unknown region {str(region)!r}: accepted forms are {REGION_FORMS}"
+    )
+
+
+def _copy_extract(source: Path, destination: Path) -> None:
+    """Copy the national source extract unchanged, skipping an identical copy.
+
+    ``data/build/philippines-latest.osm.pbf`` is ~612 MB, so a repeated
+    ``data:build --region ph`` must not re-copy it. A destination file of the
+    same size is treated as the same downloaded snapshot and reused; a missing
+    or truncated destination is copied from the source. Size (not mtime) is the
+    identity check, so restoring an mtime or copying in another way still skips.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_file() and destination.stat().st_size == source.stat().st_size:
+        return
+    shutil.copyfile(source, destination)
 
 
 def bbox_text(bbox: BBox) -> str:
@@ -277,19 +364,29 @@ def download_geofabrik(
     return destination
 
 
-def run_stage_osm(pbf: Path, out_dir: Path, taginfo_path: Path) -> Dict[str, Any]:
-    """Run the offline half of the OSM stage: clip to NCR and write the coverage report.
+def run_stage_osm(
+    pbf: Path,
+    out_dir: Path,
+    taginfo_path: Path,
+    region: str = "ncr",
+) -> Dict[str, Any]:
+    """Run the offline half of the OSM stage: select the region and write the coverage report.
 
-    Writes ``<out_dir>/osm/ncr.osm.pbf`` and ``<out_dir>/osm/coverage.json``
-    (schema-validated before it is written) and returns the report.
+    Writes ``<out_dir>/osm/<slug>.osm.pbf`` — ``ncr.osm.pbf`` by default — and
+    ``<out_dir>/osm/coverage.json`` (schema-validated before it is written) and
+    returns the report. The ``region`` selector is resolved by
+    :func:`resolve_region`: ``"ncr"`` clips to the Metro Manila bbox, ``"ph"``
+    copies the downloaded national extract unchanged (no clip, no re-download),
+    and ``"bbox:min_lat,min_lon,max_lat,max_lon"`` clips to that box.
 
     The taginfo snapshot is read, parsed and schema-validated **before** the clip
-    runs. With the real 584 MB extract the clip costs minutes, so a typo, malformed
-    JSON or a stale snapshot shape must fail in milliseconds and before anything is
-    written under ``out_dir``.
+    (or national copy) runs. With the real 584 MB extract the clip costs minutes,
+    so a typo, malformed JSON or a stale snapshot shape must fail in milliseconds
+    and before anything is written under ``out_dir``.
 
     Raises:
         FileNotFoundError: if the extract or the taginfo snapshot is missing.
+        ValueError: if ``region`` is not an accepted selector.
         json.JSONDecodeError: if the snapshot is not valid JSON.
         CoverageError: if the snapshot does not have the expected shape.
         jsonschema.ValidationError: if the snapshot cannot produce a valid report.
@@ -297,6 +394,10 @@ def run_stage_osm(pbf: Path, out_dir: Path, taginfo_path: Path) -> Dict[str, Any
     pbf = Path(pbf)
     out_dir = Path(out_dir)
     taginfo_path = Path(taginfo_path)
+
+    # Resolve the region first: a typo must fail before any expensive work and
+    # before a build directory is created (the documented exit-2 contract).
+    slug, bbox = resolve_region(region)
 
     if not pbf.is_file():
         raise FileNotFoundError(
@@ -310,20 +411,26 @@ def run_stage_osm(pbf: Path, out_dir: Path, taginfo_path: Path) -> Dict[str, Any
     # validate it first so an invalid snapshot never starts the extraction.
     coverage = parse_coverage(json.loads(taginfo_path.read_text(encoding="utf-8")))
 
-    extract_path = out_dir / "osm" / "ncr.osm.pbf"
-    stats = extract_bbox(pbf, ncr_bbox(), extract_path)
-
+    extract_path = out_dir / "osm" / f"{slug}.osm.pbf"
     report: Dict[str, Any] = {
         **coverage,
-        "bbox": list(ncr_bbox()),
-        "bbox_text": bbox_text(ncr_bbox()),
+        "region": slug,
+        "clip": bbox is not None,
         "output": str(extract_path),
-        "extract": {
+    }
+    if bbox is None:
+        # The national artifact is the downloaded extract itself: no clip, no
+        # second download, and a repeat build reuses the identical copy.
+        _copy_extract(pbf, extract_path)
+    else:
+        stats = extract_bbox(pbf, bbox, extract_path)
+        report["bbox"] = list(bbox)
+        report["bbox_text"] = bbox_text(bbox)
+        report["extract"] = {
             "nodes": stats.nodes,
             "ways": stats.ways,
             "relations": stats.relations,
-        },
-    }
+        }
     validate_coverage(report)
 
     coverage_path = extract_path.parent / "coverage.json"
