@@ -561,7 +561,10 @@ def test_national_counters_account_for_every_relation():
     # every type=route relation lands in exactly one bucket; a nameless relation
     # is a candidate too (R31), so it is a sub-count, not a separate bucket
     assert stats.route_relations == (
-        stats.unsupported_route + stats.candidates + stats.tricycle_relations_seen
+        stats.unsupported_route
+        + stats.candidates
+        + stats.tricycle_relations_seen
+        + stats.excluded_mistagged_tricycle_count
     )
     assert stats.relations_without_name <= stats.candidates
     assert stats.candidates == (
@@ -865,7 +868,10 @@ def test_route_tricycle_is_counted_and_excluded_with_a_reason(tmp_path):
 
     # every type=route relation is still accounted for, the tricycle included
     assert stats.route_relations == (
-        stats.unsupported_route + stats.candidates + stats.tricycle_relations_seen
+        stats.unsupported_route
+        + stats.candidates
+        + stats.tricycle_relations_seen
+        + stats.excluded_mistagged_tricycle_count
     )
     assert stats.route_relations == 7
     assert stats.candidates == 6
@@ -884,3 +890,191 @@ def test_relation_only_composition_reports_the_tricycle_count(tmp_path):
     assert composition.route_relations == full.route_relations
     assert composition.candidates == full.candidates
     assert composition.accepted == full.accepted
+
+
+# --------------------------------------------------------------------------
+# R34: case-insensitive route=tricycle and route=bus tricycle-corridor exclusion
+# --------------------------------------------------------------------------
+
+#: One miniature extract for the R34 rules:
+#:
+#: * 9301 ``route=bus``, name names a Baliwag Tricycle TODA corridor. It is
+#:   feed-ready (one way + two stops), which is exactly why it must be excluded:
+#:   otherwise it would publish as a ``bus-*`` route and take the city-bus fare.
+#: * 9302 an ordinary ``route=bus`` with no tricycle wording - unaffected;
+#: * 9303 ``route=Tricycle`` (capital T, nameless) - counted as
+#:   ``tricycle_relations_seen``, never ingested, never "unsupported";
+#: * 9304 ``route=bus`` whose *operator* names a Bustos traysikel TODA - excluded;
+#: * 9305 ``route=Bus`` (capital B) with tricycle wording - the normalized route
+#:   value is still ``bus``, so it is excluded too.
+MISTAGGED_BUS_FIXTURE_XML = """<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6" generator="r34-mistagged-bus-fixture">
+  <node id="9401" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9500" lon="120.9000">
+    <tag k="name" v="Baliwag Terminal"/>
+  </node>
+  <node id="9402" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9600" lon="120.9100">
+    <tag k="name" v="Bustos Terminal"/>
+  </node>
+  <way id="9403" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="9401"/>
+    <nd ref="9402"/>
+  </way>
+  <relation id="9301" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9403" role=""/>
+    <member type="node" ref="9401" role="stop"/>
+    <member type="node" ref="9402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="BT-1"/>
+    <tag k="name" v="Baliwag Tricycle TODA"/>
+  </relation>
+  <relation id="9302" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9403" role=""/>
+    <member type="node" ref="9401" role="stop"/>
+    <member type="node" ref="9402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="name" v="Baliwag City Bus"/>
+  </relation>
+  <relation id="9303" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9403" role=""/>
+    <member type="node" ref="9401" role="stop"/>
+    <member type="node" ref="9402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="Tricycle"/>
+  </relation>
+  <relation id="9304" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9403" role=""/>
+    <member type="node" ref="9401" role="stop"/>
+    <member type="node" ref="9402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="P1"/>
+    <tag k="name" v="Poblacion Service"/>
+    <tag k="operator" v="Bustos Traysikel TODA"/>
+  </relation>
+  <relation id="9305" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="9403" role=""/>
+    <member type="node" ref="9401" role="stop"/>
+    <member type="node" ref="9402" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="Bus"/>
+    <tag k="name" v="Baliwag Tricycle TODA Loop"/>
+  </relation>
+</osm>
+"""
+
+
+def _mistagged_bus_fixture(tmp_path) -> Path:
+    path = tmp_path / "mistagged_bus_routes.osm"
+    path.write_text(MISTAGGED_BUS_FIXTURE_XML, encoding="utf-8")
+    return path
+
+
+def _mistagged_bus_ingest(tmp_path):
+    return read_route_relations(_mistagged_bus_fixture(tmp_path))
+
+
+def test_mistagged_bus_tricycle_relations_are_excluded_and_counted(tmp_path):
+    """R34: a bus relation naming a tricycle TODA is never published as a bus."""
+    ingest = _mistagged_bus_ingest(tmp_path)
+    stats = ingest.stats
+
+    # only the ordinary bus survives; the three tricycle corridors do not become
+    # bus-* routes (and therefore cannot take the city-bus fare).
+    assert {relation.osm_id for relation in ingest.relations} == {9302}
+    assert stats.excluded_mistagged_tricycle_count == 3
+    entries = {
+        entry["osm_id"]: entry
+        for entry in stats.excluded_mistagged_tricycle_relations
+    }
+    assert sorted(entries) == [9301, 9304, 9305]
+    assert entries[9301]["name"] == "Baliwag Tricycle TODA"
+    for entry in entries.values():
+        reason = entry["reason"]
+        assert "route=bus" in reason
+        assert "tricycle TODA corridor" in reason
+        assert "misprice" in reason
+        assert "R34" in reason
+
+
+def test_an_ordinary_bus_is_unaffected_by_the_tricycle_filter(tmp_path):
+    routes = {
+        relation.route_id: relation
+        for relation in _mistagged_bus_ingest(tmp_path).relations
+    }
+
+    bus = routes["bus-baliwagcitybus"]
+    assert bus.osm_id == 9302
+    assert bus.osm_route == "bus"
+    assert bus.route_type == 3
+    assert [stop.name for stop in bus.stops] == ["Baliwag Terminal", "Bustos Terminal"]
+
+
+def test_route_tricycle_detection_is_case_insensitive(tmp_path):
+    """R34: route=Tricycle is counted as tricycle, not as an unsupported value."""
+    ingest = _mistagged_bus_ingest(tmp_path)
+    stats = ingest.stats
+
+    assert stats.tricycle_relations_seen == 1
+    assert stats.unsupported_route == 0
+    assert stats.unsupported_route_values == ()
+    assert 9303 not in {relation.osm_id for relation in ingest.relations}
+    assert [entry["osm_id"] for entry in stats.excluded_tricycle_relations] == [9303]
+    excluded = stats.excluded_tricycle_relations[0]
+    assert excluded["name"] is None  # the national capital-T relation is nameless
+    assert "route=tricycle" in excluded["reason"]
+    assert "never auto-ingested" in excluded["reason"]
+
+
+def test_national_counter_invariant_includes_the_mistagged_bus_bucket(tmp_path):
+    stats = _mistagged_bus_ingest(tmp_path).stats
+
+    assert stats.route_relations == 5
+    assert (
+        stats.unsupported_route,
+        stats.tricycle_relations_seen,
+        stats.excluded_mistagged_tricycle_count,
+        stats.candidates,
+    ) == (0, 1, 3, 1)
+    # every type=route relation lands in exactly one bucket (R34 extends R11)
+    assert stats.route_relations == (
+        stats.unsupported_route
+        + stats.tricycle_relations_seen
+        + stats.excluded_mistagged_tricycle_count
+        + stats.candidates
+    )
+    assert stats.candidates == (
+        stats.accepted + stats.routes_skipped_duplicate_direction
+    )
+
+
+def test_build_report_counters_serialise_the_mistagged_bus_bucket(tmp_path):
+    document = _mistagged_bus_ingest(tmp_path).stats.as_dict()
+
+    assert document["tricycle_relations_seen"] == 1
+    assert document["excluded_tricycle_relations"][0]["osm_id"] == 9303
+    assert document["excluded_mistagged_tricycle_count"] == 3
+    assert [
+        entry["osm_id"]
+        for entry in document["excluded_mistagged_tricycle_relations"]
+    ] == [9301, 9304, 9305]
+    assert all(
+        "R34" in entry["reason"]
+        for entry in document["excluded_mistagged_tricycle_relations"]
+    )
+
+
+def test_relation_only_composition_reports_the_mistagged_bus_bucket(tmp_path):
+    path = _mistagged_bus_fixture(tmp_path)
+    composition = read_route_relation_composition(path)
+    full = read_route_relations(path).stats
+
+    assert composition.route_relations == full.route_relations == 5
+    assert composition.tricycle_relations_seen == full.tricycle_relations_seen == 1
+    assert composition.excluded_mistagged_tricycle_count == 3
+    assert composition.excluded_mistagged_tricycle_relations == (
+        full.excluded_mistagged_tricycle_relations
+    )
+    assert composition.candidates == full.candidates == 1
+    assert composition.accepted == full.accepted == 1

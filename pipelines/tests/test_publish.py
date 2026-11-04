@@ -457,6 +457,11 @@ def test_build_report_carries_the_osm_ingest_counters(published):
     assert ingest["relations_without_name"] == 0
     assert ingest["candidates"] == 5
     assert ingest["accepted"] == 5
+    # the tricycle buckets are serialized even when empty (R11/R34)
+    assert ingest["tricycle_relations_seen"] == 0
+    assert ingest["excluded_tricycle_relations"] == []
+    assert ingest["excluded_mistagged_tricycle_count"] == 0
+    assert ingest["excluded_mistagged_tricycle_relations"] == []
     assert ingest["route_id_collisions"] == 0
     assert ingest["routes_renamed_collision"] == 0
     assert ingest["routes_skipped_duplicate_direction"] == 0
@@ -882,6 +887,14 @@ TRIKE_RELATIONS = """  <relation id="7006" version="1" timestamp="2026-10-31T21:
     <tag k="route" v="tricycle"/>
     <tag k="name" v="Tuguegarao to Callao Cave"/>
   </relation>
+  <relation id="7008" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6101" role=""/>
+    <member type="node" ref="5018" role="stop"/>
+    <member type="node" ref="5019" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="name" v="Baliwag Tricycle TODA"/>
+  </relation>
 """
 
 TRICYCLE_TERMINALS_SOURCE = (
@@ -1044,3 +1057,41 @@ def test_etrike_route_enters_the_feed_without_a_fare_rule(tmp_path):
     # no invented tricycle fare row exists in the matrix or the feed
     assert not any("trike" in row["fare_id"].lower() for row in fares)
     assert not any("tricycle" in row["route_id"].lower() for row in routes)
+
+
+def test_build_report_carries_the_r34_mistagged_bus_exclusion(tmp_path):
+    """R34: a tricycle TODA corridor mistagged route=bus never reaches the feed.
+
+    Relation 7008 in the fixture is feed-ready (way + two stops): if it were not
+    excluded it would publish as ``bus-baliwagtricycletoda`` and take the
+    city-bus fare matrix. The ordinary bus (7001 -> ``bus-b1``) must be
+    unaffected, and the build report must carry the counted exclusion.
+    """
+    fixture = _terminal_fixture(tmp_path)
+    out = tmp_path / "mistagged-bus-out"
+
+    report = run_stage_publish(
+        fixture,
+        out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
+    )
+
+    ingest = report["osm_ingest"]
+    assert ingest["tricycle_relations_seen"] == 1
+    assert ingest["excluded_mistagged_tricycle_count"] == 1
+    excluded = ingest["excluded_mistagged_tricycle_relations"]
+    assert [entry["osm_id"] for entry in excluded] == [7008]
+    assert excluded[0]["name"] == "Baliwag Tricycle TODA"
+    reason = excluded[0]["reason"]
+    assert "route=bus" in reason
+    assert "tricycle TODA corridor" in reason
+    assert "misprice" in reason
+    assert "R34" in reason
+
+    feed_ids = set(report["feed"]["route_ids"])
+    assert "bus-b1" in feed_ids  # the ordinary bus is untouched
+    assert "bus-baliwagtricycletoda" not in feed_ids

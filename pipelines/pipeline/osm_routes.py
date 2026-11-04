@@ -60,6 +60,17 @@ are two such relations and neither carries usable service evidence (one is a
 tourist excursion citing a blog, one has only an operator tag). Pass 1 counts
 them (``tricycle_relations_seen``) and records each one with an explicit reason
 (``excluded_tricycle_relations``); they are never auto-ingested (ruling R11).
+The route-value comparison is case-insensitive, so ``route=Tricycle`` is counted
+in the same bucket instead of landing in ``unsupported_route_values`` (ruling
+R34).
+
+A ``route=bus`` relation whose ``name``/``ref``/``operator``/``description``
+names a tricycle/traysikel service is a tricycle TODA corridor mistagged as a
+bus. It is **excluded** and recorded in
+``excluded_mistagged_tricycle_relations`` with its reason: every ``bus-`` route
+id is bound to the city-bus fare matrix, so publishing it would present and
+price a tricycle corridor as a bus service (ruling R34). The filter is narrow -
+``route=bus`` plus tricycle wording only - so ordinary buses are untouched.
 
 Unique ids at national scale
 ----------------------------
@@ -159,7 +170,8 @@ National counters
 
 * ``relations_read`` splits into non-route relations and ``route_relations``;
 * ``route_relations`` splits into ``unsupported_route`` (counted by value),
-  ``tricycle_relations_seen`` and ``candidates``;
+  ``tricycle_relations_seen``, ``excluded_mistagged_tricycle_relations`` and
+  ``candidates``;
 * ``relations_without_name`` is a sub-count of ``candidates`` (ruling R31: they
   are ingested under ``<family>-osm<id>``, so they are not a separate bucket);
 * ``candidates`` splits into ``accepted`` and
@@ -249,6 +261,16 @@ TRICYCLE_EXCLUSION_REASON = (
     "or verifiable source); counted and excluded, never auto-ingested (ruling R11)"
 )
 
+#: ``route=bus`` is the only route value the mistagged-tricycle filter applies to.
+BUS_ROUTE_VALUE = "bus"
+
+#: The exclusion reason recorded for a tricycle corridor mistagged as a bus.
+MISTAGGED_TRICYCLE_BUS_REASON = (
+    "tricycle TODA corridor mistagged as route=bus in OSM; publishing it as a "
+    "bus would misprice it against the city-bus fare matrix, so it is counted "
+    "and excluded (ruling R34)"
+)
+
 #: Member roles that describe a stop/platform rather than route geometry.
 STOP_ROLES = frozenset(
     {"stop", "platform", "stop_position", "boarding_position", "stop_area"}
@@ -310,6 +332,10 @@ class RouteIngestStats:
     tricycle_relations_seen: int = 0
     #: The excluded ``route=tricycle`` relations with the documented reason.
     excluded_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
+    #: ``route=bus`` relations whose wording names a tricycle TODA corridor
+    #: (mistagged). Excluded with the documented reason: publishing one as a bus
+    #: would price it against the city-bus fare matrix (ruling R34).
+    excluded_mistagged_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
     #: Transit relations yielded by pass 1 (the candidate list size).
     candidates: int = 0
     #: Candidates emitted after the duplicate-direction drop.
@@ -338,6 +364,11 @@ class RouteIngestStats:
         """R19 name for :attr:`renamed_route_ids` (the same non-reverse count)."""
         return self.renamed_route_ids
 
+    @property
+    def excluded_mistagged_tricycle_count(self) -> int:
+        """Number of tricycle corridors mistagged ``route=bus`` (ruling R34)."""
+        return len(self.excluded_mistagged_tricycle_relations)
+
     def as_dict(self) -> Dict[str, Any]:
         """Serialise for ``build-report.json`` (nested counts become objects)."""
         return {
@@ -350,6 +381,10 @@ class RouteIngestStats:
             "excluded_tricycle_relations": [
                 dict(entry) for entry in self.excluded_tricycle_relations
             ],
+            "excluded_mistagged_tricycle_relations": [
+                dict(entry) for entry in self.excluded_mistagged_tricycle_relations
+            ],
+            "excluded_mistagged_tricycle_count": self.excluded_mistagged_tricycle_count,
             "candidates": self.candidates,
             "accepted": self.accepted,
             "route_id_collisions": self.route_id_collisions,
@@ -399,6 +434,7 @@ class _CandidateScan:
     relations_without_name: int = 0
     tricycle_relations_seen: int = 0
     excluded_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
+    excluded_mistagged_tricycle_relations: Tuple[Dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -537,7 +573,9 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
 
     This is the only pass that sees *all* relations, so it also counts the ones
     the reader will not yield: non-route relations, unsupported ``route=*``
-    values and ``route=tricycle`` (excluded with a reason, R11). Relations with
+    values, ``route=tricycle`` (excluded with a reason, R11, matched
+    case-insensitively per R34) and ``route=bus`` relations whose wording names
+    a tricycle TODA corridor (excluded with a reason, R34). Relations with
     no ``name``/``ref`` are **not** dropped: they become candidates like any
     other (their id falls back to ``<family>-osm<id>``) and are counted in
     ``relations_without_name`` (ruling R31).
@@ -549,6 +587,7 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
     relations_without_name = 0
     tricycle_relations_seen = 0
     excluded_tricycle_relations: List[Dict[str, Any]] = []
+    excluded_mistagged_tricycle_relations: List[Dict[str, Any]] = []
 
     for obj in osmium.FileProcessor(str(source), osmium.osm.RELATION):
         relations_read += 1
@@ -559,14 +598,28 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
             continue
         route_relations += 1
         osm_route = tags.get("route", "")
-        if osm_route == TRICYCLE_ROUTE_VALUE:
-            # R11: counted and excluded with an explicit reason, never ingested.
+        normalised_route = osm_route.strip().lower()
+        if normalised_route == TRICYCLE_ROUTE_VALUE:
+            # R11/R34: counted and excluded with an explicit reason, never
+            # ingested. Matching the normalized value counts route=Tricycle too.
             tricycle_relations_seen += 1
             excluded_tricycle_relations.append(
                 {
                     "osm_id": obj.id,
                     "name": tags.get("name") or tags.get("ref") or None,
                     "reason": TRICYCLE_EXCLUSION_REASON,
+                }
+            )
+            continue
+        if normalised_route == BUS_ROUTE_VALUE and _is_trike_service(tags):
+            # R34: a tricycle TODA corridor mistagged route=bus. Feed-ready or
+            # not, a bus- route id is bound to the city-bus fare matrix, so
+            # publishing it would present and price a tricycle as a bus.
+            excluded_mistagged_tricycle_relations.append(
+                {
+                    "osm_id": obj.id,
+                    "name": tags.get("name") or tags.get("ref") or None,
+                    "reason": MISTAGGED_TRICYCLE_BUS_REASON,
                 }
             )
             continue
@@ -590,6 +643,9 @@ def _read_route_candidates(source: Path) -> _CandidateScan:
         relations_without_name=relations_without_name,
         tricycle_relations_seen=tricycle_relations_seen,
         excluded_tricycle_relations=tuple(excluded_tricycle_relations),
+        excluded_mistagged_tricycle_relations=tuple(
+            excluded_mistagged_tricycle_relations
+        ),
     )
 
 
@@ -1440,6 +1496,9 @@ def _stats_for(
         relations_without_name=scan.relations_without_name,
         tricycle_relations_seen=scan.tricycle_relations_seen,
         excluded_tricycle_relations=scan.excluded_tricycle_relations,
+        excluded_mistagged_tricycle_relations=(
+            scan.excluded_mistagged_tricycle_relations
+        ),
         candidates=len(scan.candidates),
         accepted=len(scan.candidates) - assignment.duplicate_direction,
         route_id_collisions=assignment.collisions,

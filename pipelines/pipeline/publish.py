@@ -69,7 +69,9 @@ Build-report contract
                                  routes_renamed_collision, fallback_route_ids,
                                  groups_without_feed_ready_keeper,
                                  skipped_members, skipped_member_reasons,
-                                 tricycle_relations_seen, excluded_tricycle_relations}
+                                 tricycle_relations_seen, excluded_tricycle_relations,
+                                 excluded_mistagged_tricycle_relations,
+                                 excluded_mistagged_tricycle_count}
     tricycle_terminals          {path, canonical_path, extract, count, by_kind}
 
 plus per-route records (``curated_routes``) that preserve each inventory row's
@@ -464,7 +466,9 @@ def run_stage_publish(
     Returns:
         The build report mapping (also written to ``build-report.json``). It
         carries the terminal summary and the OSM ingest counters, including the
-        ``route=tricycle`` relations that were excluded with a reason (R11).
+        ``route=tricycle`` relations that were excluded with a reason (R11) and
+        the tricycle TODA corridors mistagged ``route=bus`` that were excluded
+        with a reason (R34).
 
     Raises:
         FileNotFoundError: an input file, the OSM extract, or the landmarks
@@ -752,8 +756,11 @@ def run_stage_publish(
         "blocked_datasets_checked": True,
         "datasets_used": [dataset["id"] for dataset in manifest["datasets"]],
         "attributions": manifest["attributions"],
-        # Additive R11 evidence: the route-ingest counters (including the
-        # excluded route=tricycle relations) and the terminal artifact summary.
+        # Additive R11/R34 evidence: the route-ingest counters (including the
+        # excluded route=tricycle relations and the tricycle TODA corridors
+        # mistagged route=bus) and the terminal artifact summary. The counter
+        # block is serialized by RouteIngestStats.as_dict(), so a new counter
+        # cannot be silently dropped from the report.
         "osm_ingest": ingest.stats.as_dict(),
         "tricycle_terminals": {
             "path": str(terminal_path),
