@@ -31,8 +31,11 @@ import pytest
 from pipeline.gtfs import (
     ODBL_ATTRIBUTION,
     AgencyInfo,
+    RouteDef,
+    StopRef,
     build_feed,
     generate_trips,
+    segment_minutes_for,
 )
 from pipeline.osm_routes import iter_route_relations
 
@@ -225,6 +228,140 @@ def test_generate_trips_rejects_non_positive_headways():
         generate_trips(headway_peak_min=0, headway_offpeak_min=9)
     with pytest.raises(ValueError, match="headway"):
         generate_trips(headway_peak_min=4, headway_offpeak_min=-1)
+
+
+# --------------------------------------------------------------------------
+# distance-derived segment timing (6B defect 3a): a synthesis assumption
+# --------------------------------------------------------------------------
+
+
+def _minutes_of(value: str) -> int:
+    """``HH:MM:SS`` -> whole minutes since midnight."""
+    hours, minutes, seconds = (int(part) for part in value.split(":"))
+    assert seconds == 0
+    return hours * 60 + minutes
+
+
+def _two_stop_route(route_id: str, route_type: int, lat_span: float) -> RouteDef:
+    """One route with two stops ``lat_span`` degrees of latitude apart.
+
+    One degree of latitude is ~111.19 km, so ``0.36`` is a ~40 km segment.
+    """
+    start = StopRef(f"{route_id}:a", "A", 14.60, 121.00)
+    end = StopRef(f"{route_id}:b", "B", 14.60 + lat_span, 121.00)
+    return RouteDef(
+        route_id=route_id,
+        route_type=route_type,
+        name=f"{route_id} test route",
+        stops=(start, end),
+        shape=((start.lat, start.lon), (end.lat, end.lon)),
+    )
+
+
+def _only_trip_minutes(route: RouteDef) -> tuple[int, int]:
+    """Build one two-stop route and return its first/last stop times in minutes."""
+    feed = build_feed(
+        [route], agency=AgencyInfo.SYNTHETIC, feed_start=FEED_START, feed_end=FEED_END
+    )
+    rows = feed.stop_times_by_trip()[0]
+    return _minutes_of(rows[0].departure_time), _minutes_of(rows[-1].departure_time)
+
+
+def test_the_documented_segment_rule_keeps_the_mode_floor_for_short_hops():
+    # 1 km: road -> ceil(1/60*60)=1 -> floor 2; rail -> ceil(1/80*60)=1 -> 3;
+    # ferry -> ceil(1/30*60)=2 -> floor 5.
+    assert segment_minutes_for(3, 1.0) == 2
+    assert segment_minutes_for(1, 1.0) == 3
+    assert segment_minutes_for(4, 1.0) == 5
+    assert segment_minutes_for(3, 0.0) == 2
+
+
+def test_a_40_km_bus_segment_is_scheduled_at_least_40_minutes():
+    # The defect this replaces scheduled every pair in a flat 2 minutes, i.e.
+    # 40 km in 2 min (1,200 km/h). The distance rule must give >= 40 min.
+    start, end = _only_trip_minutes(_two_stop_route("bus-40km", 3, 0.36))
+
+    assert end - start >= 40
+    assert end - start <= 60  # and not an absurdly padded value: ~41 min
+
+
+def test_a_1_km_segment_keeps_the_existing_minimum_in_the_built_feed():
+    for route_type, minimum in ((3, 2), (1, 3), (4, 5)):
+        start, end = _only_trip_minutes(
+            _two_stop_route(f"route-{route_type}-1km", route_type, 0.009)
+        )
+        assert end - start == minimum
+
+
+def test_segment_distance_is_measured_along_the_shape_not_the_beeline():
+    """A winding shape must be timed on its own geometry (what MOTIS serves).
+
+    The two stops are ~1 km apart in a straight line but the shape detours
+    ~4.5 km north; timing the beeline would give the 2-minute floor (30 km/h on
+    the shape) and leave the leg at an impossible implied speed.
+    """
+    start = StopRef("bus-wind:a", "A", 14.60, 121.000)
+    end = StopRef("bus-wind:b", "B", 14.60, 121.009)
+    route = RouteDef(
+        route_id="bus-wind",
+        route_type=3,
+        name="Winding road",
+        stops=(start, end),
+        shape=((14.60, 121.000), (14.62, 121.0045), (14.60, 121.009)),
+    )
+
+    first, last = _only_trip_minutes(route)
+    assert last - first >= 5  # ~4.5 km along the shape at 60 km/h
+    assert last - first > 2  # not the straight-line floor
+
+
+def test_segment_minutes_are_monotone_in_distance():
+    distances = [0.0, 0.1, 1.0, 5.0, 20.0, 39.9, 40.0, 80.0]
+    for route_type in (1, 3, 4):
+        values = [segment_minutes_for(route_type, distance) for distance in distances]
+        assert values == sorted(values), (route_type, values)
+
+
+def test_segment_minutes_reject_unsupported_modes_and_bad_distances():
+    with pytest.raises(ValueError, match="route_type"):
+        segment_minutes_for(2, 1.0)  # GTFS rail (long distance) is not emitted
+    with pytest.raises(ValueError, match="finite"):
+        segment_minutes_for(3, float("nan"))
+    with pytest.raises(ValueError, match="non-negative"):
+        segment_minutes_for(3, -1.0)
+
+
+def test_distance_derived_times_are_deterministic_across_builds():
+    route = _two_stop_route("bus-deterministic", 3, 0.36)
+    first = build_feed(
+        [route], agency=AgencyInfo.SYNTHETIC, feed_start=FEED_START, feed_end=FEED_END
+    )
+    second = build_feed(
+        [route], agency=AgencyInfo.SYNTHETIC, feed_start=FEED_START, feed_end=FEED_END
+    )
+    assert first.stop_times == second.stop_times
+
+
+def test_distance_derived_times_do_not_change_trip_generation():
+    """Service windows/headways stay pinned; only stop offsets change."""
+    route = _two_stop_route("bus-tripgen", 3, 0.36)
+    feed = build_feed(
+        [route], agency=AgencyInfo.SYNTHETIC, feed_start=FEED_START, feed_end=FEED_END
+    )
+    expected = generate_trips(route.headway_peak_min, route.headway_offpeak_min)
+
+    assert len(feed.trips) == len(expected) == 328
+    by_trip: dict[str, list] = {}
+    for row in feed.stop_times:
+        by_trip.setdefault(row.trip_id, []).append(row)
+    first_stop_minutes = [
+        _minutes_of(
+            min(by_trip[trip.trip_id], key=lambda row: row.stop_sequence).departure_time
+        )
+        for trip in feed.trips
+    ]
+    assert first_stop_minutes == [spec.departure_minutes for spec in expected]
+    assert {trip.direction_id for trip in feed.trips} == {0, 1}
 
 
 # --------------------------------------------------------------------------

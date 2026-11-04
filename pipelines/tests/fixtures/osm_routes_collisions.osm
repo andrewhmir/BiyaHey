@@ -1,0 +1,335 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract used by pipelines/tests/test_osm_routes.py.
+
+  It is NOT downloaded. It exists to pin national-scale ingestion behaviour that
+  the real national extract exercises (data/build/osm/ph.osm.pbf) but that the
+  other fixtures cannot: route-id collisions, the skip-reason breakdown and the
+  reader's national counters. Like the NCR fixture it carries dangling relation
+  members (the bbox clip can leave them) plus one detached geometry fragment.
+
+  Nodes (stops carry names; the rest are geometry only):
+    5101 Alpha    (14.1000, 121.1000)  5102 Beta      (14.1050, 121.1050)
+    5103 Gamma    (14.1100, 121.1100)
+    5201 Delta    (14.2000, 121.2000)  5202 Epsilon   (14.2050, 121.2050)
+    5203 Zeta     (14.2100, 121.2100)
+    5301 Shared One (14.3000, 121.3000)  5302 Shared Two (14.3050, 121.3050)
+    5401/5402      landmark geometry for ferry 7040
+    5501/5502      landmark geometry for ferry 7041
+    5601/5602      main fragment of route 7090
+    5701/5702      DETACHED fragment of route 7090
+    5801/5802      geometry of bus route 7004
+    5851/5852      geometry of ferry 7010
+    5901/5902      geometry of the nameless route 7070 and route 7080
+
+  Ways:
+    6101  5101,5102,5103     6201  5201,5202,5203     6301  5301,5302
+    6401  5401,5402          6501  5501,5502          6601  5601,5602
+    6602  5701,5702          6701  5801,5802          6751  5851,5852
+    6801  5901,5902
+
+  Relations (file order is ascending OSM id, as in a real extract):
+    7001  route=bus, ref=7, "Route 7 North"
+          -> bus-7 (first, lowest id: keeps the bare id)
+    7002  route=bus, ref=7, "Route 7 South"
+          -> bus-7-osm7002 (collision, a different corridor: no shared stops)
+    7004  route=bus, ref=7, "Route 7 East"
+          -> bus-7-osm7004 (collision)
+    7010  route=ferry, ref=7 -> ferry-7: the same slug in another family does not collide
+    7020  route=bus, ref=SHARED, stops 5301/5302 -> bus-shared
+    7030  route=bus, ref=OTHER,  stops 5301/5302 -> bus-other: shares its member stop
+          nodes with 7020; R16 keeps the stop ids route-namespaced
+    7031/7032  route=bus, ref=ORDER, distinct corridors. 7032 is written first
+          on purpose: ids are assigned by lowest OSM id, so 7031 keeps bus-order
+          and 7032 becomes bus-order-osm7032 (file order must not decide)
+    7040  route=ferry, name="Guadalupe - Pasig Ferry", no stop members
+          -> ferry-guadalupepasig, two synthesized landmark stops
+    7041  route=ferry, same name and same absent stops as 7040
+          -> ferry-guadalupepasig-osm7041 (collision) and its own landmark stops
+    7050  route=bus, ref=DANGLE, "Dangling Route": way 8999, nodes 9998/9999 and
+          relation 7001 are all dangling/nested -> yielded with no geometry and
+          four skipped members (1 dangling way, 2 dangling stop nodes, 1 nested relation)
+    7060  route=road -> ignored: not a public-transport mode (counted)
+    7070  route=bus with no name and no ref -> skipped and counted (no label)
+    7080  route=bus, name="日本語" -> the slug is empty, so the id falls back to
+          bus-osm7080 and the relation is still yielded (counted)
+    7090  route=bus, ref=FRAG, "Fragmented": ways 6601 + 6602 are disconnected,
+          so one detached fragment is dropped and counted
+    7110-7113  route=bus, ref=REV: R19 reversal-aware collision group.
+          7110 "North End" -> "South End" keeps bus-rev.
+          7111 " south-end " -> "NORTH end" is the exact reverse: DROPPED and
+               counted (routes_skipped_duplicate_direction).
+          7112 the same direction as 7110: renamed bus-rev-osm7112.
+          7113 has no from/to tags (not comparable): renamed bus-rev-osm7113.
+    7100  type=boundary -> not a route relation; still counted as read
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="5101" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.1000000" lon="121.1000000">
+    <tag k="name" v="Alpha"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5102" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.1050000" lon="121.1050000"/>
+  <node id="5103" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.1100000" lon="121.1100000">
+    <tag k="name" v="Gamma"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5201" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.2000000" lon="121.2000000">
+    <tag k="name" v="Delta"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5202" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.2050000" lon="121.2050000"/>
+  <node id="5203" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.2100000" lon="121.2100000">
+    <tag k="name" v="Zeta"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5301" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3000000" lon="121.3000000">
+    <tag k="name" v="Shared One"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5302" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.3050000" lon="121.3050000">
+    <tag k="name" v="Shared Two"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5401" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4000000" lon="121.4000000"/>
+  <node id="5402" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.4100000" lon="121.4100000"/>
+  <node id="5501" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.5000000" lon="121.5000000"/>
+  <node id="5502" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.5050000" lon="121.5050000"/>
+  <node id="5601" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6000000" lon="121.6000000"/>
+  <node id="5602" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6050000" lon="121.6050000"/>
+  <node id="5701" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.7000000" lon="121.7000000"/>
+  <node id="5702" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.7050000" lon="121.7050000"/>
+  <node id="5801" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.8000000" lon="121.8000000">
+    <tag k="name" v="East One"/>
+  </node>
+  <node id="5802" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.8050000" lon="121.8050000">
+    <tag k="name" v="East Two"/>
+  </node>
+  <node id="5851" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9000000" lon="121.9000000"/>
+  <node id="5852" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9050000" lon="121.9050000"/>
+  <node id="5901" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9500000" lon="121.9500000"/>
+  <node id="5902" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.9550000" lon="121.9550000"/>
+
+  <way id="6101" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5101"/>
+    <nd ref="5102"/>
+    <nd ref="5103"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="6201" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5201"/>
+    <nd ref="5202"/>
+    <nd ref="5203"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="6301" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5301"/>
+    <nd ref="5302"/>
+    <tag k="highway" v="secondary"/>
+  </way>
+  <way id="6401" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5401"/>
+    <nd ref="5402"/>
+    <tag k="route" v="ferry"/>
+  </way>
+  <way id="6501" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5501"/>
+    <nd ref="5502"/>
+    <tag k="route" v="ferry"/>
+  </way>
+  <way id="6601" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5601"/>
+    <nd ref="5602"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="6602" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5701"/>
+    <nd ref="5702"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="6701" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5801"/>
+    <nd ref="5802"/>
+    <tag k="highway" v="primary"/>
+  </way>
+  <way id="6751" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5851"/>
+    <nd ref="5852"/>
+    <tag k="route" v="ferry"/>
+  </way>
+  <way id="6801" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="5901"/>
+    <nd ref="5902"/>
+    <tag k="highway" v="primary"/>
+  </way>
+
+  <relation id="7001" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6101" role=""/>
+    <member type="node" ref="5101" role="stop"/>
+    <member type="node" ref="5103" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="7"/>
+    <tag k="name" v="Route 7 North"/>
+  </relation>
+  <relation id="7002" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6201" role=""/>
+    <member type="node" ref="5201" role="stop"/>
+    <member type="node" ref="5203" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="7"/>
+    <tag k="name" v="Route 7 South"/>
+  </relation>
+  <relation id="7004" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6701" role=""/>
+    <member type="node" ref="5801" role="stop"/>
+    <member type="node" ref="5802" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="7"/>
+    <tag k="name" v="Route 7 East"/>
+  </relation>
+  <relation id="7010" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6751" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+    <tag k="ref" v="7"/>
+    <tag k="name" v="Ferry 7"/>
+    <tag k="from" v="North Pier"/>
+    <tag k="to" v="South Pier"/>
+  </relation>
+  <relation id="7020" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6301" role=""/>
+    <member type="node" ref="5301" role="stop"/>
+    <member type="node" ref="5302" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="SHARED"/>
+    <tag k="name" v="Shared Corridor"/>
+  </relation>
+  <relation id="7030" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6301" role=""/>
+    <member type="node" ref="5301" role="stop"/>
+    <member type="node" ref="5302" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="OTHER"/>
+    <tag k="name" v="Other Corridor"/>
+  </relation>
+  <!-- 7032 is written BEFORE 7031 on purpose: the id is assigned by lowest OSM
+       id, not by file position, so 7031 keeps bus-order and 7032 is suffixed. -->
+  <relation id="7032" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6201" role=""/>
+    <member type="node" ref="5201" role="stop"/>
+    <member type="node" ref="5203" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="ORDER"/>
+    <tag k="name" v="Order First In File"/>
+  </relation>
+  <relation id="7031" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6101" role=""/>
+    <member type="node" ref="5101" role="stop"/>
+    <member type="node" ref="5103" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="ORDER"/>
+    <tag k="name" v="Order Lowest Id"/>
+  </relation>
+  <relation id="7040" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6401" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+    <tag k="name" v="Guadalupe - Pasig Ferry"/>
+    <tag k="from" v="Guadalupe"/>
+    <tag k="to" v="Pasig"/>
+  </relation>
+  <relation id="7041" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6501" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="ferry"/>
+    <tag k="name" v="Guadalupe - Pasig Ferry"/>
+    <tag k="from" v="Guadalupe"/>
+    <tag k="to" v="Pasig"/>
+  </relation>
+  <relation id="7050" version="1" timestamp="2026-11-04T00:00:00Z">
+    <!-- DANGLING: way 8999 and nodes 9998/9999 are not in this extract -->
+    <member type="way" ref="8999" role=""/>
+    <member type="node" ref="9998" role="stop"/>
+    <member type="node" ref="9999" role="stop"/>
+    <member type="relation" ref="7001" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="DANGLE"/>
+    <tag k="name" v="Dangling Route"/>
+  </relation>
+  <relation id="7060" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6101" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="road"/>
+    <tag k="ref" v="R7"/>
+    <tag k="name" v="Not a transit route"/>
+  </relation>
+  <relation id="7070" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6801" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+  </relation>
+  <relation id="7080" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6801" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="name" v="日本語"/>
+  </relation>
+  <relation id="7090" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6601" role=""/>
+    <member type="way" ref="6602" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="FRAG"/>
+    <tag k="name" v="Fragmented"/>
+  </relation>
+  <relation id="7100" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6101" role="outer"/>
+    <tag k="type" v="boundary"/>
+    <tag k="name" v="Not a route"/>
+  </relation>
+  <!-- R19 reversal-aware collision group: 7110 keeps bus-rev, 7111 is the exact
+       reverse (normalized case/punctuation/whitespace) and must be dropped,
+       7112 is a same-direction duplicate and 7113 has no from/to (not
+       comparable) so both are renamed. -->
+  <relation id="7110" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6101" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="REV"/>
+    <tag k="name" v="Rev North"/>
+    <tag k="from" v="North End"/>
+    <tag k="to" v="South End"/>
+  </relation>
+  <relation id="7111" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6201" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="REV"/>
+    <tag k="name" v="Rev South"/>
+    <tag k="from" v=" south-end!! "/>
+    <tag k="to" v="NORTH end"/>
+  </relation>
+  <relation id="7112" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6701" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="REV"/>
+    <tag k="name" v="Rev Same Direction"/>
+    <tag k="from" v="North End"/>
+    <tag k="to" v="South End"/>
+  </relation>
+  <relation id="7113" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="6801" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="REV"/>
+    <tag k="name" v="Rev Missing Ends"/>
+  </relation>
+</osm>

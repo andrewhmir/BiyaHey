@@ -1,0 +1,113 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract used by pipelines/tests/test_osm_routes.py.
+
+  It mirrors the real `rail-1` shape defect from task 6B (defect 3b): the
+  relation's leading way member runs ~3 km before the first served stop, so the
+  old reader emitted a shape whose first 33 vertices preceded Balintawak and
+  MOTIS included the whole spur in the boarding leg.
+
+  Nodes:
+    8001  First Stop        (14.6574, 121.0035)  on the main way 8102
+    8002  geometry only     (14.6580, 121.0100)
+    8003  geometry only     (14.6586, 121.0165)
+    8004  Last Stop         (14.6590, 121.0200)  end of way 8102
+    8005  leading spur      (14.6540, 121.0310)  ~3 km east of First Stop
+    8006  trailing spur     (14.6620, 121.0300)  beyond Last Stop
+    8007  off-chain stop    (14.6680, 121.0100)  ~1.1 km north of the chain
+    8008/8009  two-point line for the two-point-shape counter
+
+  Ways:
+    8101  8005,8001          leading way, before the first stop
+    8102  8001,8002,8003,8004 main line between the served stops
+    8103  8004,8006          trailing way, after the last stop
+    8104  8008,8009          a bare two-point line
+
+  Relations:
+    8201  route=light_rail, ref=TRIM, ways 8101+8102+8103, stops 8001 and 8004.
+          The emitted shape must start at 8001 and end at 8004 (the 3 km leading
+          spur and the trailing spur are trimmed), and the leg length must be the
+          main-line length, not the whole chain.
+    8202  route=bus, ref=UNLOCATABLE, ways 8101+8102, stops 8007 and 8004.
+          Stop 8007 is >100 m from every chain vertex, so the shape is left
+          untrimmed and counted in shapes_untrimmed_stop_not_found.
+    8203  route=bus, ref=TWOPOINT, way 8104 only and no stop members: two
+          landmark stops are synthesized at the shape endpoints, so the built
+          feed has one two-point shape (6B defect 3c counter).
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="8001" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6574000" lon="121.0035000">
+    <tag k="name" v="First Stop"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8002" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6580000" lon="121.0100000"/>
+  <node id="8003" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6586000" lon="121.0165000"/>
+  <node id="8004" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6590000" lon="121.0200000">
+    <tag k="name" v="Last Stop"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8005" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6540000" lon="121.0310000"/>
+  <node id="8006" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6620000" lon="121.0300000"/>
+  <node id="8007" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.6680000" lon="121.0100000">
+    <tag k="name" v="Off Chain Stop"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="8008" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.7000000" lon="121.0000000"/>
+  <node id="8009" version="1" timestamp="2026-11-04T00:00:00Z" lat="14.7050000" lon="121.0050000"/>
+
+  <way id="8101" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8005"/>
+    <nd ref="8001"/>
+    <tag k="railway" v="light_rail"/>
+  </way>
+  <way id="8102" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8001"/>
+    <nd ref="8002"/>
+    <nd ref="8003"/>
+    <nd ref="8004"/>
+    <tag k="railway" v="light_rail"/>
+  </way>
+  <way id="8103" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8004"/>
+    <nd ref="8006"/>
+    <tag k="railway" v="light_rail"/>
+  </way>
+  <way id="8104" version="1" timestamp="2026-11-04T00:00:00Z">
+    <nd ref="8008"/>
+    <nd ref="8009"/>
+    <tag k="highway" v="primary"/>
+  </way>
+
+  <relation id="8201" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="8101" role=""/>
+    <member type="way" ref="8102" role=""/>
+    <member type="way" ref="8103" role=""/>
+    <member type="node" ref="8001" role="stop"/>
+    <member type="node" ref="8004" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="light_rail"/>
+    <tag k="ref" v="TRIM"/>
+    <tag k="name" v="Trimmed Rail"/>
+    <tag k="from" v="First Stop"/>
+    <tag k="to" v="Last Stop"/>
+  </relation>
+  <relation id="8202" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="8101" role=""/>
+    <member type="way" ref="8102" role=""/>
+    <member type="node" ref="8007" role="stop"/>
+    <member type="node" ref="8004" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="UNLOCATABLE"/>
+    <tag k="name" v="Unlocatable Stop"/>
+  </relation>
+  <relation id="8203" version="1" timestamp="2026-11-04T00:00:00Z">
+    <member type="way" ref="8104" role=""/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="bus"/>
+    <tag k="ref" v="TWOPOINT"/>
+    <tag k="name" v="Two Point"/>
+    <tag k="from" v="Line Start"/>
+    <tag k="to" v="Line End"/>
+  </relation>
+</osm>

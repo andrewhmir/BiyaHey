@@ -37,11 +37,38 @@ produces and the number pinned by ``tests/test_gtfs.py``. The per-window
 ``ceil`` and the combined-period ``ceil`` happen to agree here; the
 per-window form is the one implemented and documented.
 
+Segment timing - a documented synthesis assumption (Task 2R2, 6B defect 3a)
+--------------------------------------------------------------------------
+v1 has no observed vehicle movements, so stop times are synthesized. The
+minutes between two consecutive stops are::
+
+    segment_minutes = max(SEGMENT_MINUTES[route_type],
+                          ceil(distance_km / SEGMENT_SPEED_KMH[route_type] * 60))
+
+where ``distance_km`` is the distance between the two stop positions **measured
+along the route shape** (great-circle straight-line only as a fallback when a
+stop cannot be located on the shape). The shape distance matters: MOTIS serves
+the shape slice between the boarding and alighting stops, so a winding road
+shape can be many times the straight-line stop distance; timing only the beeline
+would still schedule an impossible leg. ``SEGMENT_MINUTES`` is the old fixed-hop
+floor (3 min rail, 2 min road, 5 min ferry) and is kept, so a dense-stop route
+retains its existing cadence. ``SEGMENT_SPEED_KMH`` is a **conservative planning
+cap, not a measured operating speed**: 80 km/h rail, 60 km/h bus/jeepney/UV,
+30 km/h ferry. Each cap is below the vehicle class's typical maximum cruise speed
+(LRT/MRT and PNR services run in the 60-100 km/h band including dwell; city
+buses, jeepneys and UV Express run well below 60 km/h on average; Pasig River
+ferries run around 20-30 km/h), so no synthesized segment can imply an impossible
+speed. The old fixed 2-minute hop scheduled a 40 km road route in 2 minutes
+(1,200 km/h); this rule schedules the same segment at 40 minutes. Headways,
+service windows and the trip count are untouched - only the offset between stops
+changes.
+
+This is a documented approximation, never a timetable claim. The feed's
+``LICENSE-DATA.txt`` says the schedule is synthesized, and no UI may present it
+as observed vehicle movements.
+
 Other deliberate decisions
 --------------------------
-* Stop times are *indicative*: each hop costs a constant number of minutes per
-  mode (:data:`SEGMENT_MINUTES`), so times are strictly non-decreasing within a
-  trip. v1 has no observed vehicle movements and does not pretend to.
 * A route whose shape has fewer than two resolvable points is skipped and
   counted (``BuildStats.routes_skipped_no_geometry``); a route with fewer than
   two stops after cleaning is skipped and counted too.
@@ -205,15 +232,29 @@ OFFPEAK_WINDOWS: Tuple[Tuple[int, int], ...] = (
     (19 * 60, 22 * 60),
 )
 
-#: Indicative minutes between consecutive stops, by GTFS route_type. This is a
-#: schedule placeholder, not a measured run time; it only has to be monotonic.
+#: Minimum indicative minutes between consecutive stops, by GTFS route_type.
+#: This is the floor of the distance-derived rule below, not a measured run
+#: time: it keeps the existing dense-stop cadence (and the pinned NCR scheduler
+#: arithmetic) while a long segment is stretched to its travel time.
 SEGMENT_MINUTES: Dict[int, int] = {1: 3, 3: 2, 4: 5}
+
+#: Conservative distance-derived speed cap in km/h by GTFS route_type, used to
+#: turn a stop-to-stop great-circle distance into minutes. These are planning
+#: assumptions chosen below each mode's normal maximum cruise speed so no
+#: synthesized segment can imply an impossible speed (see the module docstring):
+#: 80 km/h rail, 60 km/h bus/jeepney/UV, 30 km/h ferry.
+SEGMENT_SPEED_KMH: Dict[int, int] = {1: 80, 3: 60, 4: 30}
 
 #: Route types this builder can emit (pinned mode mapping, Task 6).
 SUPPORTED_ROUTE_TYPES = frozenset(SEGMENT_MINUTES)
 
 #: GTFS calendar service id shared by every generated trip.
 SERVICE_ID = "daily"
+
+#: How close (metres) a served stop must be to a shape vertex to be projected
+#: onto the shape for stop-to-stop along-shape timing. Matches the reader's
+#: stop-coverage tolerance; a stop farther away falls back to the straight line.
+_STOP_SNAP_M = 100.0
 
 
 @dataclass(frozen=True)
@@ -369,6 +410,14 @@ class BuildStats:
     routes_skipped_too_few_stops: int = 0
     routes_skipped_duplicate_id: int = 0
     dangling_members: int = 0
+    #: Written routes whose shape was trimmed to the first/last served stop.
+    shapes_trimmed: int = 0
+    #: Written routes whose shape could not be trimmed because a served stop was
+    #: not close enough to the resolved geometry chain (left untrimmed).
+    shapes_untrimmed_stop_not_found: int = 0
+    #: Written routes that still publish exactly two shape points (6B defect 3c
+    #: is a known gap for landmark-only routes; this counter measures it).
+    two_point_shapes: int = 0
 
 
 @dataclass
@@ -490,6 +539,101 @@ def generate_trips(
     return trips
 
 
+def segment_minutes_for(route_type: int, distance_km: float) -> int:
+    """Indicative minutes for one stop-to-stop segment (synthesis assumption).
+
+    The rule is ``max(floor, ceil(distance / speed_cap * 60))``: the fixed
+    :data:`SEGMENT_MINUTES` floor keeps the existing cadence on densely spaced
+    stops, and the distance term prevents a long hop from being scheduled in a
+    couple of minutes. ``distance_km`` is the distance along the route shape
+    between the two stops (see :func:`_shape_hop_distances_km`), so the result is
+    deterministic for a given feed and cannot imply a speed above the mode cap.
+
+    Args:
+        route_type: GTFS route_type (1 rail, 3 road, 4 ferry).
+        distance_km: non-negative, finite stop-to-stop distance in kilometres.
+
+    Returns:
+        Whole minutes, at least :data:`SEGMENT_MINUTES` for the mode and
+        non-decreasing in ``distance_km``.
+
+    Raises:
+        ValueError: for an unsupported route_type or an invalid distance.
+    """
+    try:
+        minimum = SEGMENT_MINUTES[route_type]
+        speed_kmh = SEGMENT_SPEED_KMH[route_type]
+    except KeyError as exc:
+        raise ValueError(
+            f"no segment timing rule for route_type {route_type!r}"
+        ) from exc
+    if not isinstance(distance_km, (int, float)) or not math.isfinite(distance_km):
+        raise ValueError(f"distance_km must be finite, got {distance_km!r}")
+    if distance_km < 0:
+        raise ValueError(f"distance_km must be non-negative, got {distance_km!r}")
+    travel_minutes = math.ceil(float(distance_km) / speed_kmh * 60.0)
+    return max(minimum, travel_minutes)
+
+
+def _shape_hop_distances_km(
+    stops: Sequence[StopRef], shape: Sequence[Point]
+) -> List[float]:
+    """Distance of each consecutive stop pair along the route shape, in km.
+
+    MOTIS draws a leg from the shape slice between its boarding and alighting
+    stops, so the schedule must use that same geometry. The stops are projected
+    onto the nearest shape vertex within :data:`_STOP_SNAP_M`; when either end of
+    a hop cannot be located (or the projections run backwards, e.g. a loop) that
+    hop falls back to the straight-line stop distance. A route with fewer than
+    two stops has no hops.
+    """
+    if len(stops) < 2:
+        return []
+    if len(shape) < 2:
+        return [_stop_distance_km(a, b) for a, b in zip(stops, stops[1:])]
+
+    indices: List[Optional[int]] = [
+        _shape_index_for_stop(
+            shape, stop, prefer_last=(position == len(stops) - 1)
+        )
+        for position, stop in enumerate(stops)
+    ]
+    cumulative = [0.0]
+    for earlier, later in zip(shape, shape[1:]):
+        cumulative.append(cumulative[-1] + _point_distance_km(earlier, later))
+
+    distances: List[float] = []
+    for position, (earlier, later) in enumerate(zip(stops, stops[1:])):
+        first = indices[position]
+        last = indices[position + 1]
+        if first is not None and last is not None and first <= last:
+            distances.append(cumulative[last] - cumulative[first])
+        else:
+            distances.append(_stop_distance_km(earlier, later))
+    return distances
+
+
+def _shape_index_for_stop(
+    shape: Sequence[Point], stop: StopRef, *, prefer_last: bool
+) -> Optional[int]:
+    """Nearest shape vertex serving ``stop`` within :data:`_STOP_SNAP_M`, or None."""
+    target = (stop.lat, stop.lon)
+    best_index: Optional[int] = None
+    best_distance = 0.0
+    for index, point in enumerate(shape):
+        distance = _point_distance_km(point, target)
+        if distance * 1000.0 > _STOP_SNAP_M:
+            continue
+        if best_index is None or distance < best_distance - 1e-12:
+            best_index, best_distance = index, distance
+        elif abs(distance - best_distance) <= 1e-12:
+            if prefer_last and index > best_index:
+                best_index = index
+            elif not prefer_last and index < best_index:
+                best_index = index
+    return best_index
+
+
 def build_feed(
     routes: Sequence[RouteDef],
     agency: AgencyInfo,
@@ -531,6 +675,9 @@ def build_feed(
         "routes_skipped_too_few_stops": 0,
         "routes_skipped_duplicate_id": 0,
         "dangling_members": 0,
+        "shapes_trimmed": 0,
+        "shapes_untrimmed_stop_not_found": 0,
+        "two_point_shapes": 0,
     }
     route_rows: List[RouteRow] = []
     stop_rows: List[StopRow] = []
@@ -564,6 +711,12 @@ def build_feed(
 
         accepted_route_ids.add(route.route_id)
         counters["routes_written"] += 1
+        if getattr(route, "shape_trimmed", False):
+            counters["shapes_trimmed"] += 1
+        if getattr(route, "shape_untrimmed_stop_not_found", False):
+            counters["shapes_untrimmed_stop_not_found"] += 1
+        if len(shape) == 2:
+            counters["two_point_shapes"] += 1
 
         short_name = route.short_name.strip() or route.name.strip() or route.route_id
         long_name = route.name.strip() or short_name
@@ -609,7 +762,14 @@ def build_feed(
                     ShapeRow(shape_ids[direction_id], lat, lon, sequence)
                 )
 
-        segment_minutes = SEGMENT_MINUTES[route.route_type]
+        # Distance-derived hop times (synthesis assumption; see module docstring
+        # and segment_minutes_for). Distances are measured along the shape, which
+        # is the geometry MOTIS serves for the leg. Direction 1 serves the same
+        # pairs reversed.
+        hop_minutes = [
+            segment_minutes_for(route.route_type, distance_km)
+            for distance_km in _shape_hop_distances_km(stops, shape)
+        ]
         specs = generate_trips(route.headway_peak_min, route.headway_offpeak_min)
         per_direction_counts = {0: 0, 1: 0}
         for spec in specs:
@@ -629,10 +789,13 @@ def build_feed(
             )
 
             ordered_stops = stops if spec.direction_id == 0 else tuple(reversed(stops))
+            ordered_hops = (
+                hop_minutes if spec.direction_id == 0 else hop_minutes[::-1]
+            )
             minute = spec.departure_minutes
             for sequence, stop in enumerate(ordered_stops, start=1):
                 if sequence > 1:
-                    minute += segment_minutes
+                    minute += ordered_hops[sequence - 2]
                 timestamp = _format_minutes(minute)
                 stop_time_rows.append(
                     StopTimeRow(
@@ -700,6 +863,24 @@ def _format_minutes(minutes: int) -> str:
 
 def _gtfs_date(value: date) -> str:
     return value.strftime("%Y%m%d")
+
+
+def _point_distance_km(a: Point, b: Point) -> float:
+    """Great-circle distance in kilometres between two ``(lat, lon)`` points."""
+    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    h = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return 2 * 6371.0088 * math.asin(math.sqrt(min(1.0, h)))
+
+
+def _stop_distance_km(a: StopRef, b: StopRef) -> float:
+    """Great-circle distance in kilometres between two stops (timing fallback)."""
+    return _point_distance_km((a.lat, a.lon), (b.lat, b.lon))
 
 
 def _valid_latlon(lat: float, lon: float) -> bool:
