@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ItineraryDto, LegDto, LegMode } from '@biyahey/shared';
-import { assertKnownSources, loadProvenance } from '@biyahey/shared/provenance';
+import type { ItineraryDto, LegDto, LegMode, PlanResponse } from '@biyahey/shared';
+import { assertKnownSources, loadProvenance, provenanceFor } from '@biyahey/shared/provenance';
 
 /**
  * Task 5 (PH-wide coverage): the additive contract fields the BFF/PWA will use
@@ -11,16 +11,6 @@ import { assertKnownSources, loadProvenance } from '@biyahey/shared/provenance';
  * Task 6 (walk fallback) and Task 9 (tricycle legs, fare gaps, terminal hints);
  * this suite proves the shared vocabulary and the registry row they consume.
  */
-
-type DerivedRow = {
-  kind?: string;
-  method?: string;
-  url?: string;
-  licence_spdx?: string;
-  licence_url?: string;
-  attribution?: string;
-  used_for?: string[];
-};
 
 const TRICYCLE: LegMode = 'tricycle';
 
@@ -45,17 +35,23 @@ describe('provenance registry: the derived walk-estimate row', () => {
   it('registers walk-estimate and accepts it through assertKnownSources', () => {
     expect(registry.has('walk-estimate')).toBe(true);
     expect(assertKnownSources(['walk-estimate'], registry)).toEqual(['walk-estimate']);
+    // Canonical registry order still wins over the order a caller passes ids in.
+    expect(assertKnownSources(['walk-estimate', 'osm'], registry)).toEqual([
+      'osm',
+      'walk-estimate',
+    ]);
   });
 
   it('describes a BiyaHey!-computed walking estimate rather than a dataset', () => {
-    const row = registry.get('walk-estimate') as unknown as DerivedRow;
+    const row = registry.get('walk-estimate')!;
 
     expect(row.kind).toBe('derived');
     expect(row.attribution).toContain('BiyaHey!');
     expect(row.attribution).toMatch(/haversine/i);
     expect(row.attribution).toMatch(/4\.5\s*km\/h/);
-    expect(row.method).toMatch(/4\.5\s*km\/h/);
-    expect(row.method).toMatch(/straight-line/i);
+    expect(row.method ?? '').toMatch(/haversine/i);
+    expect(row.method ?? '').toMatch(/4\.5\s*km\/h/);
+    expect(row.method ?? '').toMatch(/straight-line/i);
     // No dataset licence is claimed and no fake licence URL is invented: the
     // schema's derived branch requires SPDX's explicit "no licence asserted".
     expect(row.licence_spdx).toBe('NOASSERTION');
@@ -104,6 +100,21 @@ describe('shared DTO additions', () => {
       terminalName: 'Cubao Tricycle Terminal',
       distanceM: 120,
     });
+
+    // The wire version does not move: the new fields ride an unchanged `v: 1`
+    // response, and the derived row is served as the registry wrote it — no
+    // invented licence URL.
+    const response: PlanResponse = {
+      v: 1,
+      itineraries: [fallback],
+      sources: provenanceFor(['walk-estimate']),
+    };
+    const wire = JSON.parse(JSON.stringify(response)) as PlanResponse;
+
+    expect(wire.v).toBe(1);
+    expect(wire.sources.map((source) => source.id)).toEqual(['walk-estimate']);
+    expect(wire.sources[0]?.kind).toBe('derived');
+    expect('licence_url' in (wire.sources[0] ?? {})).toBe(false);
   });
 
   it('round-trips a tricycle leg whose fare has no published source', () => {

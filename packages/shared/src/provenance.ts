@@ -30,14 +30,37 @@ export type SourceId =
  */
 export interface DataSource {
   id: SourceId;
+  /**
+   * Registry row kind (the schema's `kind`): `'dataset'` for an external
+   * dataset or service, `'derived'` for a value BiyaHey! computes itself
+   * (`walk-estimate`). Dataset rows omit the field, which means `'dataset'`.
+   *
+   * Additive and optional: rows written before the derived row existed stay
+   * valid, so no `v` bump is needed.
+   */
+  kind?: 'dataset' | 'derived';
   name: string;
   publisher: string;
+  /** External dataset/service URL; a derived row carries the `"—"` sentinel. */
   url: string;
   licence_spdx: string;
+  /**
+   * Licence URL for `kind: 'dataset'` rows. A `kind: 'derived'` row omits the
+   * key entirely rather than claim a dataset licence (its `licence_spdx` is
+   * SPDX's `NOASSERTION`), so consumers must branch on {@link kind} before
+   * following it. The field stays required here so existing dataset consumers
+   * keep a non-optional string and no v1 field is retyped.
+   */
   licence_url: string;
   coverage: string;
   last_checked: string;
   attribution: string;
+  /**
+   * For `kind: 'derived'` rows: how the value is computed, in words. The
+   * schema requires it on derived rows so they cannot hide their method;
+   * dataset rows omit it. Additive and optional.
+   */
+  method?: string;
   used_for: string[];
 }
 
