@@ -51,8 +51,14 @@ timetable:
   http_timeout: 30
   canned_rt: false
   incremental_rt_update: false
-  extend_missing_footpaths: false
-  max_footpath_length: 15
+  # Walk bridging (plan decision D3): the router may extend missing footpaths and
+  # consider a transfer walk up to 30 minutes (~2.4 km) so two otherwise
+  # disconnected corridors can be connected by a walk rather than returning an
+  # empty plan. Measured in Task 4: import time/RSS and /plan p50/p95 before and
+  # after; if the graph gets 10x slower this value is reduced and the measurement
+  # recorded (docs/research/2026-11-04-ph-wide-coverage-recon.md §4).
+  extend_missing_footpaths: true
+  max_footpath_length: 30
   default_transfer_time: 2
   max_matching_distance: 25.000000
   preprocess_max_matching_distance: 250.000000
