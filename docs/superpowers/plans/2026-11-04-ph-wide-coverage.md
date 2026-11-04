@@ -141,7 +141,7 @@
 **Files:**
 - Modify: `packages/shared/src/domain.ts` (`LegMode` + new additive fields)
 - Modify: `data/provenance/sources.yaml` (`walk-estimate` row; schema only if required)
-- Test: `services/api/tests/` contract/registry tests, plus any shared-package test file that pins the mode vocabulary
+- Test: the repo's API test directory `services/api/test/` (contract/registry tests live there), plus any shared-package test file that pins the mode vocabulary
 
 **Interfaces:**
 - Produces (all additive and optional unless stated):
@@ -169,7 +169,7 @@
 - Create: `services/api/src/routing/walk-fallback.ts`
 - Modify: `services/api/src/routing/motis-client.ts` (only if a road-following walk request needs a new client method)
 - Modify: `services/api/src/routes/plan.ts` (emit fallback only after all attempts return nothing)
-- Test: `services/api/tests/walk-fallback.test.ts`, `services/api/tests/plan.route.test.ts`
+- Test: `services/api/test/walk-fallback.test.ts` (new), `services/api/test/plan.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -178,7 +178,7 @@
   - `routedWalk` is the geometry from a road-following walk request when one can be obtained; otherwise `undefined`.
 - Consumes: `PlanRequest`, `ItineraryDto`, `walkOnlyFare()`, `haversineM()`, `decodePolyline()`, `legGeometry`/`direct` payload shapes, `MOTIS_CALLS_HEADER`.
 
-- [ ] **Step 1: Determine empirically how to obtain road-following walk geometry** from the pinned MOTIS build. Investigate `/api/v6/plan` params (requesting a walk-only answer — e.g. an empty/`WALK` transit-mode selection), `/api/v1/one-to-all`, and the `direct` array of a normal plan; `/api/v1/route` is known 404. Record the finding in the task report, in a code comment, and in the ledger. **Do not guess a URL into production code.** If no request yields road geometry for an uncovered pair, the fallback uses straight-line geometry and this task must say so plainly.
+- [ ] **Step 1: Use the verified walk-routing mechanism** (Lead finding F1, probed 2026-11-04): road-following walk geometry comes from `GET /api/v6/plan` with **`transitModes=` empty**, **`directModes=WALK`**, and **`maxDirectTime=<seconds>`**; the answer is in `direct[0]`, with `legs[0].legGeometry` (precision 6) and the real `duration`/`distance`. Size `maxDirectTime` from the haversine distance at 1.2 m/s × a 1.6 safety factor, with a floor of 3600 s and a ceiling that keeps one request bounded (e.g. ≤ 6 h of computed walk); never send a walk request when haversine already implies more than the ceiling — the straight-line branch is the honest answer there. `/api/v1/route` is a confirmed 404 on this pinned build; do not use it. Record the mechanism and the chosen ceiling in the report and as a code comment.
 - [ ] **Step 2: Write the failing tests:**
   - Empty MOTIS payload (`{itineraries: [], direct: []}`) → exactly one itinerary with `fallback: 'walk'`, zero transit legs, `fare.amount === 0`, `sources` includes `walk-estimate`, `approximate` present, duration = ceil(haversine / 4.5 km/h), and the `x-biyahey-fallback` header equals `walk`.
   - A 300 m pair still returns the fallback (not empty) when the router returns nothing, with duration ≥1 min.
