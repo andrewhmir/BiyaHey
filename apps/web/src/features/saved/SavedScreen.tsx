@@ -10,6 +10,11 @@ import {
   type ReactNode,
 } from 'react';
 import { LegStrip } from '../../components/transit/LegStrip';
+import {
+  isWalkFallback,
+  WalkEstimateBadge,
+  walkFallbackStat,
+} from '../../components/transit/WalkFallback';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
@@ -104,6 +109,7 @@ function SavedTripCard({
   const currentOffset = useRef(0);
   const name = tripName(trip, t);
   const endpoints = routeLabel(trip.itinerary, t);
+  const walkFallback = isWalkFallback(trip.itinerary);
   const stale = stalenessOf(trip, matrixEffectiveFrom, now);
   const updated = formatLongDate(trip.savedAt) ?? trip.savedAt;
   const arrival = formatClockTime(trip.itinerary.endTime) ?? trip.itinerary.endTime;
@@ -228,30 +234,45 @@ function SavedTripCard({
         </div>
 
         {/* The stored itinerary's own legs: the same ribbon as the route cards,
-            so a saved trip reads as the shape it will take. */}
-        <LegStrip
-          legs={trip.itinerary.legs}
-          size="sm"
-          label={t('saved.legStripLabel')}
-          className="mt-3"
-        />
+            so a saved trip reads as the shape it will take. A walk fallback has
+            no route shape to imply, so it states the estimate instead. */}
+        {walkFallback ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <WalkEstimateBadge />
+            <span data-testid="saved-walk-stat" className="text-xs font-medium text-on-surface">
+              {walkFallbackStat(trip.itinerary, t)}
+            </span>
+          </div>
+        ) : (
+          <LegStrip
+            legs={trip.itinerary.legs}
+            size="sm"
+            label={t('saved.legStripLabel')}
+            className="mt-3"
+          />
+        )}
 
         {/* Same transfers/walk vocabulary as the route cards, from the snapshot
-            the API returned (never recomputed). */}
-        <p data-testid="saved-meta" className="mt-2 text-xs leading-4 text-on-surface-variant">
-          {transfersLabel(trip.itinerary.transfers, t)} ·{' '}
-          {walkLabel(trip.itinerary.walkDistanceM, t)}
-        </p>
+            the API returned (never recomputed). A walk fallback is not a
+            transfer-count itinerary, so it states only its estimate above. */}
+        {walkFallback ? null : (
+          <p data-testid="saved-meta" className="mt-2 text-xs leading-4 text-on-surface-variant">
+            {transfersLabel(trip.itinerary.transfers, t)} ·{' '}
+            {walkLabel(trip.itinerary.walkDistanceM, t)}
+          </p>
+        )}
 
-        <p
-          data-testid="saved-fare"
-          className="mt-2 flex w-fit max-w-full flex-wrap items-center rounded-pill border border-fare-border bg-fare-bg px-3 py-1 text-sm font-semibold text-on-fare-bg"
-        >
-          {t('saved.fareLine', {
-            amount: formatFare(trip.fareSnapshot.amount),
-            date: trip.fareSnapshot.effective_from,
-          })}
-        </p>
+        {walkFallback ? null : (
+          <p
+            data-testid="saved-fare"
+            className="mt-2 flex w-fit max-w-full flex-wrap items-center rounded-pill border border-fare-border bg-fare-bg px-3 py-1 text-sm font-semibold text-on-fare-bg"
+          >
+            {t('saved.fareLine', {
+              amount: formatFare(trip.fareSnapshot.amount),
+              date: trip.fareSnapshot.effective_from,
+            })}
+          </p>
+        )}
 
         <p data-testid="saved-eta" className="mt-2 break-words text-sm text-on-surface-variant">
           <span lang="en" className="font-medium text-on-surface">
@@ -271,7 +292,7 @@ function SavedTripCard({
           {t('trip.lastUpdated', { date: updated })}
         </p>
 
-        {stale !== 'fresh' ? (
+        {walkFallback ? null : stale !== 'fresh' ? (
           <p
             data-testid="fare-staleness"
             lang="en"
@@ -281,19 +302,21 @@ function SavedTripCard({
           </p>
         ) : null}
 
-        <p className="mt-1 break-words text-xs leading-4 text-on-surface-variant">
-          {stale === 'expired'
-            ? t('saved.expired')
-            : stale === 'unknown'
-              ? isPuvFareSnapshot(trip)
-                ? t('saved.unknownPuv')
-                : t('saved.unknownNonPuv')
-              : stale === 'fare-changed' && matrixEffectiveFrom !== undefined
-                ? t('saved.currentMatrix', { date: matrixEffectiveFrom })
-                : matrixEffectiveFrom !== undefined
-                  ? t('saved.sameMatrix', { date: matrixEffectiveFrom })
-                  : null}
-        </p>
+        {walkFallback ? null : (
+          <p className="mt-1 break-words text-xs leading-4 text-on-surface-variant">
+            {stale === 'expired'
+              ? t('saved.expired')
+              : stale === 'unknown'
+                ? isPuvFareSnapshot(trip)
+                  ? t('saved.unknownPuv')
+                  : t('saved.unknownNonPuv')
+                : stale === 'fare-changed' && matrixEffectiveFrom !== undefined
+                  ? t('saved.currentMatrix', { date: matrixEffectiveFrom })
+                  : matrixEffectiveFrom !== undefined
+                    ? t('saved.sameMatrix', { date: matrixEffectiveFrom })
+                    : null}
+          </p>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button

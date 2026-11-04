@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { PlanResponse } from '@biyahey/shared';
+import { defaultT } from '../../i18n/strings';
+import { makeWalkFallbackItinerary } from '../../test/fixtures/itinerary';
 import {
   RECENT_TRIPS_KEY,
   SAVED_TRIPS_KEY,
@@ -112,6 +114,30 @@ describe('SavedScreen card v2', () => {
     // The saved date is labelled as the save action's date (not a live ETA).
     // `formatLongDate` renders in Asia/Manila via the en-PH formatter.
     expect(screen.getByTestId('saved-date')).toHaveTextContent(/na-save noong sep 1, 2026/i);
+  });
+
+  it('marks a saved walk fallback without a fare amount', async () => {
+    const itinerary = makeWalkFallbackItinerary({ distanceM: 2100, durationMin: 27 });
+    seedSaved([
+      {
+        itinerary,
+        sources: [],
+        fareSnapshot: itinerary.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const row = await screen.findByTestId('saved-row');
+    expect(within(row).getByTestId('walk-fallback-badge')).toHaveTextContent(
+      defaultT('walkFallback.badge'),
+    );
+    expect(within(row).getByTestId('saved-walk-stat')).toHaveTextContent('2.1 km');
+    expect(screen.queryByTestId('saved-fare')).toBeNull();
+    expect(row).not.toHaveTextContent('₱');
+    expect(row).not.toHaveTextContent(/fare matrix|fare may have changed/i);
   });
 
   it('lets a nickname win the title while keeping the endpoints visible', async () => {

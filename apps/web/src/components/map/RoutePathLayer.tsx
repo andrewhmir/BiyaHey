@@ -544,7 +544,10 @@ export function RoutePathLayer({
       selected.legs.forEach((leg, index) => {
         const feature = legFeature(leg, index);
         if (feature === undefined) return;
-        if (isApproximateFeature(feature)) {
+        // `approximate` is the API's explicit contract for a straight-line
+        // walk-fallback estimate. It is honoured even for a short chord that the
+        // geometry heuristic below would call solid: the flag is authoritative.
+        if (leg.approximate === true || isApproximateFeature(feature)) {
           approximate.push(feature);
         } else {
           solid.push(feature);

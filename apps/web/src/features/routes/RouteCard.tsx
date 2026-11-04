@@ -2,6 +2,11 @@ import type { DataSource, FareQuote, ItineraryDto } from '@biyahey/shared';
 import { memo } from 'react';
 import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
 import { LegStrip } from '../../components/transit/LegStrip';
+import {
+  isWalkFallback,
+  WalkEstimateBadge,
+  WalkFallbackNotice,
+} from '../../components/transit/WalkFallback';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
@@ -108,15 +113,24 @@ export const RouteCard = memo(function RouteCard({
 }: RouteCardProps) {
   const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
-  const cardName = `${itinerary.durationMin} min, ₱${formatFare(itinerary.fare.amount)}, ${transfersLabel(
-    itinerary.transfers,
-    t,
-  )}, ${walkLabel(itinerary.walkDistanceM, t)}`;
+  const walkFallback = isWalkFallback(itinerary);
+  // A fallback is never a priced, ranked transit option: its accessible name
+  // carries the estimate badge and walking distance instead of a peso fare.
+  const cardName = walkFallback
+    ? `${t('walkFallback.badge')}, ${itinerary.durationMin} min, ${walkLabel(
+        itinerary.walkDistanceM,
+        t,
+      )}`
+    : `${itinerary.durationMin} min, ₱${formatFare(itinerary.fare.amount)}, ${transfersLabel(
+        itinerary.transfers,
+        t,
+      )}, ${walkLabel(itinerary.walkDistanceM, t)}`;
 
   return (
     <div
       data-testid="route-card"
       data-selected={selected ? 'true' : 'false'}
+      data-fallback={walkFallback ? 'walk' : undefined}
       className={`relative flex w-full flex-col overflow-hidden rounded-card bg-surface-container-lowest transition ${
         selected ? 'shadow-elevation-2' : 'shadow-none'
       }`}
@@ -154,52 +168,64 @@ export const RouteCard = memo(function RouteCard({
             ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
-            {badge !== undefined ? (
-              <span
-                data-testid="route-badge"
-                className="rounded-pill bg-primary px-2.5 py-1 text-[10px] font-bold uppercase leading-4 tracking-[0.08em] text-on-primary"
-              >
-                {t(BADGE_KEYS[badge])}
-              </span>
-            ) : null}
-            <span
-              data-testid="fare-amount"
-              className="text-2xl font-extrabold leading-8 tracking-tight text-on-surface"
-            >
-              ₱{formatFare(itinerary.fare.amount)}
-            </span>
+            {walkFallback ? (
+              <WalkEstimateBadge />
+            ) : (
+              <>
+                {badge !== undefined ? (
+                  <span
+                    data-testid="route-badge"
+                    className="rounded-pill bg-primary px-2.5 py-1 text-[10px] font-bold uppercase leading-4 tracking-[0.08em] text-on-primary"
+                  >
+                    {t(BADGE_KEYS[badge])}
+                  </span>
+                ) : null}
+                <span
+                  data-testid="fare-amount"
+                  className="text-2xl font-extrabold leading-8 tracking-tight text-on-surface"
+                >
+                  ₱{formatFare(itinerary.fare.amount)}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* The signature leg ribbon: one proportional, mode-coloured segment
-            per leg. The card's text already names each leg, so colour is never
-            the only channel. It stays outside the overlay button so the ordered
-            list semantics survive (review I2). */}
-        <LegStrip legs={itinerary.legs} size="sm" />
+        {walkFallback ? (
+          <WalkFallbackNotice itinerary={itinerary} badge={false} />
+        ) : (
+          <>
+            {/* The signature leg ribbon: one proportional, mode-coloured segment
+                per leg. The card's text already names each leg, so colour is never
+                the only channel. It stays outside the overlay button so the ordered
+                list semantics survive (review I2). */}
+            <LegStrip legs={itinerary.legs} size="sm" />
 
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-5 text-on-surface-variant">
-          <span>{transfersLabel(itinerary.transfers, t)}</span>
-          <span aria-hidden="true">·</span>
-          <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
-        </div>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-5 text-on-surface-variant">
+              <span>{transfersLabel(itinerary.transfers, t)}</span>
+              <span aria-hidden="true">·</span>
+              <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
+            </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Mandatory provenance: every displayed fare carries the matrix and
-              the effectivity date the API returned (R45/R57). */}
-          <span data-testid="fare-date" className="text-xs leading-4 text-on-surface-variant">
-            {fareEffectiveLine(itinerary.fare, t)}
-          </span>
-          {/* An estimated quote (rail band, free-ride override) is never
-              presented as an official matrix fare. */}
-          {itinerary.fare.confidence === 'estimated' ? (
-            <span
-              data-testid="fare-estimate"
-              className="rounded-pill border border-fare-border bg-fare-bg px-2 py-0.5 text-[11px] font-semibold leading-4 text-on-fare-bg"
-            >
-              {t('common.estimate')}
-            </span>
-          ) : null}
-        </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Mandatory provenance: every displayed fare carries the matrix and
+                  the effectivity date the API returned (R45/R57). */}
+              <span data-testid="fare-date" className="text-xs leading-4 text-on-surface-variant">
+                {fareEffectiveLine(itinerary.fare, t)}
+              </span>
+              {/* An estimated quote (rail band, free-ride override) is never
+                  presented as an official matrix fare. */}
+              {itinerary.fare.confidence === 'estimated' ? (
+                <span
+                  data-testid="fare-estimate"
+                  className="rounded-pill border border-fare-border bg-fare-bg px-2 py-0.5 text-[11px] font-semibold leading-4 text-on-fare-bg"
+                >
+                  {t('common.estimate')}
+                </span>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
 
       {/* The chip lives beside the select action, above the overlay: a link

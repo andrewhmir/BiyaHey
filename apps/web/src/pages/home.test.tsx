@@ -3,7 +3,13 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { makeItinerary, makeLeg, makeRailTrip } from '../test/fixtures/itinerary';
+import { defaultT } from '../i18n/strings';
+import {
+  makeItinerary,
+  makeLeg,
+  makeRailTrip,
+  makeWalkFallbackItinerary,
+} from '../test/fixtures/itinerary';
 import { RECENT_TRIPS_KEY } from '../lib/savedTripsStore';
 import { HomePage, HOME_RECENTS_LIMIT } from './home';
 
@@ -169,6 +175,21 @@ describe('HomePage recent trips', () => {
     expect(row).toHaveTextContent('Cubao → Ayala');
     expect(row).toHaveTextContent('₱29');
     expect(within(row).getByTestId('leg-strip')).toHaveAttribute('data-leg-count', '3');
+  });
+
+  it('labels a saved walk fallback without a fare amount', () => {
+    const fallback = makeWalkFallbackItinerary({ distanceM: 2100, durationMin: 27 });
+    seedRecents([recentRow(fallback)]);
+
+    render(<HomePage />);
+
+    const row = screen.getByTestId('recent-trip');
+    expect(within(row).getByTestId('walk-fallback-badge')).toHaveTextContent(
+      defaultT('walkFallback.badge'),
+    );
+    expect(row).not.toHaveTextContent('₱');
+    expect(row).toHaveTextContent('27 min');
+    expect(row).not.toHaveTextContent(/fare effective/i);
   });
 
   it('does not crash when the recents store is unreadable', () => {

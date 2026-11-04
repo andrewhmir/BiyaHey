@@ -2,7 +2,8 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import { defaultT } from '../../i18n/strings';
+import { makeWalkFallbackItinerary, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
 import { planMrt3CubaoAyalaResponse } from '../../test/msw/handlers';
 import { clearPlanCache, rememberPlan } from '../routes/planCache';
 import {
@@ -221,6 +222,20 @@ describe('TripLiveScreen walkthrough', () => {
 
     expect(screen.getByTestId('live-finish')).toBeInTheDocument();
     expect(latestCall(stub).activeLegIndex).toBe(0);
+  });
+
+  it('omits the fare line for a walk fallback', () => {
+    render(<TripLiveScreen itinerary={makeWalkFallbackItinerary()} />);
+
+    const summary = screen.getByTestId('live-trip-summary');
+    expect(summary).toHaveTextContent('18 min');
+    expect(summary).not.toHaveTextContent('₱');
+
+    // The transit "expected wait" banner would imply a served ride; a fallback
+    // says what it is instead.
+    const banner = screen.getByTestId('live-banner');
+    expect(banner).toHaveTextContent(defaultT('walkFallback.body'));
+    expect(screen.queryByText('no live data — expected wait')).toBeNull();
   });
 
   it('renders an aria-hidden map placeholder when no renderer is supplied', () => {

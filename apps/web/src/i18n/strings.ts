@@ -145,6 +145,14 @@ const TL = {
   'mode.p2p': 'P2P',
   'mode.tricycle': 'Traysikel',
 
+  // --- Walk fallback (no transit route could be routed) -------------------
+  'walkFallback.badge': 'PAGTATANTIYA NG LAKAD',
+  'walkFallback.stat': 'Lakad {distance} · {minutes} min',
+  'walkFallback.body':
+    'Walang kilalang ruta ng sakay para sa biyaheng ito. Tantiyang paglalakad lang ito at maaaring hindi ligtas o makatotohanang lakarin.',
+  'walkFallback.tooFar':
+    'Mahigit {km} km ang biyaheng ito — hindi makatotohanang gawing alternatibo ang paglalakad.',
+
   // --- Trip detail --------------------------------------------------------
   'trip.title': 'Detalye ng biyahe',
   'trip.summaryArrive': '{minutes} min · arrive {arrival}',
@@ -490,6 +498,13 @@ const EN: Record<StringKey, string> = {
   'mode.uv-express': 'UV Express',
   'mode.p2p': 'P2P',
   'mode.tricycle': 'Tricycle',
+
+  'walkFallback.badge': 'WALK ESTIMATE',
+  'walkFallback.stat': 'Walk {distance} · {minutes} min',
+  'walkFallback.body':
+    'No transit route is known for this trip. This is a walking estimate and may not be a safe or realistic walk.',
+  'walkFallback.tooFar':
+    'This trip is over {km} km — walking is not a realistic alternative for that distance.',
 
   'trip.title': 'Trip details',
   'trip.summaryArrive': '{minutes} min · arrive {arrival}',

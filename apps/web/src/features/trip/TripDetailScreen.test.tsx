@@ -5,9 +5,20 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import {
+  WALK_FALLBACK_NOT_REALISTIC_KM,
+  WALK_FALLBACK_NOT_REALISTIC_M,
+} from '../../components/transit/WalkFallback';
+import { defaultT } from '../../i18n/strings';
 import { SAVED_TRIPS_KEY, readSavedTrips } from '../../lib/savedTripsStore';
 import { AppRoutes } from '../../routes';
-import { makeItinerary, makeLeg, makeRailTrip, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import {
+  makeItinerary,
+  makeLeg,
+  makeRailTrip,
+  makeWalkFallbackItinerary,
+  makeWalkOnlyItinerary,
+} from '../../test/fixtures/itinerary';
 import {
   planCubaoAyalaResponse,
   planLong15LegsResponse,
@@ -338,6 +349,51 @@ describe('TripDetailScreen', () => {
     expect(screen.queryByTestId('signage-plate')).toBeNull();
     expect(screen.getByTestId('start-trip')).toBeVisible();
     expect(screen.getByTestId('fare-breakdown')).toBeInTheDocument();
+  });
+
+  it('renders the walk fallback honestly, with no fare or transit affordances', () => {
+    renderDetail(makeWalkFallbackItinerary());
+
+    expect(screen.getByTestId('walk-fallback-badge')).toHaveTextContent(
+      defaultT('walkFallback.badge'),
+    );
+    expect(screen.getByTestId('walk-fallback')).toHaveTextContent(
+      defaultT('walkFallback.body'),
+    );
+    expect(screen.getByTestId('walk-fallback-stat')).toHaveTextContent('1.4 km');
+    expect(screen.getByTestId('walk-fallback-stat')).toHaveTextContent('18 min');
+    expect(screen.getAllByTestId('leg-row')).toHaveLength(1);
+    expect(screen.queryByTestId('leg-strip')).toBeNull();
+    expect(screen.queryByTestId('fare-total')).toBeNull();
+    expect(screen.queryByTestId('fare-breakdown')).toBeNull();
+    expect(screen.queryByTestId('fare-estimate')).toBeNull();
+    expect(screen.queryByTestId('signage-plate')).toBeNull();
+    expect(screen.queryByText(/look for:/i)).toBeNull();
+    expect(screen.queryByText('MRT-3')).toBeNull();
+  });
+
+  it('adds the translated walking-distance warning only beyond 25 km', () => {
+    const { unmount } = renderDetail(
+      makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M }),
+    );
+    expect(screen.queryByTestId('walk-fallback-warning')).toBeNull();
+    unmount();
+
+    renderDetail(
+      makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 }),
+    );
+    expect(screen.getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+  });
+
+  it('renders a cached itinerary without a fallback field exactly as before', () => {
+    renderDetail();
+
+    expect(screen.getByTestId('fare-total')).toHaveTextContent('₱10.50');
+    expect(screen.getByTestId('fare-breakdown')).toBeInTheDocument();
+    expect(screen.queryByTestId('walk-fallback')).toBeNull();
+    expect(screen.queryByTestId('walk-fallback-badge')).toBeNull();
   });
 
   it('does not clip a 15-leg, 60-character-stop itinerary', () => {

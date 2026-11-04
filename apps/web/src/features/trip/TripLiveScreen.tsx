@@ -9,6 +9,7 @@ import {
 import { useState } from 'react';
 import { LegStrip } from '../../components/transit/LegStrip';
 import { modeLabel } from '../../components/transit/modeMeta';
+import { isWalkFallback } from '../../components/transit/WalkFallback';
 import { useT } from '../../i18n/useT';
 import { formatFare } from '../../lib/format';
 import { formatLongDate } from '../../lib/time';
@@ -177,7 +178,8 @@ export function TripLiveScreen({
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-6">
           <div>
             <p data-testid="live-trip-summary" className="text-sm text-on-surface-variant">
-              {itinerary.durationMin} min · ₱{formatFare(itinerary.fare.amount)}
+              {itinerary.durationMin} min
+              {isWalkFallback(itinerary) ? '' : ` · ₱${formatFare(itinerary.fare.amount)}`}
               {savedSnapshotAt === undefined ? ` · ${t('trip.cachedPlan')}` : ''}
             </p>
             {savedSnapshotAt !== undefined ? (
@@ -200,10 +202,23 @@ export function TripLiveScreen({
             data-testid="live-banner"
             className="rounded-card border border-outline-variant bg-surface-container-low px-4 py-3"
           >
-            <p lang="en" className="text-sm font-semibold text-on-surface">
-              {t('trip.liveBanner')}
-            </p>
-            <p className="mt-1 text-sm leading-5 text-on-surface-variant">{t('trip.liveBody')}</p>
+            {isWalkFallback(itinerary) ? (
+              <p
+                data-testid="live-walk-fallback-body"
+                className="text-sm leading-5 text-on-surface-variant"
+              >
+                {t('walkFallback.body')}
+              </p>
+            ) : (
+              <>
+                <p lang="en" className="text-sm font-semibold text-on-surface">
+                  {t('trip.liveBanner')}
+                </p>
+                <p className="mt-1 text-sm leading-5 text-on-surface-variant">
+                  {t('trip.liveBody')}
+                </p>
+              </>
+            )}
             <p className="mt-1 text-sm leading-5 text-on-surface-variant">
               {t('trip.liveHonesty')}
             </p>

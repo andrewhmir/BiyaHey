@@ -6,6 +6,11 @@ import { MapView } from '../components/map/MapView';
 import { AboutDataLink } from '../components/navigation/AboutDataLink';
 import { BottomSheet, type SheetMapPadding } from '../components/sheet/BottomSheet';
 import { LegStrip } from '../components/transit/LegStrip';
+import {
+  isWalkFallback,
+  WalkEstimateBadge,
+  walkFallbackStat,
+} from '../components/transit/WalkFallback';
 import { useT } from '../i18n/useT';
 import { formatFare } from '../lib/format';
 import { itineraryEndpoints } from '../lib/itinerary';
@@ -92,18 +97,26 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
   const arrival = formatClockTime(itinerary.endTime);
   const fare = formatFare(trip.fareSnapshot.amount);
   const savedOn = formatLongDate(trip.savedAt);
+  const walkFallback = isWalkFallback(itinerary);
   // R45/R63: a stored snapshot's fare must carry its own matrix effectivity date
   // and a recent trip must say when it was opened — the same honesty rule the
-  // saved list enforces, now on the Home surface too.
-  const provenance = [
-    t('saved.fareLine', { amount: fare, date: trip.fareSnapshot.effective_from }),
-    savedOn === null ? null : t('saved.recentOn', { date: savedOn }),
-  ]
-    .filter((part): part is string => part !== null)
-    .join(' · ');
+  // saved list enforces, now on the Home surface too. A walk fallback has no
+  // fare to date: it states the walking estimate instead.
+  const provenance = walkFallback
+    ? [walkFallbackStat(itinerary, t), savedOn === null ? null : t('saved.recentOn', { date: savedOn })]
+        .filter((part): part is string => part !== null)
+        .join(' · ')
+    : [
+        t('saved.fareLine', { amount: fare, date: trip.fareSnapshot.effective_from }),
+        savedOn === null ? null : t('saved.recentOn', { date: savedOn }),
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' · ');
   // The row's accessible name is the honest summary; the leg ribbon and the
-  // provenance line are separate content.
-  const accessibleName = `${title}, ${itinerary.durationMin} min, ₱${fare}`;
+  // provenance line are separate content. A fallback never announces a fare.
+  const accessibleName = walkFallback
+    ? `${t('walkFallback.badge')}, ${title}, ${itinerary.durationMin} min`
+    : `${title}, ${itinerary.durationMin} min, ₱${fare}`;
 
   return (
     <li
@@ -130,11 +143,15 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
               {arrival !== null ? <span>{t('trip.heroArrive', { arrival })}</span> : null}
             </span>
           </div>
-          <span className="shrink-0 rounded-pill border border-fare-border bg-fare-bg px-2.5 py-1 text-sm font-semibold tabular-nums text-on-fare-bg">
-            {`₱${fare}`}
-          </span>
+          {walkFallback ? (
+            <WalkEstimateBadge />
+          ) : (
+            <span className="shrink-0 rounded-pill border border-fare-border bg-fare-bg px-2.5 py-1 text-sm font-semibold tabular-nums text-on-fare-bg">
+              {`₱${fare}`}
+            </span>
+          )}
         </div>
-        <LegStrip legs={itinerary.legs} size="sm" />
+        {walkFallback ? null : <LegStrip legs={itinerary.legs} size="sm" />}
         <p className="text-[10px] leading-4 text-on-surface-variant">{provenance}</p>
       </div>
     </li>

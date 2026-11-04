@@ -8,6 +8,7 @@ import {
   makeLeg,
   makeLongItinerary,
   makeRailTrip,
+  makeWalkFallbackItinerary,
   makeWalkOnlyItinerary,
 } from '../../test/fixtures/itinerary';
 import {
@@ -299,6 +300,46 @@ describe('RoutePathLayer', () => {
       'line-color': ['get', 'colour'],
     });
     expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-approximate-legs', '1');
+  });
+
+  it('draws a flag-marked straight-line fallback through the approximate source', async () => {
+    // The fallback leg is a straight chord the BFF flagged `approximate: true`.
+    // Its straightness alone is not enough: the flag is the contract, and a
+    // short chord must still be dashed and counted.
+    const itinerary = {
+      ...makeWalkFallbackItinerary({ approximate: true, distanceM: 900 }),
+      id: 'walk-fallback',
+    };
+    render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[itinerary]} selectedId="walk-fallback" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() => expect(map.getSource(ROUTE_SOURCES.approximate)).toBeDefined());
+    expect(collectionOf(map, ROUTE_SOURCES.approximate).features).toHaveLength(1);
+    // Never mixed into the solid transit-coloured path.
+    expect(collectionOf(map, ROUTE_SOURCES.selected).features).toHaveLength(0);
+    expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-approximate-legs', '1');
+  });
+
+  it('draws a routed walk fallback geometry solid', async () => {
+    const itinerary = {
+      ...makeWalkFallbackItinerary({ approximate: false }),
+      id: 'walk-fallback-routed',
+    };
+    render(
+      <MapCanvas>
+        <RoutePathLayer itineraries={[itinerary]} selectedId="walk-fallback-routed" />
+      </MapCanvas>,
+    );
+    const map = loadMap();
+
+    await waitFor(() => expect(map.getSource(ROUTE_SOURCES.selected)).toBeDefined());
+    expect(collectionOf(map, ROUTE_SOURCES.selected).features).toHaveLength(1);
+    expect(collectionOf(map, ROUTE_SOURCES.approximate).features).toHaveLength(0);
+    expect(screen.getByTestId('route-map-state')).toHaveAttribute('data-approximate-legs', '0');
   });
 
   it('decodes routed MOTIS geometry into drawn coordinates', async () => {

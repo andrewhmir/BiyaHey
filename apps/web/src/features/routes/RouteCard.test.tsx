@@ -3,9 +3,19 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  WALK_FALLBACK_NOT_REALISTIC_KM,
+  WALK_FALLBACK_NOT_REALISTIC_M,
+} from '../../components/transit/WalkFallback';
+import { defaultT } from '../../i18n/strings';
 import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
 import { planCubaoAyalaResponse } from '../../test/msw/handlers';
-import { makeItinerary, makeLeg, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import {
+  makeItinerary,
+  makeLeg,
+  makeWalkFallbackItinerary,
+  makeWalkOnlyItinerary,
+} from '../../test/fixtures/itinerary';
 import { RouteCard, fareEffectiveLine, type RouteBadge } from './RouteCard';
 
 // Registration rows for the checked-in Cubao → Ayala plan: the card only ever
@@ -301,6 +311,73 @@ describe('RouteCard provenance chip (R45)', () => {
 
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.getByTestId('route-card')).toHaveAttribute('data-selected', 'false');
+  });
+});
+
+describe('RouteCard walk fallback', () => {
+  it('renders the walk estimate badge, distance and duration without transit affordances', () => {
+    renderCard({ ...makeWalkFallbackItinerary(), id: 'walk-fallback' }, { badge: 'BEST' });
+
+    const card = screen.getByTestId('route-card');
+    expect(card).toHaveAttribute('data-fallback', 'walk');
+    expect(screen.getByTestId('walk-fallback-badge')).toHaveTextContent(
+      defaultT('walkFallback.badge'),
+    );
+    expect(screen.getByTestId('walk-fallback')).toHaveTextContent(
+      defaultT('walkFallback.body'),
+    );
+    expect(screen.getByTestId('walk-fallback')).toHaveAttribute('data-long-walk', 'false');
+    expect(screen.getByTestId('walk-fallback-stat')).toHaveTextContent('1.4 km');
+    expect(screen.getByTestId('walk-fallback-stat')).toHaveTextContent('18 min');
+
+    // No transit affordance: no leg strip, fare, route badge, route name or signage.
+    expect(screen.queryByTestId('leg-strip')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('fare-amount')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('fare-date')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('fare-estimate')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('route-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText(/look for:/i)).not.toBeInTheDocument();
+    expect(card).not.toHaveTextContent('₱');
+    expect(card).not.toHaveTextContent('MRT-3');
+
+    const select = screen.getByTestId('route-card-select');
+    expect(select).toHaveAccessibleName(new RegExp(defaultT('walkFallback.badge')));
+    expect(select).not.toHaveAccessibleName(/₱/);
+  });
+
+  it('does not add the distance warning at exactly 25 km', () => {
+    renderCard({
+      ...makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M }),
+      id: 'walk-fallback-at-threshold',
+    });
+
+    expect(screen.queryByTestId('walk-fallback-warning')).not.toBeInTheDocument();
+  });
+
+  it('adds the translated warning beyond 25 km', () => {
+    renderCard({
+      ...makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 }),
+      id: 'walk-fallback-over-threshold',
+    });
+
+    expect(screen.getByTestId('walk-fallback')).toHaveAttribute('data-long-walk', 'true');
+    expect(screen.getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+  });
+
+  it('renders a cached itinerary without a fallback field exactly as before', () => {
+    renderCard();
+
+    const card = screen.getByTestId('route-card');
+    expect(card).not.toHaveAttribute('data-fallback');
+    expect(screen.queryByTestId('walk-fallback')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('walk-fallback-badge')).not.toBeInTheDocument();
+    expect(screen.getByTestId('fare-amount')).toHaveTextContent('₱29');
+    expect(screen.getByTestId('leg-strip')).toHaveAttribute('data-leg-count', '3');
+    expect(screen.getByTestId('fare-date')).toHaveTextContent(
+      'Fares: rail fare matrix effective 2026-03-23',
+    );
   });
 });
 

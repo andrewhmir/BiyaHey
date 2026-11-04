@@ -2,6 +2,10 @@ import type { DataSource, ItineraryDto } from '@biyahey/shared';
 import { ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { LegStrip } from '../../components/transit/LegStrip';
+import {
+  isWalkFallback,
+  WalkFallbackNotice,
+} from '../../components/transit/WalkFallback';
 import { useT } from '../../i18n/useT';
 import { formatFare, transfersLabel, walkLabel } from '../../lib/format';
 import { isTripSaved, saveTrip } from '../../lib/savedTripsStore';
@@ -90,6 +94,7 @@ export function TripDetailScreen({
   // 30-day staleness clock while the fare stays the old one (M1), so the CTA is
   // deliberately disabled rather than silently re-dating the snapshot.
   const fromSavedStore = savedSnapshotAt !== undefined;
+  const walkFallback = isWalkFallback(itinerary);
 
   const selectedLeg = selectedLegIndex === null ? undefined : itinerary.legs[selectedLegIndex];
   const announcement =
@@ -193,15 +198,19 @@ export function TripDetailScreen({
                 {t('trip.heroArrive', { arrival: arrivalLabel })}
               </span>
             </p>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-on-surface-variant">
-              <span data-testid="fare-total" className="font-semibold text-on-surface">
-                ₱{formatFare(itinerary.fare.amount)}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>{transfersLabel(itinerary.transfers, t)}</span>
-              <span aria-hidden="true">·</span>
-              <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
-            </p>
+            {walkFallback ? (
+              <WalkFallbackNotice itinerary={itinerary} className="mt-3" />
+            ) : (
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-on-surface-variant">
+                <span data-testid="fare-total" className="font-semibold text-on-surface">
+                  ₱{formatFare(itinerary.fare.amount)}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>{transfersLabel(itinerary.transfers, t)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{walkLabel(itinerary.walkDistanceM, t)}</span>
+              </p>
+            )}
             {savedSnapshotAt !== undefined ? (
               <p
                 data-testid="saved-snapshot-note"
@@ -217,13 +226,15 @@ export function TripDetailScreen({
           </div>
 
           <div>
-            <LegStrip
-              legs={itinerary.legs}
-              selectedLegIndex={selectedLegIndex}
-              onSelectLeg={handleSelectLeg}
-              size="md"
-              label={t('trip.legStripLabel')}
-            />
+            {walkFallback ? null : (
+              <LegStrip
+                legs={itinerary.legs}
+                selectedLegIndex={selectedLegIndex}
+                onSelectLeg={handleSelectLeg}
+                size="md"
+                label={t('trip.legStripLabel')}
+              />
+            )}
             <p className="mt-1 text-xs leading-4 text-on-surface-variant">{t('trip.mapHint')}</p>
             {selectedLegIndex !== null ? (
               <button
@@ -288,10 +299,12 @@ export function TripDetailScreen({
             />
           </section>
 
-          <FareBreakdown
-            fare={itinerary.fare}
-            sources={sources.filter((source) => itinerary.sources.includes(source.id))}
-          />
+          {walkFallback ? null : (
+            <FareBreakdown
+              fare={itinerary.fare}
+              sources={sources.filter((source) => itinerary.sources.includes(source.id))}
+            />
+          )}
         </div>
       </div>
     </main>

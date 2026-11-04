@@ -148,6 +148,60 @@ export function makeWalkOnlyItinerary(): ItineraryDto {
   return makeItinerary([makeLeg({ mode: 'walk', durationMin: 18, distanceM: 1400 })]);
 }
 
+export interface WalkFallbackOptions {
+  /** Whole-metre walking distance (`itinerary.walkDistanceM`). */
+  distanceM?: number;
+  /** Whole-minute walking duration (`itinerary.durationMin`). */
+  durationMin?: number;
+  /**
+   * `true` (default): straight-line geometry flagged `approximate`, the BFF's
+   * honest shape when no walking path exists. `false`: a routed, road-following
+   * walking geometry like any ordinary walk leg.
+   */
+  approximate?: boolean;
+}
+
+/**
+ * The synthesised walk fallback the BFF returns when the router found no
+ * transit option (PH-wide coverage D4): one walk leg, no fare, `fallback:
+ * 'walk'`. The straight-line estimate carries `approximate: true`; the routed
+ * variant omits it and draws solid.
+ */
+export function makeWalkFallbackItinerary({
+  distanceM = 1400,
+  durationMin = 18,
+  approximate = true,
+}: WalkFallbackOptions = {}): ItineraryDto {
+  const from = place('Cubao', 14.6195, 121.0528);
+  const to = place('Kamias', 14.6075, 121.0495);
+  const leg = makeLeg({
+    mode: 'walk',
+    from,
+    to,
+    durationMin,
+    distanceM,
+    ...(approximate
+      ? {
+          geometry: {
+            points: encodePolyline([
+              [from.lat, from.lon],
+              [to.lat, to.lon],
+            ]),
+            precision: 6,
+          },
+          approximate: true as const,
+        }
+      : {}),
+  });
+  return makeItinerary([leg], {
+    fallback: 'walk',
+    durationMin,
+    walkDistanceM: distanceM,
+    fare: { ...TEST_FARE, amount: 0, source_id: null, breakdown: [] },
+    sources: ['osm'],
+  });
+}
+
 /** A 15-leg itinerary (the long provincial fixture's shape). */
 export function makeLongItinerary(legCount = 15): ItineraryDto {
   const modes: LegMode[] = ['walk', 'jeepney', 'walk', 'bus', 'mrt3', 'walk'];
