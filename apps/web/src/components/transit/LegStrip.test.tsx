@@ -8,6 +8,7 @@ import {
   makeWalkOnlyItinerary,
 } from '../../test/fixtures/itinerary';
 import { LegStrip } from './LegStrip';
+import { MODE_COLORS } from './modeMeta';
 
 describe('LegStrip', () => {
   it('renders one segment per leg in travel order', () => {
@@ -94,5 +95,23 @@ describe('LegStrip', () => {
 
     await user.click(segments[2]!);
     expect(onSelectLeg).toHaveBeenCalledWith(2);
+  });
+
+  it('renders a tricycle leg with its own colour and Traysikel label', () => {
+    const trike = makeLeg({
+      mode: 'tricycle',
+      routeShortName: undefined,
+      headsign: undefined,
+      signage: undefined,
+      durationMin: 8,
+    });
+    render(<LegStrip legs={[trike]} />);
+
+    const [segment] = screen.getAllByTestId('leg-strip-segment');
+    expect(segment).toHaveAttribute('data-mode', 'tricycle');
+    expect(segment).toHaveTextContent('Traysikel');
+    const bar = segment?.querySelector('[aria-hidden="true"]');
+    expect(bar).not.toBeNull();
+    expect(bar).toHaveStyle({ backgroundColor: MODE_COLORS.tricycle });
   });
 });

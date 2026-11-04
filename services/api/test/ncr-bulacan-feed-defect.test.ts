@@ -31,6 +31,7 @@ const context: MapContext = {
   freeRideRouteIds: new Set<string>(),
   curatedLandmarks: new Map<string, readonly string[]>(),
   curatedRouteIds: new Set<string>(),
+  tricycleTerminals: [],
 };
 
 /** Real leg geometry, precision 6: Balintawak -> Yamaha Monumento (8,553 m). */

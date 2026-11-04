@@ -191,7 +191,11 @@ export function TripLiveScreen({
               ) : (
                 <>
                   {itinerary.durationMin} min
-                  {` · ₱${formatFare(itinerary.fare.amount)}`}
+                  {itinerary.fareIncomplete === true
+                    ? ` · ${t('fare.partialTotal', {
+                        amount: formatFare(itinerary.fare.amount),
+                      })}`
+                    : ` · ₱${formatFare(itinerary.fare.amount)}`}
                 </>
               )}
               {savedSnapshotAt === undefined ? ` · ${t('trip.cachedPlan')}` : ''}

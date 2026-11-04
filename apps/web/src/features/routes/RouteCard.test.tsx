@@ -411,6 +411,55 @@ describe('RouteCard walk fallback', () => {
   });
 });
 
+describe('RouteCard fare gaps and tricycle legs', () => {
+  it('labels an itinerary whose fare excludes an unpublished leg fare as partial', () => {
+    renderCard({ fareIncomplete: true });
+
+    expect(screen.getByTestId('fare-partial')).toHaveTextContent('Bahagyang pamasahe');
+    expect(screen.getByTestId('route-card-select')).toHaveAccessibleName(/bahagyang pamasahe/i);
+  });
+
+  it('renders a tricycle leg through the shared mode vocabulary', () => {
+    renderCard({
+      legs: [
+        makeLeg({ mode: 'walk' }),
+        makeLeg({
+          mode: 'tricycle',
+          routeShortName: undefined,
+          headsign: undefined,
+          signage: undefined,
+        }),
+      ],
+    });
+
+    const segment = screen.getAllByTestId('leg-strip-segment')[1];
+    expect(segment).toHaveAttribute('data-mode', 'tricycle');
+    expect(segment).toHaveTextContent('Traysikel');
+  });
+
+  it('leaves a fully priced jeepney/bus itinerary unchanged', () => {
+    renderCard({
+      legs: [
+        makeLeg({ mode: 'walk' }),
+        makeLeg({ mode: 'jeepney', routeShortName: 'T101', headsign: 'Novaliches' }),
+        makeLeg({ mode: 'walk' }),
+        makeLeg({ mode: 'bus', routeShortName: 'BUS 59', headsign: 'Monumento' }),
+      ],
+      fare: fare({
+        amount: 43,
+        source_id: 'ltfrb-fares',
+        breakdown: [{ label: 'Fares', amount: 43 }],
+      }),
+    });
+
+    expect(screen.queryByTestId('fare-partial')).toBeNull();
+    expect(screen.getByTestId('fare-amount')).toHaveTextContent('₱43');
+    expect(
+      screen.getAllByTestId('leg-strip-segment').map((segment) => segment.getAttribute('data-mode')),
+    ).toEqual(['walk', 'jeepney', 'walk', 'bus']);
+  });
+});
+
 describe('shared formatters', () => {
   it('formats integer fares whole and fractional fares with two decimals', () => {
     expect(formatFare(29)).toBe('29');

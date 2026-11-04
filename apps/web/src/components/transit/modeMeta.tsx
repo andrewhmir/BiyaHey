@@ -37,9 +37,9 @@ export const MODE_COLORS: Record<LegMode, string> = {
   ferry: '#1565c0',
   'uv-express': '#c2410c',
   p2p: '#475569',
-  // Provisional: Task 10 owns the final tricycle palette/label. The value is
-  // dark enough for the 3:1 map-casing contrast gate below and distinguishable
-  // from the rail purple.
+  // PH-wide coverage: the tricycle mode for the `trike-` route family. Dark
+  // enough for the 3:1 map-casing contrast gate below and distinct from the
+  // jeepney green, bus amber and rail purple; the icon and label carry it too.
   tricycle: '#9d174d',
 };
 

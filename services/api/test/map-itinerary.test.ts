@@ -12,6 +12,7 @@ import {
   mapPlanItinerariesDetailed,
   modeFromRouteId,
   polylineLengthM,
+  type MapContext,
 } from '../src/routing/map-itinerary.js';
 
 const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -52,6 +53,13 @@ describe('modeFromRouteId', () => {
     expect(modeFromRouteId('gtfs_jeep-t101')).toBe('jeepney');
     expect(modeFromRouteId('uv-c20')).toBe('uv-express');
     expect(modeFromRouteId('ferry-prfsguadelupeescolta')).toBe('ferry');
+  });
+
+  it('maps the trike- family to the tricycle mode, namespaced or bare', () => {
+    expect(modeFromRouteId('gtfs_trike-wilsonetrike')).toBe('tricycle');
+    expect(modeFromRouteId('trike-wilsonetrike')).toBe('tricycle');
+    // MOTIS namespaces with `gtfs_`; the suffix is lowercased like every family.
+    expect(modeFromRouteId('gtfs_trike-WilsonETrike')).toBe('tricycle');
   });
 
   it('returns undefined for rail lines v1 has no fare mode for', () => {
@@ -141,6 +149,7 @@ describe('plausibility guard raw durations', () => {
     freeRideRouteIds: new Set<string>(),
     curatedLandmarks: new Map<string, readonly string[]>(),
     curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
   };
 
   /** Map one synthetic 2.1 km bus leg that really takes `durationSeconds`. */
@@ -210,6 +219,7 @@ describe('unsupported-mode gate and informal transfers', () => {
     freeRideRouteIds: new Set<string>(),
     curatedLandmarks: new Map<string, readonly string[]>(),
     curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
   };
   const start = '2026-11-02T08:00:00Z';
 
@@ -336,6 +346,7 @@ describe('transit stop lists (R61)', () => {
     freeRideRouteIds: new Set<string>(),
     curatedLandmarks: new Map<string, readonly string[]>(),
     curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
   };
   const start = '2026-11-02T08:00:00Z';
   const end = '2026-11-02T08:30:00Z';
@@ -636,6 +647,7 @@ describe('leg geometry carry-through', () => {
     freeRideRouteIds: new Set<string>(),
     curatedLandmarks: new Map<string, readonly string[]>(),
     curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
   };
   const start = '2026-11-02T08:00:00Z';
   const end = '2026-11-02T08:30:00Z';
@@ -697,5 +709,239 @@ describe('leg geometry carry-through', () => {
       const itinerary = mapSingleLeg({ points, precision });
       expect(itinerary?.legs[0]?.geometry).toEqual({ points, precision: 5 });
     }
+  });
+});
+
+describe('tricycle legs with unpublished fares', () => {
+  const emptyContext: MapContext = {
+    freeRideRouteIds: new Set<string>(),
+    curatedLandmarks: new Map<string, readonly string[]>(),
+    curatedRouteIds: new Set<string>(),
+    tricycleTerminals: [],
+  };
+  const start = '2026-11-02T08:00:00Z';
+  const end = '2026-11-02T08:30:00Z';
+  const FROM = { name: 'START', lat: 14.6195, lon: 121.0528 };
+  const TO = { name: 'STOP', lat: 14.6185, lon: 121.0528 };
+
+  function walkLeg(): Record<string, unknown> {
+    return {
+      mode: 'WALK',
+      from: FROM,
+      to: TO,
+      startTime: start,
+      endTime: start,
+      duration: 240,
+      distance: 200,
+    };
+  }
+
+  function jeepLeg(): Record<string, unknown> {
+    return {
+      mode: 'BUS',
+      routeId: 'gtfs_jeep-t101',
+      routeShortName: 'T101',
+      displayName: 'T101',
+      from: FROM,
+      to: { name: 'JEEP END', lat: 14.64, lon: 121.07 },
+      startTime: start,
+      endTime: end,
+      duration: 900,
+      distance: 5_000,
+    };
+  }
+
+  function trikeLeg(): Record<string, unknown> {
+    return {
+      mode: 'BUS',
+      routeId: 'gtfs_trike-wilsonetrike',
+      routeShortName: 'Wilson E-trike',
+      displayName: 'Wilson E-trike',
+      from: TO,
+      to: { name: 'TRIKE END', lat: 14.625, lon: 121.06 },
+      startTime: start,
+      endTime: end,
+      duration: 600,
+      distance: 3_000,
+    };
+  }
+
+  function mapOne(
+    legs: readonly unknown[],
+    context: MapContext = emptyContext,
+  ): ItineraryDto | undefined {
+    return mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs }] },
+      context,
+    )[0];
+  }
+
+  it('maps a trike id to tricycle and marks the fare as unpublished', () => {
+    const itinerary = mapOne([walkLeg(), trikeLeg()]);
+    const trike = itinerary?.legs[1];
+
+    expect(trike?.mode).toBe('tricycle');
+    expect(trike?.fareNotPublished).toBe(true);
+    expect(itinerary?.fareIncomplete).toBe(true);
+    expect(itinerary?.fare.amount).toBe(0);
+    expect(itinerary?.fare.breakdown).toEqual([]);
+    // The additive marker stays off walk legs: they are not transit legs.
+    expect(itinerary?.legs[0]).not.toHaveProperty('fareNotPublished');
+  });
+
+  it('sums only the priced legs, never the jeepney matrix for a tricycle leg', () => {
+    const jeepOnly = mapOne([jeepLeg()]);
+    const mixed = mapOne([jeepLeg(), trikeLeg()]);
+
+    expect(jeepOnly?.fare.amount).toBeGreaterThan(0);
+    expect(jeepOnly?.fareIncomplete).toBeUndefined();
+    expect(mixed?.fareIncomplete).toBe(true);
+    expect(mixed?.fare.amount).toBe(jeepOnly?.fare.amount);
+    expect(mixed?.fare.breakdown).toEqual(jeepOnly?.fare.breakdown);
+  });
+
+  it('leaves a fully priced itinerary unchanged', () => {
+    const itinerary = mapOne([walkLeg(), jeepLeg(), walkLeg()]);
+
+    expect(itinerary?.fareIncomplete).toBeUndefined();
+    expect(itinerary?.legs.every((leg) => !('fareNotPublished' in leg))).toBe(true);
+  });
+});
+
+describe('tricycle terminal hints on walk legs', () => {
+  const start = '2026-11-02T08:00:00Z';
+  const end = '2026-11-02T08:30:00Z';
+  const WALK_START = { name: 'START', lat: 14.6195, lon: 121.0528 };
+
+  function contextWith(
+    terminals: MapContext['tricycleTerminals'],
+  ): MapContext {
+    return {
+      freeRideRouteIds: new Set<string>(),
+      curatedLandmarks: new Map<string, readonly string[]>(),
+      curatedRouteIds: new Set<string>(),
+      tricycleTerminals: terminals,
+    };
+  }
+
+  function terminalAt(
+    name: string,
+    lat: number,
+    lon = 121.0528,
+  ): MapContext['tricycleTerminals'][number] {
+    return { name, lat, lon };
+  }
+
+  function walkLeg(
+    from = WALK_START,
+    to = { name: 'STOP', lat: 14.6185, lon: 121.0528 },
+  ): Record<string, unknown> {
+    return {
+      mode: 'WALK',
+      from,
+      to,
+      startTime: start,
+      endTime: start,
+      duration: 240,
+      distance: 200,
+    };
+  }
+
+  function trikeLeg(): Record<string, unknown> {
+    return {
+      mode: 'BUS',
+      routeId: 'gtfs_trike-wilsonetrike',
+      routeShortName: 'Wilson E-trike',
+      from: WALK_START,
+      to: { name: 'FAR', lat: 14.625, lon: 121.06 },
+      startTime: start,
+      endTime: end,
+      duration: 600,
+      distance: 3_000,
+    };
+  }
+
+  function mapOne(
+    legs: readonly unknown[],
+    context: MapContext,
+  ): ItineraryDto | undefined {
+    return mapPlanItineraries(
+      { itineraries: [{ startTime: start, legs }] },
+      context,
+    )[0];
+  }
+
+  it('attaches the terminal name and rounded distance at ~120 m', () => {
+    const itinerary = mapOne(
+      [walkLeg()],
+      contextWith([terminalAt('Wilson E-trike Terminal', 14.62058)]),
+    );
+
+    expect(itinerary?.legs[0]?.tricycleHint).toEqual({
+      terminalName: 'Wilson E-trike Terminal',
+      distanceM: 120,
+    });
+  });
+
+  it('does not attach a hint beyond 300 m', () => {
+    const itinerary = mapOne(
+      [walkLeg()],
+      contextWith([terminalAt('Too Far Terminal', 14.624)]),
+    );
+
+    expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
+  });
+
+  it('prefers the nearest terminal when more than one is in range', () => {
+    const itinerary = mapOne(
+      [walkLeg()],
+      contextWith([
+        terminalAt('Far Terminal', 14.62175),
+        terminalAt('Near Terminal', 14.62058),
+      ]),
+    );
+
+    expect(itinerary?.legs[0]?.tricycleHint).toEqual({
+      terminalName: 'Near Terminal',
+      distanceM: 120,
+    });
+  });
+
+  it('hints from the walk endpoint that is close, start or end', () => {
+    const itinerary = mapOne(
+      [walkLeg({ name: 'START', lat: 14.61, lon: 121.0528 })],
+      contextWith([terminalAt('End Terminal', 14.61958)]),
+    );
+
+    expect(itinerary?.legs[0]?.tricycleHint).toEqual({
+      terminalName: 'End Terminal',
+      distanceM: 120,
+    });
+  });
+
+  it('uses a generic label for a terminal published without a name', () => {
+    const itinerary = mapOne(
+      [walkLeg()],
+      contextWith([terminalAt('', 14.62058)]),
+    );
+
+    expect(itinerary?.legs[0]?.tricycleHint?.terminalName).toBe('Tricycle terminal');
+  });
+
+  it('never attaches a hint to a transit leg', () => {
+    const itinerary = mapOne(
+      [trikeLeg()],
+      contextWith([terminalAt('Wilson E-trike Terminal', 14.62058)]),
+    );
+
+    expect(itinerary?.legs[0]?.mode).toBe('tricycle');
+    expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
+  });
+
+  it('leaves a walk unhinted when no terminal artifact was loaded', () => {
+    const itinerary = mapOne([walkLeg()], contextWith([]));
+
+    expect(itinerary?.legs[0]?.mode).toBe('walk');
+    expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
   });
 });

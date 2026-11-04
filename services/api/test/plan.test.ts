@@ -819,4 +819,115 @@ describe('POST /plan', () => {
       base.body.itineraries.map((itinerary) => itinerary.id),
     );
   });
+
+  /** Minimal plan: a walk leg near a mapped terminal, then one trike leg. */
+  function tricycleFixture(): unknown {
+    const start = '2026-11-02T08:00:00Z';
+    const end = '2026-11-02T08:30:00Z';
+    return {
+      itineraries: [
+        {
+          startTime: start,
+          endTime: end,
+          duration: 1_200,
+          legs: [
+            {
+              mode: 'WALK',
+              from: { name: 'START', lat: 14.6195, lon: 121.0528 },
+              to: { name: 'WILSON', lat: 14.6185, lon: 121.0528 },
+              startTime: start,
+              endTime: start,
+              duration: 240,
+              distance: 200,
+            },
+            {
+              mode: 'BUS',
+              routeId: 'gtfs_trike-wilsonetrike',
+              routeShortName: 'Wilson E-trike',
+              displayName: 'Wilson E-trike',
+              from: { name: 'WILSON', lat: 14.6185, lon: 121.0528 },
+              to: { name: 'END', lat: 14.625, lon: 121.06 },
+              startTime: start,
+              endTime: end,
+              duration: 600,
+              distance: 3_000,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function writeTerminalArtifact(dataDir: string): void {
+    mkdirSync(join(dataDir, 'build'), { recursive: true });
+    writeFileSync(
+      join(dataDir, 'build', 'tricycle-terminals.json'),
+      JSON.stringify({
+        generated_at: '2026-11-05T00:00:00Z',
+        source: 'osm',
+        extract: 'ph.osm.pbf',
+        terminals: [
+          {
+            osm_id: 'node/1',
+            name: 'Wilson E-trike Terminal',
+            lat: 14.62058,
+            lon: 121.0528,
+            kind: 'e-trike',
+          },
+        ],
+      }),
+    );
+  }
+
+  it('maps a tricycle leg with an unpublished fare and a walk-terminal hint', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'biyahey-tricycle-'));
+    try {
+      writeRegistry(dataDir, ['osm']);
+      writeTerminalArtifact(dataDir);
+      const app = buildApp({ dataDir, motisFetch: async () => tricycleFixture() });
+      const { statusCode, body } = await postPlan(app, {
+        origin: CUBAO,
+        destination: AYALA,
+        departAt: DEPART_AT,
+      });
+
+      expect(statusCode).toBe(200);
+      const itinerary = body.itineraries[0];
+      expect(itinerary?.legs.map((leg) => leg.mode)).toEqual(['walk', 'tricycle']);
+      expect(itinerary?.legs[1]?.fareNotPublished).toBe(true);
+      expect(itinerary?.fareIncomplete).toBe(true);
+      // No tricycle fare source exists, so the total is the sum of priced legs
+      // (zero here) rather than an invented amount or the jeepney matrix.
+      expect(itinerary?.fare.amount).toBe(0);
+      expect(itinerary?.fare.breakdown).toEqual([]);
+      expect(itinerary?.legs[0]?.tricycleHint).toEqual({
+        terminalName: 'Wilson E-trike Terminal',
+        distanceM: 120,
+      });
+      expect(itinerary?.legs[1]).not.toHaveProperty('tricycleHint');
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('serves the tricycle leg without a hint when the terminal artifact is absent', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'biyahey-no-tricycle-terminals-'));
+    try {
+      writeRegistry(dataDir, ['osm']);
+      const app = buildApp({ dataDir, motisFetch: async () => tricycleFixture() });
+      const { statusCode, body } = await postPlan(app, {
+        origin: CUBAO,
+        destination: AYALA,
+        departAt: DEPART_AT,
+      });
+
+      expect(statusCode).toBe(200);
+      const itinerary = body.itineraries[0];
+      expect(itinerary?.legs[0]).not.toHaveProperty('tricycleHint');
+      expect(itinerary?.legs[1]?.mode).toBe('tricycle');
+      expect(itinerary?.fareIncomplete).toBe(true);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -199,6 +199,11 @@ const TL = {
 
   // --- Fare breakdown -----------------------------------------------------
   'fare.empty': 'Walang bayad sa rutang ito.',
+  'fare.notPublished': 'Walang publikadong pamasahe',
+  'fare.partial': 'Bahagyang pamasahe',
+  'fare.partialTotal': 'Bahagyang pamasahe ₱{amount}',
+  'fare.incomplete':
+    'May mga leg na walang publikadong pamasahe — hindi kasama sa total ang mga ito.',
   'fare.breakdownLabel': 'Fare breakdown',
   'fare.total': 'Total ₱{amount}',
   'fare.effective': 'Effective {date}',
@@ -276,6 +281,9 @@ const TL = {
   'trip.stopCount': '{count} hintuan',
   'trip.legNumber': 'Hakbang {index}',
   'trip.mapHint': 'Pindutin ang isang hakbang para makita ang ruta nito.',
+  // PH-wide coverage: a mapped terminal near a walk is a hint, not a leg.
+  'trip.tricycleHint': 'Traysikel malamang dito — wala sa dataset',
+  'trip.tricycleHintNear': 'Malapit sa {terminal} · {distance} m',
 
   // --- UX v2: Live walkthrough ------------------------------------------
   'trip.liveProgress': 'Hakbang {index} ng {total}',
@@ -553,6 +561,10 @@ const EN: Record<StringKey, string> = {
   'trip.noCached': 'No route left in the cache. Go back to search and plan again.',
 
   'fare.empty': 'No fare on this route.',
+  'fare.notPublished': 'Fare not published',
+  'fare.partial': 'Partial fare',
+  'fare.partialTotal': 'Partial fare ₱{amount}',
+  'fare.incomplete': 'Some legs have no published fare — the total excludes them.',
   'fare.breakdownLabel': 'Fare breakdown',
   'fare.total': 'Total ₱{amount}',
   'fare.effective': 'Effective {date}',
@@ -625,6 +637,9 @@ const EN: Record<StringKey, string> = {
   'trip.stopCount': '{count} stops',
   'trip.legNumber': 'Step {index}',
   'trip.mapHint': 'Press a step to see its route.',
+  // PH-wide coverage: a mapped terminal near a walk is a hint, not a leg.
+  'trip.tricycleHint': 'Tricycle likely here — not in the dataset',
+  'trip.tricycleHintNear': 'Near {terminal} · {distance} m',
 
   'trip.liveProgress': 'Step {index} of {total}',
   'trip.liveHonesty': 'This is a guide based on the planned itinerary — no live tracking.',

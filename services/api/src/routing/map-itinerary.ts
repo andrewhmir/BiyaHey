@@ -13,6 +13,24 @@ import { decodePolyline, quoteFareForLeg, sumFares } from '@biyahey/shared';
 import { haversineM } from '../domain/geo.js';
 
 /**
+ * A mapped tricycle terminal loaded from the build artifact
+ * (`data/build/tricycle-terminals.json`, build root `/data`).
+ *
+ * Only `name` and the coordinates are used by the mapper: the hint annotates a
+ * walk leg, it never becomes a route. `osmId`/`kind` are carried for callers
+ * that want the provenance of the terminal; the artifact is the source of
+ * truth and rows missing coordinates are dropped by the loader.
+ */
+export interface TricycleTerminal {
+  osmId?: string;
+  /** Published display name, or an empty string when the row had none. */
+  name: string;
+  lat: number;
+  lon: number;
+  kind?: string;
+}
+
+/**
  * Data the adapter needs beyond the raw MOTIS payload.
  *
  * `freeRideRouteIds` is empty in the default install (no free-ride status has
@@ -24,7 +42,19 @@ export interface MapContext {
   curatedLandmarks: ReadonlyMap<string, readonly string[]>;
   /** Normalized route ids listed in the curated jeep/UV inventory. */
   curatedRouteIds: ReadonlySet<string>;
+  /**
+   * Mapped tricycle terminals used only to annotate walk legs (PH-wide
+   * coverage D5). Empty when the build artifact is absent, in which case walk
+   * legs stay unhinted and no error is raised.
+   */
+  tricycleTerminals: readonly TricycleTerminal[];
 }
+
+/** Walk legs within this radius of a mapped terminal carry a hint. */
+export const TRICYCLE_HINT_RADIUS_M = 300;
+
+/** Honest label used when a terminal artifact row published no name. */
+export const GENERIC_TRICYCLE_TERMINAL_NAME = 'Tricycle terminal';
 
 /**
  * Raw (unrounded) duration in seconds of every mapped leg, keyed per itinerary.
@@ -48,7 +78,7 @@ interface MappedLeg {
 }
 
 /** Route-id families whose first segment is the mode contract (R29). */
-const ROUTE_ID_PATTERN = /^(?:[a-z0-9]+_)?(rail|bus|jeep|uv|ferry)-(.+)$/i;
+const ROUTE_ID_PATTERN = /^(?:[a-z0-9]+_)?(rail|bus|jeep|uv|ferry|trike)-(.+)$/i;
 
 const RAIL_MODES: Readonly<Record<string, LegMode>> = Object.freeze({
   '1': 'lrt1',
@@ -74,6 +104,11 @@ const RAIL_MODES: Readonly<Record<string, LegMode>> = Object.freeze({
  * them as the free PRFS service would be false, so they return `undefined` too
  * and the plan route counts them as unsupported. The publish stage also
  * excludes both families from the built feed, so this is a defence in depth.
+ *
+ * `trike-` ids are the PH-wide-coverage tricycle family (OSM-mapped e-trike
+ * corridors and the curated tricycle inventory). They map to `tricycle`; the
+ * mode has no published fare source, so `mapLeg` marks the fare gap instead of
+ * pricing it.
  */
 export function modeFromRouteId(routeId: string): LegMode | undefined {
   const normalized = normalizeRouteId(routeId);
@@ -94,6 +129,8 @@ export function modeFromRouteId(routeId: string): LegMode | undefined {
       return 'uv-express';
     case 'ferry':
       return suffix.startsWith('prfs') ? 'ferry' : undefined;
+    case 'trike':
+      return 'tricycle';
     default:
       return undefined;
   }
@@ -427,6 +464,44 @@ function landmarkHintFor(
 }
 
 /**
+ * Nearest mapped tricycle terminal within {@link TRICYCLE_HINT_RADIUS_M} of a
+ * walk leg's start or end, as the additive `LegDto.tricycleHint`.
+ *
+ * The hint is evidence that a terminal exists near the walk, not evidence of a
+ * served route: terminals are point features, so the mapper never turns this
+ * into a tricycle leg. A terminal with no published name keeps the generic
+ * label. An empty terminal list (artifact absent) returns `undefined`.
+ */
+function tricycleTerminalHint(
+  from: LegPlaceDto,
+  to: LegPlaceDto,
+  terminals: readonly TricycleTerminal[],
+): LegDto['tricycleHint'] | undefined {
+  let best: LegDto['tricycleHint'];
+  let bestDistanceM = Number.POSITIVE_INFINITY;
+  for (const terminal of terminals) {
+    if (!Number.isFinite(terminal.lat) || !Number.isFinite(terminal.lon)) {
+      continue;
+    }
+    for (const place of [from, to]) {
+      const distanceM = haversineM([place.lat, place.lon], [terminal.lat, terminal.lon]);
+      if (!Number.isFinite(distanceM) || distanceM > TRICYCLE_HINT_RADIUS_M) {
+        continue;
+      }
+      if (distanceM < bestDistanceM) {
+        bestDistanceM = distanceM;
+        const name = terminal.name.trim();
+        best = {
+          terminalName: name.length > 0 ? name : GENERIC_TRICYCLE_TERMINAL_NAME,
+          distanceM: Math.round(distanceM),
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Sentinel returned by {@link mapLeg} when the leg is a mode/route family v1
  * deliberately does not price (unsupported rail, non-PRFS ferry, P2P, ...).
  *
@@ -497,7 +572,11 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
     normalizedRouteId !== undefined && context.freeRideRouteIds.has(normalizedRouteId);
 
   let quote: FareQuote | null = null;
-  if (mode !== 'walk') {
+  if (mode === 'tricycle') {
+    // No published tricycle fare source exists (PH-wide coverage R4/R11). The
+    // leg is carried with `fareNotPublished` below and excluded from the
+    // itinerary sum; pricing it with the jeepney matrix would invent an amount.
+  } else if (mode !== 'walk') {
     const fareMode = FARE_MODE_BY_LEG[mode];
     if (fareMode === undefined) {
       return undefined;
@@ -539,6 +618,19 @@ function mapLeg(raw: unknown, context: MapContext): LegMapResult {
     distanceM: Math.round(distanceM),
     sourceIds,
   };
+  if (mode === 'tricycle') {
+    // Additive marker, never an amount: the itinerary total excludes this leg
+    // and carries `fareIncomplete` (see `mapItinerary`).
+    dto.fareNotPublished = true;
+  }
+  if (mode === 'walk') {
+    const hint = tricycleTerminalHint(from, to, context.tricycleTerminals);
+    if (hint !== undefined) {
+      // A hint only annotates a walk leg. The mapper never synthesizes a
+      // tricycle leg from a terminal: the route is not in the dataset.
+      dto.tricycleHint = hint;
+    }
+  }
   if (shortName !== undefined) {
     dto.routeShortName = shortName;
   }
@@ -643,6 +735,12 @@ function mapItinerary(
     sources: [...sources],
     legs,
   };
+  // At least one leg has no published fare source (a tricycle leg today): the
+  // total is the sum of the priced legs only, and the flag stops the UI from
+  // presenting that partial sum as a complete fare.
+  if (legs.some((leg) => leg.fareNotPublished === true)) {
+    draft.fareIncomplete = true;
+  }
   const itinerary: ItineraryWithRawDurations = {
     ...draft,
     id: `it-${stableHash(itineraryKey(draft))}`,

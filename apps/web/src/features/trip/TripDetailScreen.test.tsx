@@ -648,6 +648,117 @@ describe('TripDetailScreen', () => {
     expect(rows.at(-1)).toHaveAttribute('data-alight', 'true');
     expect(rows.at(-1)).toHaveTextContent('Ayala');
   });
+  it('shows a tricycle leg with an unpublished fare and a partial total', () => {
+    const itinerary = makeItinerary(
+      [
+        makeLeg({ mode: 'walk' }),
+        makeLeg({
+          mode: 'tricycle',
+          routeShortName: 'Wilson E-trike',
+          headsign: 'Greenhills',
+          signage: 'Look for: Wilson E-trike',
+          fareNotPublished: true,
+        }),
+      ],
+      {
+        fareIncomplete: true,
+        fare: {
+          amount: 0,
+          currency: 'PHP',
+          confidence: 'official',
+          effective_from: '2026-03-23',
+          source_id: null,
+          breakdown: [],
+        },
+      },
+    );
+
+    renderDetail(itinerary);
+
+    expect(screen.getAllByTestId('leg-strip-segment')[1]).toHaveAttribute('data-mode', 'tricycle');
+    expect(screen.getAllByTestId('leg-row')[1]).toHaveTextContent('Traysikel');
+    expect(screen.getByTestId('fare-not-published')).toHaveTextContent(
+      'Walang publikadong pamasahe',
+    );
+    // The total is labelled partial, never presented as a complete peso fare.
+    expect(screen.getByTestId('fare-total')).toHaveTextContent('Bahagyang pamasahe ₱0');
+    expect(screen.getByTestId('fare-breakdown-total')).toHaveTextContent(
+      'Bahagyang pamasahe ₱0',
+    );
+    expect(screen.getByTestId('fare-incomplete')).toHaveTextContent(/hindi kasama sa total/i);
+  });
+
+  it('shows the terminal hint only on a walk leg that carries one', () => {
+    const hinted = makeItinerary(
+      [
+        makeLeg({
+          mode: 'walk',
+          tricycleHint: { terminalName: 'Wilson E-trike Terminal', distanceM: 120 },
+        }),
+        makeLeg({ mode: 'tricycle', fareNotPublished: true }),
+      ],
+      {
+        fareIncomplete: true,
+        fare: {
+          amount: 0,
+          currency: 'PHP',
+          confidence: 'official',
+          effective_from: '2026-03-23',
+          source_id: null,
+          breakdown: [],
+        },
+      },
+    );
+
+    const { unmount } = renderDetail(hinted);
+    const badge = screen.getByTestId('tricycle-hint');
+    expect(badge).toHaveTextContent('Traysikel malamang dito — wala sa dataset');
+    expect(badge).toHaveTextContent('Wilson E-trike Terminal');
+    expect(badge).toHaveTextContent('120 m');
+    expect(badge).toHaveAttribute('data-distance-m', '120');
+    unmount();
+
+    renderDetail(MRT_ITINERARY);
+    expect(screen.queryByTestId('tricycle-hint')).toBeNull();
+  });
+
+  it('leaves a fully priced jeepney/bus itinerary unchanged', () => {
+    const itinerary = makeItinerary(
+      [
+        makeLeg({ mode: 'walk' }),
+        makeLeg({ mode: 'jeepney', routeShortName: 'T101', headsign: 'Novaliches' }),
+        makeLeg({ mode: 'walk' }),
+        makeLeg({ mode: 'bus', routeShortName: 'BUS 59', headsign: 'Monumento' }),
+        makeLeg({ mode: 'walk' }),
+      ],
+      {
+        fare: {
+          amount: 43,
+          currency: 'PHP',
+          confidence: 'official',
+          effective_from: '2026-03-23',
+          source_id: 'ltfrb-fares',
+          breakdown: [
+            { label: 'Traditional jeepney base fare', amount: 14 },
+            { label: 'City bus ordinary fare', amount: 29 },
+          ],
+        },
+        sources: ['osm', 'ltfrb-fares'],
+      },
+    );
+
+    renderDetail(itinerary);
+
+    expect(screen.queryByTestId('fare-not-published')).toBeNull();
+    expect(screen.getByTestId('fare-total')).toHaveTextContent('₱43');
+    expect(screen.getByTestId('fare-total')).not.toHaveTextContent(/bahagyang/i);
+    expect(screen.getByTestId('fare-breakdown-total')).toHaveTextContent('Total ₱43');
+    expect(screen.queryByTestId('fare-incomplete')).toBeNull();
+    expect(screen.queryByTestId('tricycle-hint')).toBeNull();
+    expect(
+      screen.getAllByTestId('leg-strip-segment').map((segment) => segment.getAttribute('data-mode')),
+    ).toEqual(['walk', 'jeepney', 'walk', 'bus', 'walk']);
+  });
 });
 
 describe('/trip/:id route wiring', () => {

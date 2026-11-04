@@ -72,6 +72,10 @@ const LEG_MODES: ReadonlySet<string> = new Set<string>([
   'ferry',
   'uv-express',
   'p2p',
+  // PH-wide coverage: the `trike-` family. Without this, saving a plan that
+  // uses a tricycle leg would be rejected on read-back and the Save CTA would
+  // report a failure for a valid itinerary.
+  'tricycle',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

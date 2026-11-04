@@ -225,7 +225,9 @@ export function TripDetailScreen({
             ) : (
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-on-surface-variant">
                 <span data-testid="fare-total" className="font-semibold text-on-surface">
-                  ₱{formatFare(itinerary.fare.amount)}
+                  {itinerary.fareIncomplete === true
+                    ? t('fare.partialTotal', { amount: formatFare(itinerary.fare.amount) })
+                    : `₱${formatFare(itinerary.fare.amount)}`}
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>{transfersLabel(itinerary.transfers, t)}</span>
@@ -324,6 +326,7 @@ export function TripDetailScreen({
           {walkFallback ? null : (
             <FareBreakdown
               fare={itinerary.fare}
+              incomplete={itinerary.fareIncomplete === true}
               sources={sources.filter((source) => itinerary.sources.includes(source.id))}
             />
           )}

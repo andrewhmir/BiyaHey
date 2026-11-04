@@ -42,9 +42,15 @@ export interface FareBreakdownProps {
   fare: FareQuote;
   /** Provenance rows the itinerary used (already intersected; never hardcoded, R45). */
   sources: readonly DataSource[];
+  /**
+   * True when the API marked the itinerary `fareIncomplete`: at least one leg
+   * has no published fare (a tricycle leg), so the total is a partial sum. The
+   * footer labels it as such instead of presenting it as a complete fare.
+   */
+  incomplete?: boolean;
 }
 
-export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
+export function FareBreakdown({ fare, sources, incomplete = false }: FareBreakdownProps) {
   const { t } = useT();
   const links = fareSourceRows(fare, sources);
 
@@ -70,12 +76,22 @@ export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
               {t('common.estimate')}
             </span>
           ) : null}
+          {incomplete ? (
+            <span
+              data-testid="fare-partial"
+              className="rounded-pill border border-fare-border bg-surface-container-lowest/60 px-2 py-0.5 text-xs font-medium leading-4"
+            >
+              {t('fare.partial')}
+            </span>
+          ) : null}
         </div>
         <p
           data-testid="fare-breakdown-total"
           className="shrink-0 text-2xl font-extrabold leading-8 tracking-tight tabular-nums"
         >
-          {t('fare.total', { amount: formatFare(fare.amount) })}
+          {incomplete
+            ? t('fare.partialTotal', { amount: formatFare(fare.amount) })
+            : t('fare.total', { amount: formatFare(fare.amount) })}
         </p>
       </div>
 
@@ -100,6 +116,12 @@ export function FareBreakdown({ fare, sources }: FareBreakdownProps) {
           ))}
         </ul>
       )}
+
+      {incomplete ? (
+        <p data-testid="fare-incomplete" className="mt-2 text-xs leading-4">
+          {t('fare.incomplete')}
+        </p>
+      ) : null}
 
       <p className="mt-2 text-xs leading-4">
         {t('fare.effective', { date: fare.effective_from })}

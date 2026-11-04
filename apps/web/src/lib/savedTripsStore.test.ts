@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { planMrt3CubaoAyalaResponse } from '../test/msw/handlers';
+import { makeItinerary, makeLeg } from '../test/fixtures/itinerary';
 import {
   RECENT_MAX_AGE_DAYS,
   RECENT_TRIPS_KEY,
@@ -71,6 +72,31 @@ describe('saved-trips store (Task 6 shape preserved)', () => {
     expect(rows[0]?.itinerary.id).toBe(ITINERARY.id);
     // The read migrates the legacy payload in place.
     expect(JSON.parse(localStorage.getItem(SAVED_TRIPS_KEY) ?? 'null')).toMatchObject({ v: 1 });
+  });
+
+  it('round-trips a tricycle itinerary with its fare gap and terminal hint', () => {
+    const itinerary = makeItinerary(
+      [
+        makeLeg({
+          mode: 'walk',
+          tricycleHint: { terminalName: 'Wilson E-trike Terminal', distanceM: 120 },
+        }),
+        makeLeg({ mode: 'tricycle', fareNotPublished: true }),
+      ],
+      { fareIncomplete: true },
+    );
+
+    const saved = saveTrip(itinerary, PLAN.sources, new Date('2026-11-01T08:00:00.000Z'));
+    expect(saved).not.toBeNull();
+
+    const [stored] = readSavedTrips();
+    expect(stored?.itinerary.legs[1]?.mode).toBe('tricycle');
+    expect(stored?.itinerary.legs[1]?.fareNotPublished).toBe(true);
+    expect(stored?.itinerary.fareIncomplete).toBe(true);
+    expect(stored?.itinerary.legs[0]?.tricycleHint).toEqual({
+      terminalName: 'Wilson E-trike Terminal',
+      distanceM: 120,
+    });
   });
 
   it('drops a malformed row whole instead of partially normalising it', () => {

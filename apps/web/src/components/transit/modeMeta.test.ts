@@ -44,6 +44,22 @@ function contrast(a: string, b: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function rgb(hex: string): [number, number, number] {
+  const raw = hex.replace('#', '');
+  return [
+    Number.parseInt(raw.slice(0, 2), 16),
+    Number.parseInt(raw.slice(2, 4), 16),
+    Number.parseInt(raw.slice(4, 6), 16),
+  ];
+}
+
+/** Rough RGB distance; enough to prove two mode chrome colours differ. */
+function channelDistance(a: string, b: string): number {
+  const [ar, ag, ab] = rgb(a);
+  const [br, bg, bb] = rgb(b);
+  return Math.round(Math.hypot(ar - br, ag - bg, ab - bb));
+}
+
 describe('modeMeta', () => {
   it('defines a colour and an icon for every mode', () => {
     expect([...KNOWN_MODES].sort()).toEqual([...ALL_MODES].sort());
@@ -57,6 +73,17 @@ describe('modeMeta', () => {
     for (const mode of ALL_MODES) {
       const ratio = contrast(MODE_COLORS[mode], '#ffffff');
       expect(ratio, `${mode} is ${ratio.toFixed(2)}:1 against white`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('finalizes the tricycle presentation distinct from jeepney and bus', () => {
+    expect(modeLabel('tricycle', defaultT)).toBe('Traysikel');
+    expect(modeIcon('tricycle')).toBe(MODE_ICONS.tricycle);
+    // Final PH-wide-coverage palette value; colour is never the only carrier.
+    expect(MODE_COLORS.tricycle).toBe('#9d174d');
+    for (const other of ['jeepney', 'bus'] as const) {
+      const distance = channelDistance(MODE_COLORS.tricycle, MODE_COLORS[other]);
+      expect(distance, `tricycle vs ${other} RGB distance`).toBeGreaterThanOrEqual(60);
     }
   });
 

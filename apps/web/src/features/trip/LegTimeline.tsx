@@ -107,19 +107,40 @@ function SignagePlate({ leg }: { leg: LegDto }) {
 
 function WalkExtras({ leg }: { leg: LegDto }) {
   const { t } = useT();
-  if (leg.informalTransfer !== true) {
+  const hint = leg.tricycleHint;
+  if (hint === undefined && leg.informalTransfer !== true) {
     return null;
   }
   return (
-    <div
-      data-testid="transfer-note"
-      className="mt-2 rounded-card border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-    >
-      <p>{t('trip.transferBuffer')}</p>
-      <p data-testid="informal-transfer" className="text-xs text-on-surface-variant">
-        {t('trip.informalTransfer')}
-      </p>
-    </div>
+    <>
+      {hint !== undefined ? (
+        <div
+          data-testid="tricycle-hint"
+          data-terminal={hint.terminalName}
+          data-distance-m={hint.distanceM}
+          className="mt-2 rounded-card border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+        >
+          <p className="font-medium">{t('trip.tricycleHint')}</p>
+          <p className="text-xs text-on-surface-variant">
+            {t('trip.tricycleHintNear', {
+              terminal: hint.terminalName,
+              distance: hint.distanceM,
+            })}
+          </p>
+        </div>
+      ) : null}
+      {leg.informalTransfer === true ? (
+        <div
+          data-testid="transfer-note"
+          className="mt-2 rounded-card border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+        >
+          <p>{t('trip.transferBuffer')}</p>
+          <p data-testid="informal-transfer" className="text-xs text-on-surface-variant">
+            {t('trip.informalTransfer')}
+          </p>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -137,6 +158,16 @@ function RideExtras({ leg }: { leg: LegDto }) {
       <p data-testid="alight-copy" className="mt-1 break-words text-sm text-on-surface-variant">
         {t('trip.alightAt', { place: leg.to.name })}
       </p>
+      {leg.fareNotPublished === true ? (
+        // PH-wide coverage: a tricycle leg has no published fare source. Show
+        // the gap in words instead of a peso amount the API never sent.
+        <p
+          data-testid="fare-not-published"
+          className="mt-2 inline-flex max-w-full items-center rounded-pill border border-outline-variant bg-surface-container-low px-3 py-1.5 text-sm font-medium text-on-surface"
+        >
+          {t('fare.notPublished')}
+        </p>
+      ) : null}
       {stops !== undefined && stopCount > 1 ? (
         <div className="mt-2">
           <p data-testid="stop-counter" className="break-words text-sm text-on-surface-variant">

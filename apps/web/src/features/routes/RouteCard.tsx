@@ -114,6 +114,7 @@ export const RouteCard = memo(function RouteCard({
   const { t } = useT();
   const arrival = arrivalLabel(itinerary.endTime);
   const walkFallback = isWalkFallback(itinerary);
+  const partialFare = itinerary.fareIncomplete === true;
   // A fallback is never a priced, ranked transit option: its accessible name
   // carries the estimate badge and walking distance instead of a peso fare.
   const cardName = walkFallback
@@ -121,10 +122,9 @@ export const RouteCard = memo(function RouteCard({
         itinerary.walkDistanceM,
         t,
       )}`
-    : `${itinerary.durationMin} min, ₱${formatFare(itinerary.fare.amount)}, ${transfersLabel(
-        itinerary.transfers,
-        t,
-      )}, ${walkLabel(itinerary.walkDistanceM, t)}`;
+    : `${partialFare ? `${t('fare.partial')} · ` : ''}${itinerary.durationMin} min, ₱${formatFare(
+        itinerary.fare.amount,
+      )}, ${transfersLabel(itinerary.transfers, t)}, ${walkLabel(itinerary.walkDistanceM, t)}`;
 
   return (
     <div
@@ -186,6 +186,14 @@ export const RouteCard = memo(function RouteCard({
                 >
                   ₱{formatFare(itinerary.fare.amount)}
                 </span>
+                {partialFare ? (
+                  <span
+                    data-testid="fare-partial"
+                    className="rounded-pill border border-fare-border bg-fare-bg px-2 py-0.5 text-[11px] font-semibold leading-4 text-on-fare-bg"
+                  >
+                    {t('fare.partial')}
+                  </span>
+                ) : null}
               </>
             )}
           </div>

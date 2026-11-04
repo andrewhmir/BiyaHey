@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { normalizeRouteId } from '../routing/map-itinerary.js';
+import { normalizeRouteId, type TricycleTerminal } from '../routing/map-itinerary.js';
 
 /** Curated data the plan adapter adds to the raw MOTIS itineraries. */
 export interface CuratedData {
@@ -15,10 +15,23 @@ export interface CuratedData {
    * live feed is OSM-relation-derived.
    */
   curatedRouteIds: ReadonlySet<string>;
+  /**
+   * Mapped tricycle terminals from the build artifact, used only to hint at a
+   * walk leg (PH-wide coverage D5). Empty when the artifact is absent or carries
+   * no usable rows: a missing artifact is a legitimate degradation, not an
+   * error.
+   */
+  tricycleTerminals: readonly TricycleTerminal[];
 }
 
 const FREE_RIDE_FILE = join('fares', 'free-ride-routes.yaml');
 const INVENTORY_FILE = join('routes', 'jeepney-inventory.yaml');
+/**
+ * Canonical terminal artifact written by the data build (Task 8). The BFF's
+ * data root is `/data`, so the runtime path is
+ * `/data/build/tricycle-terminals.json`.
+ */
+const TRICYCLE_TERMINALS_FILE = join('build', 'tricycle-terminals.json');
 
 type JsonRecord = Record<string, unknown>;
 
@@ -36,8 +49,69 @@ function asArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 function readYaml(path: string): unknown {
   return parse(readFileSync(path, 'utf8'));
+}
+
+/**
+ * Load the mapped tricycle terminals, or `[]` when the artifact is absent.
+ *
+ * The artifact is produced by a different lane and may legitimately not exist
+ * yet, so it is loaded defensively rather than failing boot the way the two
+ * hand-curated YAML files do: a corrupt JSON document, a document without a
+ * `terminals` array, or a row without usable coordinates is ignored. A hint is
+ * an optional annotation, so degrading to no hints is always safe.
+ */
+function loadTricycleTerminals(dataDir: string): TricycleTerminal[] {
+  const path = join(dataDir, TRICYCLE_TERMINALS_FILE);
+  if (!existsSync(path)) {
+    return [];
+  }
+  let document: unknown;
+  try {
+    document = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return [];
+  }
+  const record = asRecord(document);
+  const rows = record === undefined ? undefined : asArray(record.terminals);
+  if (rows === undefined) {
+    return [];
+  }
+  const terminals: TricycleTerminal[] = [];
+  for (const entry of rows) {
+    const row = asRecord(entry);
+    if (row === undefined) {
+      continue;
+    }
+    const lat = asNumber(row.lat);
+    const lon = asNumber(row.lon);
+    if (lat === undefined || lon === undefined) {
+      continue;
+    }
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      continue;
+    }
+    const terminal: TricycleTerminal = {
+      name: asString(row.name)?.trim() ?? '',
+      lat,
+      lon,
+    };
+    const osmId = asString(row.osm_id) ?? asNumber(row.osm_id)?.toString();
+    if (osmId !== undefined) {
+      terminal.osmId = osmId;
+    }
+    const kind = asString(row.kind);
+    if (kind !== undefined) {
+      terminal.kind = kind;
+    }
+    terminals.push(terminal);
+  }
+  return terminals;
 }
 
 function loadFreeRideRoutes(dataDir: string): Set<string> {
@@ -112,11 +186,14 @@ function loadCuratedInventory(dataDir: string): CuratedInventory {
 }
 
 /**
- * Load the two optional curated data files next to the provenance registry.
+ * Load the optional curated data files and built artifacts next to the
+ * provenance registry.
  *
  * Missing files are legitimate (a test data dir may only carry
- * `provenance/sources.yaml`); malformed files fail at boot, where an operator
- * can see the error, rather than degrading every later plan request.
+ * `provenance/sources.yaml`); malformed hand-curated YAML fails at boot, where
+ * an operator can see the error, rather than degrading every later plan
+ * request. The machine-built tricycle terminal artifact is the exception: a
+ * missing or corrupt artifact degrades to no walk hints and no error.
  */
 export function loadCuratedData(dataDir: string): CuratedData {
   const inventory = loadCuratedInventory(dataDir);
@@ -124,5 +201,6 @@ export function loadCuratedData(dataDir: string): CuratedData {
     freeRideRouteIds: loadFreeRideRoutes(dataDir),
     curatedLandmarks: inventory.landmarks,
     curatedRouteIds: inventory.routeIds,
+    tricycleTerminals: loadTricycleTerminals(dataDir),
   };
 }
