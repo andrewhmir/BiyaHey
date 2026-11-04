@@ -9,7 +9,12 @@ import {
 import { useState } from 'react';
 import { LegStrip } from '../../components/transit/LegStrip';
 import { modeLabel } from '../../components/transit/modeMeta';
-import { isWalkFallback } from '../../components/transit/WalkFallback';
+import {
+  isWalkFallback,
+  WalkEstimateBadge,
+  WalkFallbackNotice,
+  walkFallbackStat,
+} from '../../components/transit/WalkFallback';
 import { useT } from '../../i18n/useT';
 import { formatFare } from '../../lib/format';
 import { formatLongDate } from '../../lib/time';
@@ -106,6 +111,7 @@ export function TripLiveScreen({
 
   const itinerary = resolved;
   const legs = itinerary.legs;
+  const walkFallback = isWalkFallback(itinerary);
   const lastIndex = legs.length - 1;
   const stale = progress.itineraryId !== itineraryKey;
   const stepIndex = stale ? 0 : Math.min(Math.max(0, progress.stepIndex), lastIndex);
@@ -178,8 +184,16 @@ export function TripLiveScreen({
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-6">
           <div>
             <p data-testid="live-trip-summary" className="text-sm text-on-surface-variant">
-              {itinerary.durationMin} min
-              {isWalkFallback(itinerary) ? '' : ` · ₱${formatFare(itinerary.fare.amount)}`}
+              {walkFallback ? (
+                <>
+                  <WalkEstimateBadge /> <span>{walkFallbackStat(itinerary, t)}</span>
+                </>
+              ) : (
+                <>
+                  {itinerary.durationMin} min
+                  {` · ₱${formatFare(itinerary.fare.amount)}`}
+                </>
+              )}
               {savedSnapshotAt === undefined ? ` · ${t('trip.cachedPlan')}` : ''}
             </p>
             {savedSnapshotAt !== undefined ? (
@@ -202,13 +216,15 @@ export function TripLiveScreen({
             data-testid="live-banner"
             className="rounded-card border border-outline-variant bg-surface-container-low px-4 py-3"
           >
-            {isWalkFallback(itinerary) ? (
-              <p
-                data-testid="live-walk-fallback-body"
-                className="text-sm leading-5 text-on-surface-variant"
-              >
-                {t('walkFallback.body')}
-              </p>
+            {walkFallback ? (
+              // Badge and walking stat live in the summary above, so the live
+              // banner repeats the honest copy and the >25 km warning only.
+              <WalkFallbackNotice
+                itinerary={itinerary}
+                badge={false}
+                stat={false}
+                variant="compact"
+              />
             ) : (
               <>
                 <p lang="en" className="text-sm font-semibold text-on-surface">
@@ -232,12 +248,16 @@ export function TripLiveScreen({
               {t('trip.liveProgress', { index: stepIndex + 1, total: legs.length })} ·{' '}
               {modeLabel(currentLeg.mode, t)}
             </p>
-            <LegStrip
-              legs={legs}
-              selectedLegIndex={finished ? lastIndex : stepIndex}
-              size="sm"
-              className="mt-2"
-            />
+            {/* A fallback has no transit leg to step through; the walking
+                estimate is stated once above rather than implying a route. */}
+            {walkFallback ? null : (
+              <LegStrip
+                legs={legs}
+                selectedLegIndex={finished ? lastIndex : stepIndex}
+                size="sm"
+                className="mt-2"
+              />
+            )}
             <p data-testid="live-announce" aria-live="polite" className="sr-only">
               {announcement}
             </p>

@@ -15,6 +15,7 @@ import {
   makeLeg,
   makeWalkFallbackItinerary,
   makeWalkOnlyItinerary,
+  WALK_ESTIMATE_SOURCE,
 } from '../../test/fixtures/itinerary';
 import { RouteCard, fareEffectiveLine, type RouteBadge } from './RouteCard';
 
@@ -316,7 +317,14 @@ describe('RouteCard provenance chip (R45)', () => {
 
 describe('RouteCard walk fallback', () => {
   it('renders the walk estimate badge, distance and duration without transit affordances', () => {
-    renderCard({ ...makeWalkFallbackItinerary(), id: 'walk-fallback' }, { badge: 'BEST' });
+    const fallback = makeWalkFallbackItinerary();
+    // Fixture precondition: the walk leg carries would-be transit fields, so the
+    // suppression assertions below fail if the card ever renders them.
+    expect(fallback.legs[0]!.routeShortName).toBe('MRT-3');
+    expect(fallback.legs[0]!.headsign).toBe('Ayala');
+    expect(fallback.legs[0]!.signage).toBe('Look for: MRT-3');
+
+    renderCard({ ...fallback, id: 'walk-fallback' }, { badge: 'BEST' });
 
     const card = screen.getByTestId('route-card');
     expect(card).toHaveAttribute('data-fallback', 'walk');
@@ -343,6 +351,28 @@ describe('RouteCard walk fallback', () => {
     const select = screen.getByTestId('route-card-select');
     expect(select).toHaveAccessibleName(new RegExp(defaultT('walkFallback.badge')));
     expect(select).not.toHaveAccessibleName(/₱/);
+  });
+
+  it('renders the real payload shape with a derived provenance chip, not a dead attribution', () => {
+    const fallback = makeWalkFallbackItinerary({ realPayload: true, distanceM: 2100 });
+    // The BFF's fallback names its endpoints generically; the card must not
+    // invent place labels of its own.
+    expect(fallback.legs[0]!.from.name).toBe('Origin');
+    expect(fallback.legs[0]!.to.name).toBe('Destination');
+    expect(fallback.sources).toEqual(['walk-estimate']);
+
+    renderCard(
+      { ...fallback, id: 'walk-fallback-real' },
+      { sources: [WALK_ESTIMATE_SOURCE as DataSource] },
+    );
+
+    const chip = screen.getByTestId('provenance-chip');
+    expect(chip).toHaveTextContent('BiyaHey!-computed walking estimate');
+    expect(chip).toHaveTextContent('Data sources');
+    // The derived row resolves: never a raw id, never "source unavailable".
+    expect(chip).not.toHaveTextContent('walk-estimate');
+    expect(chip).not.toHaveTextContent('source unavailable');
+    expect(screen.getByTestId('route-card')).not.toHaveTextContent('₱');
   });
 
   it('does not add the distance warning at exactly 25 km', () => {

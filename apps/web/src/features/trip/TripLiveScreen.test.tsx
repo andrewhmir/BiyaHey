@@ -2,6 +2,10 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import {
+  WALK_FALLBACK_NOT_REALISTIC_KM,
+  WALK_FALLBACK_NOT_REALISTIC_M,
+} from '../../components/transit/WalkFallback';
 import { defaultT } from '../../i18n/strings';
 import { makeWalkFallbackItinerary, makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
 import { planMrt3CubaoAyalaResponse } from '../../test/msw/handlers';
@@ -224,18 +228,46 @@ describe('TripLiveScreen walkthrough', () => {
     expect(latestCall(stub).activeLegIndex).toBe(0);
   });
 
-  it('omits the fare line for a walk fallback', () => {
+  it('omits the fare line for a walk fallback and states what the estimate is', () => {
     render(<TripLiveScreen itinerary={makeWalkFallbackItinerary()} />);
 
+    // The summary carries the badge and the walking stat (no bare duration).
     const summary = screen.getByTestId('live-trip-summary');
+    expect(summary).toHaveTextContent(defaultT('walkFallback.badge'));
+    expect(summary).toHaveTextContent('Lakad 1.4 km');
     expect(summary).toHaveTextContent('18 min');
     expect(summary).not.toHaveTextContent('₱');
 
     // The transit "expected wait" banner would imply a served ride; a fallback
-    // says what it is instead.
+    // says what it is instead, with no repeated badge or walking stat.
     const banner = screen.getByTestId('live-banner');
-    expect(banner).toHaveTextContent(defaultT('walkFallback.body'));
+    expect(within(banner).getByTestId('walk-fallback')).toHaveAttribute(
+      'data-variant',
+      'compact',
+    );
+    expect(within(banner).getByTestId('walk-fallback-body')).toHaveTextContent(
+      defaultT('walkFallback.body'),
+    );
+    expect(within(banner).queryByTestId('walk-fallback-badge')).toBeNull();
+    expect(within(banner).queryByTestId('walk-fallback-warning')).toBeNull();
     expect(screen.queryByText('no live data — expected wait')).toBeNull();
+
+    // A fallback has no transit legs to step through.
+    expect(screen.queryByTestId('leg-strip')).toBeNull();
+  });
+
+  it('warns on a live fallback over 25 km while still showing the estimate', () => {
+    render(
+      <TripLiveScreen
+        itinerary={makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 })}
+      />,
+    );
+
+    expect(screen.getByTestId('live-trip-summary')).toHaveTextContent('25.0 km');
+    expect(within(screen.getByTestId('live-banner')).getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+    expect(screen.queryByTestId('leg-strip')).toBeNull();
   });
 
   it('renders an aria-hidden map placeholder when no renderer is supplied', () => {

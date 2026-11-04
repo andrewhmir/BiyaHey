@@ -145,5 +145,20 @@
     "used_for": [
       "crowd reports (phase 4)"
     ]
+  },
+  {
+    "id": "walk-estimate",
+    "kind": "derived",
+    "name": "BiyaHey! walking-time estimate",
+    "publisher": "BiyaHey! contributors",
+    "url": "—",
+    "licence_spdx": "NOASSERTION",
+    "coverage": "Any origin/destination pair — computed on request, no external dataset",
+    "last_checked": "2026-11-04",
+    "attribution": "BiyaHey!-computed walking estimate — haversine distance at 4.5 km/h; straight-line only when no walking path exists",
+    "method": "Haversine distance between the requested origin and destination divided by a 4.5 km/h walking speed; geometry stays straight-line only when no walking path exists",
+    "used_for": [
+      "walk fallback distance and duration estimates"
+    ]
   }
 ]

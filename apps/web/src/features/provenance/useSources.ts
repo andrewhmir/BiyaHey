@@ -1,12 +1,11 @@
-import type { DataSource } from '@biyahey/shared';
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, fetchSources } from '../../lib/api';
+import { ApiError, fetchSources, type ProvenanceRow } from '../../lib/api';
 
 export type SourcesStatus = 'loading' | 'success' | 'error';
 
 export interface SourcesOutcome {
   status: SourcesStatus;
-  datasets: DataSource[];
+  datasets: ProvenanceRow[];
   error: ApiError | null;
   retry: () => void;
 }

@@ -9,7 +9,7 @@ import {
   REQUEST_TIMEOUT_MS,
   fetchFareStatus,
   fetchSources,
-  isDataSourceRow,
+  isProvenanceRow,
   planTrip,
   request,
   searchPlaces,
@@ -278,15 +278,47 @@ describe('fetchSources', () => {
     } as Record<string, unknown>;
     delete derived.licence_url;
 
-    expect(isDataSourceRow(derived)).toBe(true);
+    expect(isProvenanceRow(derived)).toBe(true);
+  });
+
+  it('rejects a derived row that hides its method or claims a dataset licence URL', () => {
+    const derived: Record<string, unknown> = {
+      ...row,
+      id: 'walk-estimate',
+      kind: 'derived',
+      method: 'haversine distance at 4.5 km/h',
+    };
+    delete derived.licence_url;
+    expect(isProvenanceRow(derived)).toBe(true);
+
+    const noMethod: Record<string, unknown> = { ...derived };
+    delete noMethod.method;
+    expect(isProvenanceRow(noMethod)).toBe(false);
+    expect(isProvenanceRow({ ...derived, method: '   ' })).toBe(false);
+    // A derived row must not carry a licence URL it does not have; the whole
+    // list is rejected rather than letting a dead anchor reach the screen.
+    expect(isProvenanceRow({ ...derived, licence_url: 'https://example.test/licence' })).toBe(false);
+  });
+
+  it('keeps dataset validation strict: url and licence_url are still required', () => {
+    expect(isProvenanceRow({ ...row, kind: 'dataset' })).toBe(true);
+
+    const noUrl: Record<string, unknown> = { ...row };
+    delete noUrl.url;
+    expect(isProvenanceRow(noUrl)).toBe(false);
+    const noLicenceUrl: Record<string, unknown> = { ...row };
+    delete noLicenceUrl.licence_url;
+    expect(isProvenanceRow(noLicenceUrl)).toBe(false);
+    // Unknown kinds are rejected instead of being guessed at as datasets.
+    expect(isProvenanceRow({ ...row, kind: 'computed' })).toBe(false);
   });
 
   it('rejects a malformed row instead of letting a card render undefined (M3)', async () => {
     server.use(http.get('*/sources', () => HttpResponse.json([row, { id: 'broken' }])));
 
     await expect(fetchSources()).rejects.toMatchObject({ code: 'invalid_response' });
-    expect(isDataSourceRow({ id: 'broken' })).toBe(false);
-    expect(isDataSourceRow(row)).toBe(true);
+    expect(isProvenanceRow({ id: 'broken' })).toBe(false);
+    expect(isProvenanceRow(row)).toBe(true);
   });
 });
 

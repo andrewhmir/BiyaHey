@@ -1,4 +1,12 @@
-import type { FareQuote, ItineraryDto, LegDto, LegMode, LegPlaceDto } from '@biyahey/shared';
+import type {
+  DataSource,
+  FareQuote,
+  ItineraryDto,
+  LegDto,
+  LegMode,
+  LegPlaceDto,
+  SourceId,
+} from '@biyahey/shared';
 
 /**
  * Test-only itinerary builders shared by the UX v2 specs.
@@ -159,7 +167,40 @@ export interface WalkFallbackOptions {
    * walking geometry like any ordinary walk leg.
    */
   approximate?: boolean;
+  /**
+   * `true`: the BFF's literal payload shape — endpoint names
+   * `Origin`/`Destination` (the plan request's place labels are not echoed in
+   * the itinerary) and `sources: ['walk-estimate']` for a straight line or
+   * `['osm', 'walk-estimate']` for a routed walk. `false` (default): friendly
+   * Cubao → Kamias labels so saved/recent titles read naturally.
+   */
+  realPayload?: boolean;
 }
+
+/**
+ * The BFF's derived `walk-estimate` registry row (mirrors
+ * `data/provenance/sources.yaml`).
+ *
+ * It is deliberately typed as the wire shape (no `licence_url`): the shared
+ * `DataSource` interface keeps that field required for dataset consumers even
+ * though a `kind: 'derived'` row omits it, so tests pass this through the
+ * `DataSource` type at the point of use.
+ */
+export const WALK_ESTIMATE_SOURCE = {
+  id: 'walk-estimate',
+  kind: 'derived',
+  name: 'BiyaHey! walking-time estimate',
+  publisher: 'BiyaHey! contributors',
+  url: '—',
+  licence_spdx: 'NOASSERTION',
+  coverage: 'Any origin/destination pair — computed on request, no external dataset',
+  last_checked: '2026-11-04',
+  attribution:
+    'BiyaHey!-computed walking estimate — haversine distance at 4.5 km/h; straight-line only when no walking path exists',
+  method:
+    'Haversine distance between the requested origin and destination divided by a 4.5 km/h walking speed; geometry stays straight-line only when no walking path exists',
+  used_for: ['walk fallback distance and duration estimates'],
+} satisfies Omit<DataSource, 'licence_url'>;
 
 /**
  * The synthesised walk fallback the BFF returns when the router found no
@@ -171,15 +212,26 @@ export function makeWalkFallbackItinerary({
   distanceM = 1400,
   durationMin = 18,
   approximate = true,
+  realPayload = false,
 }: WalkFallbackOptions = {}): ItineraryDto {
-  const from = place('Cubao', 14.6195, 121.0528);
-  const to = place('Kamias', 14.6075, 121.0495);
+  const from = realPayload
+    ? place('Origin', 14.6195, 121.0528)
+    : place('Cubao', 14.6195, 121.0528);
+  const to = realPayload
+    ? place('Destination', 14.6075, 121.0495)
+    : place('Kamias', 14.6075, 121.0495);
   const leg = makeLeg({
     mode: 'walk',
     from,
     to,
     durationMin,
     distanceM,
+    // Would-be transit fields. The BFF never sends them on a fallback leg, but
+    // keeping them here makes the "no route short name / headsign / Look for"
+    // assertions non-vacuous: the UI must suppress them, not merely lack them.
+    routeShortName: 'MRT-3',
+    headsign: 'Ayala',
+    signage: 'Look for: MRT-3',
     ...(approximate
       ? {
           geometry: {
@@ -193,12 +245,17 @@ export function makeWalkFallbackItinerary({
         }
       : {}),
   });
+  const sourceIds: SourceId[] = approximate
+    ? ['walk-estimate']
+    : ['osm', 'walk-estimate'];
   return makeItinerary([leg], {
     fallback: 'walk',
     durationMin,
     walkDistanceM: distanceM,
     fare: { ...TEST_FARE, amount: 0, source_id: null, breakdown: [] },
-    sources: ['osm'],
+    // The BFF's real source ids: the derived estimate always, plus OSM when the
+    // shape is a routed walking path (walk-fallback.ts `sourceIds`).
+    sources: sourceIds,
   });
 }
 

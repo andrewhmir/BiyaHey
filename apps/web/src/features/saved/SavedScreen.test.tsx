@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { PlanResponse } from '@biyahey/shared';
 import { defaultT } from '../../i18n/strings';
+import { WALK_FALLBACK_NOT_REALISTIC_KM, WALK_FALLBACK_NOT_REALISTIC_M } from '../../components/transit/WalkFallback';
 import { makeWalkFallbackItinerary } from '../../test/fixtures/itinerary';
 import {
   RECENT_TRIPS_KEY,
@@ -134,10 +135,58 @@ describe('SavedScreen card v2', () => {
     expect(within(row).getByTestId('walk-fallback-badge')).toHaveTextContent(
       defaultT('walkFallback.badge'),
     );
-    expect(within(row).getByTestId('saved-walk-stat')).toHaveTextContent('2.1 km');
+    expect(within(row).getByTestId('walk-fallback-stat')).toHaveTextContent('2.1 km');
+    // The row states the honest sentence, not only a badge/value pair.
+    expect(within(row).getByTestId('walk-fallback-body')).toHaveTextContent(
+      defaultT('walkFallback.body'),
+    );
+    expect(within(row).queryByTestId('walk-fallback-warning')).toBeNull();
     expect(screen.queryByTestId('saved-fare')).toBeNull();
     expect(row).not.toHaveTextContent('₱');
     expect(row).not.toHaveTextContent(/fare matrix|fare may have changed/i);
+  });
+
+  it('warns on a saved fallback over 25 km while still showing the estimate', async () => {
+    const itinerary = makeWalkFallbackItinerary({
+      distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1,
+    });
+    seedSaved([
+      {
+        itinerary,
+        sources: [],
+        fareSnapshot: itinerary.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+
+    render(<SavedScreen now={NOW} />);
+
+    const row = await screen.findByTestId('saved-row');
+    expect(within(row).getByTestId('walk-fallback-stat')).toHaveTextContent('25.0 km');
+    expect(within(row).getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+    expect(row).not.toHaveTextContent('₱');
+  });
+
+  it('has no axe violations on a saved fallback row', async () => {
+    const itinerary = makeWalkFallbackItinerary({
+      distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1,
+    });
+    seedSaved([
+      {
+        itinerary,
+        sources: [],
+        fareSnapshot: itinerary.fare,
+        datasetVersion: '2026-11-01',
+        savedAt: '2026-10-31T08:00:00.000Z',
+      },
+    ]);
+    const { container } = render(<SavedScreen now={NOW} />);
+
+    await screen.findByTestId('saved-row');
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it('lets a nickname win the title while keeping the endpoints visible', async () => {

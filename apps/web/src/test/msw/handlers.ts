@@ -1,5 +1,4 @@
 import type {
-  DataSource,
   FareStatusDto,
   PlanResponse,
   SearchGroup,
@@ -7,6 +6,7 @@ import type {
   SearchResultDto,
 } from '@biyahey/shared';
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
+import type { ProvenanceRow } from '../../lib/api';
 import planCubaoAyalaRaw from '../fixtures/plan-cubao-ayala.json?raw';
 import planLong15LegsRaw from '../fixtures/plan-long-15-legs.json?raw';
 import planMrt3CubaoAyalaRaw from '../fixtures/plan-mrt3-cubao-ayala.json?raw';
@@ -293,9 +293,7 @@ function assertSource(value: unknown, path: string): void {
     'id',
     'name',
     'publisher',
-    'url',
     'licence_spdx',
-    'licence_url',
     'coverage',
     'last_checked',
     'attribution',
@@ -304,6 +302,27 @@ function assertSource(value: unknown, path: string): void {
   }
   for (const [index, entry] of expectArray(source.used_for, `${path}.used_for`).entries()) {
     expectString(entry, `${path}.used_for[${index}]`);
+  }
+
+  // The derived branch mirrors `data/provenance/schema/sources.schema.json`: a
+  // computed row states its method and must not claim a dataset licence URL.
+  if (source.kind === 'derived') {
+    expectString(source.method, `${path}.method`);
+    if (Object.prototype.hasOwnProperty.call(source, 'licence_url')) {
+      fixtureError(`${path}.licence_url`, 'absent on a "derived" row');
+    }
+    if (source.url !== undefined) {
+      expectString(source.url, `${path}.url`);
+    }
+    return;
+  }
+
+  if (source.kind !== undefined && source.kind !== 'dataset') {
+    fixtureError(`${path}.kind`, '"dataset", "derived" or absent');
+  }
+  // Dataset rows stay strict: the licence trio the registry validator requires.
+  for (const field of ['url', 'licence_url'] as const) {
+    expectString(source[field], `${path}.${field}`);
   }
 }
 
@@ -373,10 +392,13 @@ export const planLong15LegsResponse: PlanResponse = parsePlanFixture(planLong15L
  * Parse the checked-in `GET /sources` fixture through the same shape guard the
  * plan fixtures use. The JSON mirrors `data/provenance/sources.yaml` row for row
  * (R60); a drifted field throws at import time instead of letting About-data
- * render `undefined`. The registry has ten rows today, so a fixture that gains
- * or loses one without a deliberate update fails loudly.
+ * render `undefined`. The registry has eleven rows today — ten external
+ * datasets/services plus the derived `walk-estimate` row — so a fixture that
+ * gains or loses one without a deliberate update fails loudly. Dataset rows stay
+ * strict; the derived row is accepted only with its `method` and without any
+ * `licence_url`.
  */
-export function parseSourcesFixture(raw: string): DataSource[] {
+export function parseSourcesFixture(raw: string): ProvenanceRow[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -387,9 +409,9 @@ export function parseSourcesFixture(raw: string): DataSource[] {
     throw new Error('sources fixture must be a JSON array of registry rows');
   }
   parsed.forEach((source, index) => assertSource(source, `sources[${index}]`));
-  const rows = parsed as DataSource[];
-  if (rows.length !== 10) {
-    throw new Error(`sources fixture must carry the registry's 10 rows, got ${rows.length}`);
+  const rows = parsed as ProvenanceRow[];
+  if (rows.length !== 11) {
+    throw new Error(`sources fixture must carry the registry's 11 rows, got ${rows.length}`);
   }
   const ids = new Set(rows.map((row) => row.id));
   if (ids.size !== rows.length) {
@@ -399,9 +421,9 @@ export function parseSourcesFixture(raw: string): DataSource[] {
 }
 
 /** The canonical registry rows the BFF serves for `GET /sources` (Task 7). */
-export const sourcesResponse: DataSource[] = parseSourcesFixture(sourcesRaw);
+export const sourcesResponse: ProvenanceRow[] = parseSourcesFixture(sourcesRaw);
 
-/** Default `GET /sources`: the 10 registry rows in canonical order. */
+/** Default `GET /sources`: the 11 registry rows in canonical order. */
 export const sourcesSuccessHandler = http.get('*/sources', () =>
   HttpResponse.json(sourcesResponse),
 );

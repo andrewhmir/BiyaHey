@@ -1,5 +1,5 @@
 import type { DataSource, ItineraryDto } from '@biyahey/shared';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
@@ -12,7 +12,7 @@ import {
 } from '../../test/mocks/maplibre';
 import { MapSlot } from '../layout/MapSlot';
 import { MapCanvas, OPENFREEMAP_LIBERTY_STYLE } from './MapCanvas';
-import { MapCredit } from './MapCredit';
+import { MapCredit, type CreditSource } from './MapCredit';
 import { MapView } from './MapView';
 import { RoutePathLayer } from './RoutePathLayer';
 
@@ -51,6 +51,14 @@ const openFreeMapSource: DataSource = {
   last_checked: '2026-11-01',
   attribution: '© OpenFreeMap © OpenMapTiles · Data from OpenStreetMap',
   used_for: ['base map'],
+};
+
+/** The derived row as the registry serves it: no dataset licence URL at all. */
+const walkEstimateSource: CreditSource = {
+  id: 'walk-estimate',
+  kind: 'derived',
+  name: 'BiyaHey! walking-time estimate',
+  licence_spdx: 'NOASSERTION',
 };
 
 const itinA: ItineraryDto = {
@@ -214,6 +222,30 @@ describe('MapCredit', () => {
     expect(screen.getByText(/© OpenStreetMap contributors/)).toBeInTheDocument();
     expect(screen.getByText(osmSource.name)).toBeInTheDocument();
     expect(screen.getByText(openFreeMapSource.name)).toBeInTheDocument();
+  });
+
+  it('renders a derived row as plain text and keeps dataset licence links', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MapCredit sources={[walkEstimateSource]} autoCollapseMs={0} />);
+    await user.click(screen.getByRole('button', { name: /pinagmulan ng data/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /pinagmulan ng data/i });
+    expect(within(dialog).getByTestId('derived-credit')).toHaveTextContent(
+      'Tantiyang kalkulado — walang lisensya ng dataset',
+    );
+    // The derived list item carries no anchor at all (the only link left in the
+    // dialog is the About-data entry point).
+    const derivedItem = within(dialog)
+      .getByText('BiyaHey! walking-time estimate')
+      .closest('li')!;
+    expect(derivedItem.querySelector('a')).toBeNull();
+
+    // A dataset row in the same list keeps its real licence link.
+    rerender(<MapCredit sources={[osmSource]} autoCollapseMs={0} />);
+    expect(within(dialog).getByRole('link', { name: 'ODbL-1.0' })).toHaveAttribute(
+      'href',
+      'https://opendatacommons.org/licenses/odbl/1-0/',
+    );
   });
 
   it('closes the details popover with Escape and returns focus to the ⓘ toggle', async () => {

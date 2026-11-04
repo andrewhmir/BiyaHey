@@ -16,7 +16,16 @@ import {
   planSuccessHandler,
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
-import { makeWalkOnlyItinerary } from '../../test/fixtures/itinerary';
+import {
+  makeWalkFallbackItinerary,
+  makeWalkOnlyItinerary,
+  WALK_ESTIMATE_SOURCE,
+} from '../../test/fixtures/itinerary';
+import {
+  WALK_FALLBACK_NOT_REALISTIC_KM,
+  WALK_FALLBACK_NOT_REALISTIC_M,
+} from '../../components/transit/WalkFallback';
+import { defaultT } from '../../i18n/strings';
 import { RouteOptionsScreen, type RouteFilter } from './RouteOptionsScreen';
 import type { PlanOutcome } from './usePlan';
 
@@ -411,6 +420,36 @@ describe('RouteOptionsScreen', () => {
     expect(screen.getByTestId('route-badge')).toHaveTextContent('BEST');
     // A walk-only fare is still shown with its honest provenance line.
     expect(screen.getByTestId('fare-date')).toHaveTextContent('Fares: no fare effective');
+  });
+
+  it('drops the fare-oriented filter chrome for a fallback-only plan', async () => {
+    // One synthesised walking estimate, not a set of priced alternatives: the
+    // Cheapest/Fewest transfers filters and the "N ruta" count would claim
+    // transit choices the API never returned (Minor 2/4).
+    const fallback = makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 });
+    render(
+      <ControlledRouteOptions
+        plan={outcome(
+          [fallback],
+          [WALK_ESTIMATE_SOURCE as DataSource],
+        )}
+      />,
+    );
+
+    const card = await screen.findByTestId('route-card');
+    // The shared fallback contract still holds on this surface.
+    expect(within(card).getByTestId('walk-fallback-badge')).toHaveTextContent(
+      defaultT('walkFallback.badge'),
+    );
+    expect(within(card).getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+
+    // No fare-sorting chips and no route count for a walking estimate.
+    expect(screen.queryByRole('button', { name: 'Cheapest' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Recommended' })).toBeNull();
+    expect(screen.queryByTestId('routes-count')).toBeNull();
+    expect(screen.queryByText(/pinakamabilis/i)).toBeNull();
   });
 
   it('shows skeleton cards after 300ms, never a spinner', async () => {

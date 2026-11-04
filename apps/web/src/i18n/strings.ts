@@ -152,6 +152,7 @@ const TL = {
     'Walang kilalang ruta ng sakay para sa biyaheng ito. Tantiyang paglalakad lang ito at maaaring hindi ligtas o makatotohanang lakarin.',
   'walkFallback.tooFar':
     'Mahigit {km} km ang biyaheng ito — hindi makatotohanang gawing alternatibo ang paglalakad.',
+  'walkFallback.provenance': 'Tantiyang kuwenta ng BiyaHey! — hindi ito dataset.',
 
   // --- Trip detail --------------------------------------------------------
   'trip.title': 'Detalye ng biyahe',
@@ -318,6 +319,10 @@ const TL = {
   'about.sheetKicker': 'Lisensya at pinagmulan',
   'about.licenceHeading': 'Lisensya',
   'about.spdx': 'SPDX: {id}',
+  // Derived row (`kind: 'derived'`, e.g. `walk-estimate`): BiyaHey! computes the
+  // value itself, so there is no dataset licence to link to. Plain text only.
+  'about.derivedLicence': 'Tantiyang kalkulado — walang lisensya ng dataset',
+  'about.methodHeading': 'Paraan ng pagkalkula',
   'about.sourceHeading': 'Source',
   'about.sourceMeta': '{coverage} · huling tsek {date}',
   'about.attributionHeading': 'Attribution',
@@ -505,6 +510,7 @@ const EN: Record<StringKey, string> = {
     'No transit route is known for this trip. This is a walking estimate and may not be a safe or realistic walk.',
   'walkFallback.tooFar':
     'This trip is over {km} km — walking is not a realistic alternative for that distance.',
+  'walkFallback.provenance': 'A BiyaHey!-computed estimate — not a dataset.',
 
   'trip.title': 'Trip details',
   'trip.summaryArrive': '{minutes} min · arrive {arrival}',
@@ -658,6 +664,8 @@ const EN: Record<StringKey, string> = {
   'about.sheetKicker': 'Licence and source',
   'about.licenceHeading': 'Licence',
   'about.spdx': 'SPDX: {id}',
+  'about.derivedLicence': 'Computed estimate — no dataset licence',
+  'about.methodHeading': 'How it is computed',
   'about.sourceHeading': 'Source',
   'about.sourceMeta': '{coverage} · last checked {date}',
   'about.attributionHeading': 'Attribution',

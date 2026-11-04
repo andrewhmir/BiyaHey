@@ -1,7 +1,7 @@
-import type { DataSource } from '@biyahey/shared';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef } from 'react';
 import { useT } from '../../i18n/useT';
+import type { ProvenanceRow } from '../../lib/api';
 import { sourceUrls } from '../../lib/sourceUrls';
 import { licenceName } from './licences';
 
@@ -28,7 +28,7 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface LicenceSheetProps {
-  dataset: DataSource;
+  dataset: ProvenanceRow;
   onClose: () => void;
 }
 
@@ -38,6 +38,11 @@ export interface LicenceSheetProps {
  *
  * Strings are API fields (R45); the licence display name is the documented SPDX
  * mapping in `licences.ts`.
+ *
+ * A `kind: 'derived'` row (`walk-estimate`) has no dataset licence and no
+ * source URL, so the sheet states that in plain text — never an anchor with no
+ * `href`, and never a made-up URL. Its `method` replaces the source URL, because
+ * "how BiyaHey! computes it" is the honest provenance for a derived value.
  *
  * Task 9 (M4) closes the Task 7 a11y gap: the modal traps Tab/Shift+Tab inside
  * the sheet, moves focus to the close button on open and returns it to the card
@@ -56,7 +61,11 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
   const onCloseRef = useRef(onClose);
   const triggerRef = useRef<Element | null>(null);
   const reportUrl = reportIssueUrl();
-  const urls = sourceUrls(dataset.url);
+  // A derived row must never produce a licence anchor; a dataset row keeps the
+  // exact link it had before. Narrowing here is what makes the branch honest.
+  const licenceUrl = dataset.kind === 'derived' ? undefined : dataset.licence_url;
+  const method = dataset.kind === 'derived' ? dataset.method : undefined;
+  const urls = dataset.kind === 'derived' ? [] : sourceUrls(dataset.url);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -154,14 +163,23 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
           >
             {t('about.licenceHeading')}
           </h3>
-          <a
-            href={dataset.licence_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-12 items-center break-words text-base font-medium text-primary underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-          >
-            {licenceName(dataset.licence_spdx)}
-          </a>
+          {licenceUrl !== undefined ? (
+            <a
+              href={licenceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-12 items-center break-words text-base font-medium text-primary underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            >
+              {licenceName(dataset.licence_spdx)}
+            </a>
+          ) : (
+            <p
+              data-testid="derived-licence"
+              className="break-words text-base font-medium leading-6 text-on-surface"
+            >
+              {t('about.derivedLicence')}
+            </p>
+          )}
           <p className="text-sm text-on-surface-variant">
             {t('about.spdx', { id: dataset.licence_spdx })}
           </p>
@@ -172,9 +190,16 @@ export function LicenceSheet({ dataset, onClose }: LicenceSheetProps) {
             id={`${titleId}-source`}
             className="text-[11px] font-bold uppercase tracking-[0.12em] text-on-surface-variant"
           >
-            {t('about.sourceHeading')}
+            {method !== undefined ? t('about.methodHeading') : t('about.sourceHeading')}
           </h3>
-          {urls.length > 0 ? (
+          {method !== undefined ? (
+            <p
+              data-testid="derived-method"
+              className="break-words text-sm leading-5 text-on-surface-variant"
+            >
+              {method}
+            </p>
+          ) : urls.length > 0 ? (
             urls.map((url, index) => (
               <a
                 key={`${url}-${index}`}

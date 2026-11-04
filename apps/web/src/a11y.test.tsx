@@ -138,7 +138,7 @@ describe('WCAG 2.2 axe pass over the key screens', () => {
         <AboutDataScreen />
       </QueryClientProvider>,
     );
-    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(11);
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 });

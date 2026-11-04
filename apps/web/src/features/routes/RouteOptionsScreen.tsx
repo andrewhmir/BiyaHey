@@ -1,6 +1,7 @@
 import type { ItineraryDto, PlanPlaceInput, PlanStopInput } from '@biyahey/shared';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { isWalkFallback } from '../../components/transit/WalkFallback';
 import type { Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
 import { formatClockTime } from '../../lib/time';
@@ -204,7 +205,12 @@ function useDelayedFlag(active: boolean, delayMs: number): boolean {
   return active && elapsed;
 }
 
-function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
+function statusMessage(
+  plan: PlanOutcome,
+  count: number,
+  fallbackOnly: boolean,
+  t: Translate,
+): string {
   switch (plan.status) {
     case 'loading':
       return t('routes.loading');
@@ -216,8 +222,10 @@ function statusMessage(plan: PlanOutcome, count: number, t: Translate): string {
     case 'success':
       // The zero-itinerary block below is its own polite live region and names
       // the planned trip, so keep this region silent to avoid a double
-      // announcement of the same outcome (R89 review).
-      return count === 0 ? '' : t('routes.count', { count });
+      // announcement of the same outcome (R89 review). A fallback-only plan is
+      // one walking estimate, not one "route": the card's own notice carries
+      // the honest outcome instead of a misleading route count.
+      return count === 0 || fallbackOnly ? '' : t('routes.count', { count });
   }
 }
 
@@ -321,6 +329,10 @@ function RouteOptionsContent({
 
   const count = plan.itineraries.length;
   const hasPlan = plan.status === 'success' && count > 0;
+  // A fallback-only plan is a single walking estimate, not a set of priced
+  // alternatives: the fare-oriented filter chips (Cheapest/Fewest transfers/…)
+  // and the "N ruta" count row would imply transit choices that do not exist.
+  const fallbackOnly = hasPlan && plan.itineraries.every(isWalkFallback);
   const lead = hasPlan ? ranked[0] : undefined;
   // "pinakamabilis" is a fact about the returned set, not about the active
   // ranking: derive the minimum duration from the untouched API array so a
@@ -422,7 +434,7 @@ function RouteOptionsContent({
         }
       >
         <p role="status" aria-live="polite" className="sr-only">
-          {statusMessage(plan, count, t)}
+          {statusMessage(plan, count, fallbackOnly, t)}
         </p>
         {selectionAnnouncement !== null ? (
           <p role="status" aria-live="polite" className="sr-only">
@@ -470,18 +482,22 @@ function RouteOptionsContent({
 
         {hasPlan && lead !== undefined ? (
           <>
-            <FilterChips
-              options={filterOptions}
-              value={filter}
-              onChange={onFilterChange}
-              label={t('routes.sortLabel')}
-            />
-            <p
-              data-testid="routes-count"
-              className="text-sm font-semibold leading-5 text-on-surface"
-            >
-              {t('routes.countSummary', { count, minutes: fastestMinutes ?? 0 })}
-            </p>
+            {fallbackOnly ? null : (
+              <FilterChips
+                options={filterOptions}
+                value={filter}
+                onChange={onFilterChange}
+                label={t('routes.sortLabel')}
+              />
+            )}
+            {fallbackOnly ? null : (
+              <p
+                data-testid="routes-count"
+                className="text-sm font-semibold leading-5 text-on-surface"
+              >
+                {t('routes.countSummary', { count, minutes: fastestMinutes ?? 0 })}
+              </p>
+            )}
             <ul aria-label={t('routes.title')} className="flex flex-col gap-3">
               {ranked.map((itinerary, index) => {
                 const selected = itinerary.id === selectedId;

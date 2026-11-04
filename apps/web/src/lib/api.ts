@@ -1,9 +1,9 @@
 import type {
-  DataSource,
   FareStatusDto,
   PlanRequest,
   PlanResponse,
   SearchResponse,
+  SourceId,
 } from '@biyahey/shared';
 
 /**
@@ -261,6 +261,56 @@ export async function planTrip(
 }
 
 /**
+ * Fields every `GET /sources` registry row publishes, whatever its `kind`
+ * (spec §8.1).
+ */
+export interface ProvenanceRowBase {
+  id: SourceId;
+  name: string;
+  publisher: string;
+  licence_spdx: string;
+  coverage: string;
+  last_checked: string;
+  attribution: string;
+  used_for: string[];
+}
+
+/**
+ * An external dataset/service row: `kind` is absent (the registry default) or
+ * `'dataset'`.
+ *
+ * This is the only row shape that may publish a dataset licence link, so a
+ * consumer that follows `licence_url` must narrow the row first.
+ */
+export interface DatasetProvenanceRow extends ProvenanceRowBase {
+  kind?: 'dataset';
+  url: string;
+  licence_url: string;
+}
+
+/**
+ * A value BiyaHey! computes itself (`walk-estimate`).
+ *
+ * It publishes no external source URL and no dataset licence: `url` is optional
+ * (the registry carries the `"—"` sentinel when the field is present) and
+ * `licence_url` is forbidden rather than merely optional, so a derived row can
+ * never be rendered as a licence link. `method` is required so the row cannot
+ * hide how the value is computed. Mirrors the derived branch of
+ * `data/provenance/schema/sources.schema.json`.
+ */
+export interface DerivedProvenanceRow extends ProvenanceRowBase {
+  kind: 'derived';
+  /** The registry's `"—"` no-URL sentinel, when the row carries `url` at all. */
+  url?: string;
+  method: string;
+  /** Dataset-licence links are dataset-only: a derived row must not carry one. */
+  licence_url?: never;
+}
+
+/** One `GET /sources` registry row, narrowed by its `kind`. */
+export type ProvenanceRow = DatasetProvenanceRow | DerivedProvenanceRow;
+
+/**
  * Browser-safe runtime guard for one `GET /sources` registry row.
  *
  * About-data renders every field of every row, so a row that is missing one
@@ -268,17 +318,20 @@ export async function planTrip(
  * than a card that crashes on `undefined`. This mirrors `isFareStatusDto`:
  * plain TypeScript, no Node-only imports, safe in the PWA bundle.
  *
- * A `kind: 'derived'` row (`walk-estimate`) is computed by BiyaHey! rather than
- * sourced from a dataset, so it legitimately publishes no dataset source URL or
- * licence URL; those rows may omit `url` and `licence_url` (the registry uses
- * `"—"` as the no-URL sentinel). `licence_spdx` is still required: SPDX's
- * `NOASSERTION` is how such a row states that it claims no licence.
+ * Narrowing is honest, not dataset-shaped:
+ *
+ * - a dataset row (`kind` absent or `'dataset'`) must publish `url`,
+ *   `licence_spdx` and `licence_url`, exactly as before;
+ * - a `kind: 'derived'` row (`walk-estimate`) must publish `method` and
+ *   `licence_spdx`, may omit `url` (or use the `"—"` sentinel), and must NOT
+ *   carry `licence_url` — it has no dataset licence to link to;
+ * - any other `kind` is rejected rather than guessed at.
  */
-export function isDataSourceRow(value: unknown): value is DataSource {
+export function isProvenanceRow(value: unknown): value is ProvenanceRow {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const row = value as Partial<DataSource> & { kind?: unknown };
+  const row = value as Record<string, unknown>;
   const identityStrings = [
     'id',
     'name',
@@ -293,17 +346,33 @@ export function isDataSourceRow(value: unknown): value is DataSource {
       return false;
     }
   }
-  if (row.kind !== 'derived') {
-    const datasetStrings = ['url', 'licence_url'] as const;
-    for (const field of datasetStrings) {
-      if (typeof row[field] !== 'string' || row[field].length === 0) {
-        return false;
-      }
+  if (!Array.isArray(row.used_for) || !row.used_for.every((entry) => typeof entry === 'string')) {
+    return false;
+  }
+
+  if (row.kind === 'derived') {
+    if (typeof row.method !== 'string' || row.method.trim().length === 0) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(row, 'licence_url')) {
+      return false;
+    }
+    if (row.url !== undefined && (typeof row.url !== 'string' || row.url.length === 0)) {
+      return false;
+    }
+    return true;
+  }
+
+  if (row.kind !== undefined && row.kind !== 'dataset') {
+    return false;
+  }
+  const datasetStrings = ['url', 'licence_url'] as const;
+  for (const field of datasetStrings) {
+    if (typeof row[field] !== 'string' || row[field].length === 0) {
+      return false;
     }
   }
-  return (
-    Array.isArray(row.used_for) && row.used_for.every((entry) => typeof entry === 'string')
-  );
+  return true;
 }
 
 /**
@@ -315,9 +384,9 @@ export function isDataSourceRow(value: unknown): value is DataSource {
  * malformed row, is rejected here so About-data fails with its honest retry
  * state instead of crashing a card (Task 9 M3).
  */
-export async function fetchSources(options: CallOptions = {}): Promise<DataSource[]> {
+export async function fetchSources(options: CallOptions = {}): Promise<ProvenanceRow[]> {
   const payload = await request<unknown>('/sources', { signal: options.signal });
-  if (!Array.isArray(payload) || !payload.every(isDataSourceRow)) {
+  if (!Array.isArray(payload) || !payload.every(isProvenanceRow)) {
     throw new ApiError('invalid_response', 'Hindi mabasa ang listahan ng data sources.');
   }
   return payload;

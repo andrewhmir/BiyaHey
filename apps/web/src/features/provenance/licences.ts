@@ -17,8 +17,9 @@ const LICENCE_NAMES: Readonly<Record<string, string>> = {
   'CC-BY-4.0': 'Creative Commons Attribution 4.0 International',
   'CC0-1.0': 'Creative Commons Zero v1.0 Universal',
   MIT: 'MIT License',
-  // SPDX's own marker for "no licence asserted"; the sheet shows the publisher
-  // link the API supplied alongside it.
+  // SPDX's own marker for "no licence asserted". A dataset row may still carry
+  // a publisher licence URL beside it; a derived row has none, and the sheet
+  // states that in plain text instead of rendering a dead anchor.
   NOASSERTION: 'No licence asserted',
 };
 

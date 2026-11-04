@@ -12,7 +12,6 @@ import {
   sourcesMalformedRowHandler,
   sourcesNetworkErrorHandler,
   sourcesPendingHandler,
-  sourcesResponse,
   sourcesSuccessHandler,
 } from '../../test/msw/handlers';
 import { server } from '../../test/msw/server';
@@ -69,7 +68,7 @@ describe('AboutDataScreen', () => {
     renderAbout();
 
     const cards = await screen.findAllByTestId('dataset-card');
-    expect(cards).toHaveLength(10);
+    expect(cards).toHaveLength(11);
 
     const osm = cards.find((card) => card.textContent?.includes('OpenStreetMap'))!;
     // The registry's publisher and the row's own attribution, both from the API.
@@ -82,7 +81,7 @@ describe('AboutDataScreen', () => {
     expect(osm).toHaveTextContent('2026-11-01');
     expect(osm).toHaveTextContent('Philippines - Geofabrik PH extract (NCR + belt for v1)');
     expect(osm).toHaveTextContent('hindi naka-publish');
-    expect(screen.getByRole('status')).toHaveTextContent('10 na dataset');
+    expect(screen.getByRole('status')).toHaveTextContent('11 na dataset');
   });
 
   it('opens the licence sheet with the full licence link and source URL', async () => {
@@ -104,6 +103,38 @@ describe('AboutDataScreen', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Isara' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renders the derived walk-estimate row as plain text with no anchor (I1)', async () => {
+    const { user } = renderAbout();
+
+    const derivedCard = (await screen.findAllByTestId('dataset-card')).find((card) =>
+      card.textContent?.includes('BiyaHey! walking-time estimate'),
+    )!;
+    await user.click(derivedCard);
+
+    const dialog = screen.getByRole('dialog', { name: 'BiyaHey! walking-time estimate' });
+    // Honest copy — never "No licence asserted" inside an href-less anchor.
+    expect(
+      within(dialog).getByText('Tantiyang kalkulado — walang lisensya ng dataset'),
+    ).toBeInTheDocument();
+    // The registry's computation method replaces the source URL, as plain text.
+    expect(within(dialog).getByTestId('derived-method')).toHaveTextContent(
+      /Haversine distance between the requested origin and destination/i,
+    );
+    // No anchor of any kind: no licence link and no invented external source.
+    expect(within(dialog).queryAllByRole('link')).toHaveLength(0);
+    expect(dialog.querySelector('a')).toBeNull();
+
+    // Control: a dataset row still renders its real licence link.
+    await user.click(within(dialog).getByRole('button', { name: 'Isara' }));
+    const osmCard = (await screen.findAllByTestId('dataset-card')).find((card) =>
+      card.textContent?.includes('OpenStreetMap PH extract'),
+    )!;
+    await user.click(osmCard);
+    expect(
+      within(screen.getByRole('dialog')).getByRole('link', { name: /open database license/i }),
+    ).toHaveAttribute('href', 'https://opendatacommons.org/licenses/odbl/1-0/');
   });
 
   it('closes the licence sheet with Escape', async () => {
@@ -182,7 +213,7 @@ describe('AboutDataScreen', () => {
     server.use(sourcesSuccessHandler);
     await user.click(within(alert).getByRole('button', { name: /subukan ulit/i }));
 
-    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(11);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -197,7 +228,7 @@ describe('AboutDataScreen', () => {
 
     server.use(sourcesSuccessHandler);
     await user.click(within(alert).getByRole('button', { name: /subukan ulit/i }));
-    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(11);
   });
 
   it('uses the typed transport failure and never announces the error twice (M5/M6)', async () => {
@@ -238,7 +269,7 @@ describe('ProvenanceChip', () => {
     render(
       <ProvenanceChip
         sourcesFromItinerary={['osm', 'ltfrb-fares', 'photon']}
-        knownSources={sourcesResponse}
+        knownSources={planCubaoAyalaResponse.sources}
       />,
     );
 
@@ -255,7 +286,7 @@ describe('ProvenanceChip', () => {
     render(
       <ProvenanceChip
         sourcesFromItinerary={['osm', 'photon']}
-        knownSources={[sourcesResponse[0]!]}
+        knownSources={[planCubaoAyalaResponse.sources[0]!]}
       />,
     );
 
@@ -274,7 +305,7 @@ describe('About-data entry points', () => {
     await user.click(within(chips[0]!).getByRole('link'));
 
     expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
-    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(11);
   });
 
   it('reaches About data from the map-credit ⓘ in two taps', async () => {
@@ -319,7 +350,7 @@ describe('About-data entry points', () => {
     await user.click(screen.getByRole('link', { name: /about data/i }));
 
     expect(await screen.findByRole('heading', { name: 'Pinagmulan ng datos' })).toBeInTheDocument();
-    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(10);
+    expect(await screen.findAllByTestId('dataset-card')).toHaveLength(11);
   });
 
   it('focuses search with the global / shortcut', async () => {

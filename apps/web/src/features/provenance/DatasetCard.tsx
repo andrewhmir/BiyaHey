@@ -1,7 +1,7 @@
-import type { DataSource } from '@biyahey/shared';
 import { ChevronRight } from 'lucide-react';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
+import type { ProvenanceRow } from '../../lib/api';
 import { licenceName } from './licences';
 
 /**
@@ -11,8 +11,11 @@ import { licenceName } from './licences';
  * `confidence` field on the registry row is rendered as soon as the API sends
  * it. See the Task 7 report's proposed ruling (R68).
  */
-export function datasetConfidence(dataset: DataSource, t: Translate = defaultT): string {
-  const confidence = (dataset as DataSource & { confidence?: unknown }).confidence;
+export function datasetConfidence(
+  dataset: ProvenanceRow,
+  t: Translate = defaultT,
+): string {
+  const confidence = (dataset as ProvenanceRow & { confidence?: unknown }).confidence;
   if (typeof confidence === 'string' && confidence.trim().length > 0) {
     return confidence.trim();
   }
@@ -20,9 +23,9 @@ export function datasetConfidence(dataset: DataSource, t: Translate = defaultT):
 }
 
 export interface DatasetCardProps {
-  dataset: DataSource;
+  dataset: ProvenanceRow;
   /** Opens the L3 licence sheet for this row. */
-  onOpen: (dataset: DataSource) => void;
+  onOpen: (dataset: ProvenanceRow) => void;
 }
 
 /**

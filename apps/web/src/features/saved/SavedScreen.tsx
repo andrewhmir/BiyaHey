@@ -12,8 +12,7 @@ import {
 import { LegStrip } from '../../components/transit/LegStrip';
 import {
   isWalkFallback,
-  WalkEstimateBadge,
-  walkFallbackStat,
+  WalkFallbackNotice,
 } from '../../components/transit/WalkFallback';
 import { defaultT, type Translate } from '../../i18n/strings';
 import { useT } from '../../i18n/useT';
@@ -235,14 +234,10 @@ function SavedTripCard({
 
         {/* The stored itinerary's own legs: the same ribbon as the route cards,
             so a saved trip reads as the shape it will take. A walk fallback has
-            no route shape to imply, so it states the estimate instead. */}
+            no route shape to imply, so the shared compact notice states the
+            estimate, the honest sentence and the >25 km warning instead. */}
         {walkFallback ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <WalkEstimateBadge />
-            <span data-testid="saved-walk-stat" className="text-xs font-medium text-on-surface">
-              {walkFallbackStat(trip.itinerary, t)}
-            </span>
-          </div>
+          <WalkFallbackNotice itinerary={trip.itinerary} variant="compact" className="mt-3" />
         ) : (
           <LegStrip
             legs={trip.itinerary.legs}

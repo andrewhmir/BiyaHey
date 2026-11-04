@@ -1,4 +1,3 @@
-import type { DataSource } from '@biyahey/shared';
 import { Info } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useT } from '../../i18n/useT';
@@ -13,6 +12,8 @@ import { useMap } from './MapContext';
  * from the basemap source ids instead of repeating registry rows in the bundle.
  * The `sources` rows from the last plan response still drive the ⓘ detail list
  * (name + licence link), so data-specific credit is never hardcoded here.
+ * A `kind: 'derived'` row has no dataset licence to link to, so it renders the
+ * honest "computed estimate" copy as plain text instead of an href-less anchor.
  *
  * The full line collapses to a labelled ⓘ button after 5 s (OSMF guidance: the
  * credit must be reachable, not permanently expanded) or after the first map
@@ -34,9 +35,25 @@ const DEFAULT_AUTO_COLLAPSE_MS = 5000;
 
 const MAP_INTERACTION_EVENTS = ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart', 'click'] as const;
 
+/**
+ * The subset of a provenance row the ⓘ detail list reads.
+ *
+ * Both a plan response's `sources[]` rows (`DataSource`) and the About-data
+ * registry rows (`ProvenanceRow`, whose derived member has no `licence_url`)
+ * satisfy this shape. `licence_url` stays optional so the component can prove
+ * at runtime that an anchor is only ever rendered with a real URL.
+ */
+export interface CreditSource {
+  id: string;
+  name: string;
+  licence_spdx: string;
+  kind?: 'dataset' | 'derived';
+  licence_url?: string;
+}
+
 export interface MapCreditProps {
   /** Provenance rows from the API response; only used for the ⓘ detail list. */
-  sources?: readonly DataSource[];
+  sources?: readonly CreditSource[];
   /** Milliseconds before collapsing; `0` keeps the line expanded (tests). */
   autoCollapseMs?: number;
   className?: string;
@@ -160,12 +177,18 @@ export function MapCredit({
               {sources.map((source) => (
                 <li key={source.id}>
                   <span>{source.name}</span>{' '}
-                  <a
-                    href={source.licence_url}
-                    className="inline-flex min-h-6 items-center underline underline-offset-2"
-                  >
-                    {source.licence_spdx}
-                  </a>
+                  {source.kind === 'derived' ||
+                  source.licence_url === undefined ||
+                  source.licence_url.length === 0 ? (
+                    <span data-testid="derived-credit">{t('about.derivedLicence')}</span>
+                  ) : (
+                    <a
+                      href={source.licence_url}
+                      className="inline-flex min-h-6 items-center underline underline-offset-2"
+                    >
+                      {source.licence_spdx}
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>

@@ -1,6 +1,6 @@
 import type { DataSource, FareQuote } from '@biyahey/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import {
   makeRailTrip,
   makeWalkFallbackItinerary,
   makeWalkOnlyItinerary,
+  WALK_ESTIMATE_SOURCE,
 } from '../../test/fixtures/itinerary';
 import {
   planCubaoAyalaResponse,
@@ -352,7 +353,13 @@ describe('TripDetailScreen', () => {
   });
 
   it('renders the walk fallback honestly, with no fare or transit affordances', () => {
-    renderDetail(makeWalkFallbackItinerary());
+    const fallback = makeWalkFallbackItinerary();
+    // Fixture precondition: the walk leg carries would-be transit fields so the
+    // assertions below prove suppression rather than an absent fixture.
+    expect(fallback.legs[0]!.routeShortName).toBe('MRT-3');
+    expect(fallback.legs[0]!.signage).toBe('Look for: MRT-3');
+
+    renderDetail(fallback);
 
     expect(screen.getByTestId('walk-fallback-badge')).toHaveTextContent(
       defaultT('walkFallback.badge'),
@@ -370,6 +377,29 @@ describe('TripDetailScreen', () => {
     expect(screen.queryByTestId('signage-plate')).toBeNull();
     expect(screen.queryByText(/look for:/i)).toBeNull();
     expect(screen.queryByText('MRT-3')).toBeNull();
+  });
+
+  it('keeps a provenance/About-data entry point on the fallback notice', () => {
+    const fallback = makeWalkFallbackItinerary({ realPayload: true });
+    renderDetail(fallback, { sources: [WALK_ESTIMATE_SOURCE as DataSource] });
+
+    // The fallback suppresses the fare footer, so the notice itself must carry
+    // the honest provenance statement and the `/sources` link (Minor 1).
+    const provenance = screen.getByTestId('walk-fallback-provenance');
+    expect(provenance).toHaveTextContent(defaultT('walkFallback.provenance'));
+    expect(provenance).toHaveTextContent('BiyaHey!-computed walking estimate');
+    // The derived row resolves to its attribution, never the raw id.
+    expect(provenance).not.toHaveTextContent('walk-estimate');
+    expect(provenance).not.toHaveTextContent('source unavailable');
+    const link = within(provenance).getByRole('link');
+    expect(link).toHaveAttribute('href', '/sources');
+    expect(screen.queryByTestId('fare-breakdown')).toBeNull();
+
+    // The real payload's generic endpoint names render as the honest walk
+    // instruction; the timeline is the fallback's only leg detail.
+    expect(screen.getByTestId('leg-instruction')).toHaveTextContent(
+      'Maglakad papunta sa Destination',
+    );
   });
 
   it('adds the translated walking-distance warning only beyond 25 km', () => {

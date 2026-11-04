@@ -9,6 +9,7 @@ import { LegStrip } from '../components/transit/LegStrip';
 import {
   isWalkFallback,
   WalkEstimateBadge,
+  WalkFallbackNotice,
   walkFallbackStat,
 } from '../components/transit/WalkFallback';
 import { useT } from '../i18n/useT';
@@ -101,21 +102,22 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
   // R45/R63: a stored snapshot's fare must carry its own matrix effectivity date
   // and a recent trip must say when it was opened — the same honesty rule the
   // saved list enforces, now on the Home surface too. A walk fallback has no
-  // fare to date: it states the walking estimate instead.
+  // fare to date: its compact notice below carries the estimate, the honest
+  // sentence and the >25 km warning, so this line only dates the recent view.
+  const savedLine = savedOn === null ? null : t('saved.recentOn', { date: savedOn });
   const provenance = walkFallback
-    ? [walkFallbackStat(itinerary, t), savedOn === null ? null : t('saved.recentOn', { date: savedOn })]
-        .filter((part): part is string => part !== null)
-        .join(' · ')
+    ? savedLine
     : [
         t('saved.fareLine', { amount: fare, date: trip.fareSnapshot.effective_from }),
-        savedOn === null ? null : t('saved.recentOn', { date: savedOn }),
+        savedLine,
       ]
         .filter((part): part is string => part !== null)
         .join(' · ');
-  // The row's accessible name is the honest summary; the leg ribbon and the
-  // provenance line are separate content. A fallback never announces a fare.
+  // The row's accessible name is the honest summary; the leg ribbon/notice and
+  // the provenance line are separate content. A fallback never announces a
+  // fare: it names the badge and the walking estimate instead.
   const accessibleName = walkFallback
-    ? `${t('walkFallback.badge')}, ${title}, ${itinerary.durationMin} min`
+    ? `${t('walkFallback.badge')}, ${title}, ${walkFallbackStat(itinerary, t)}`
     : `${title}, ${itinerary.durationMin} min, ₱${fare}`;
 
   return (
@@ -151,8 +153,14 @@ function RecentTripRow({ trip, onOpen }: { trip: SavedTrip; onOpen?: (id: string
             </span>
           )}
         </div>
-        {walkFallback ? null : <LegStrip legs={itinerary.legs} size="sm" />}
-        <p className="text-[10px] leading-4 text-on-surface-variant">{provenance}</p>
+        {walkFallback ? (
+          <WalkFallbackNotice itinerary={itinerary} badge={false} variant="compact" />
+        ) : (
+          <LegStrip legs={itinerary.legs} size="sm" />
+        )}
+        {provenance !== null ? (
+          <p className="text-[10px] leading-4 text-on-surface-variant">{provenance}</p>
+        ) : null}
       </div>
     </li>
   );

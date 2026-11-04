@@ -1,6 +1,7 @@
 import type { DataSource, ItineraryDto } from '@biyahey/shared';
 import { ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { ProvenanceChip } from '../../components/provenance/ProvenanceChip';
 import { LegStrip } from '../../components/transit/LegStrip';
 import {
   isWalkFallback,
@@ -199,7 +200,28 @@ export function TripDetailScreen({
               </span>
             </p>
             {walkFallback ? (
-              <WalkFallbackNotice itinerary={itinerary} className="mt-3" />
+              <WalkFallbackNotice
+                itinerary={itinerary}
+                className="mt-3"
+                // The fallback suppresses `FareBreakdown` (nothing was priced),
+                // so the notice carries the provenance/About-data entry point
+                // instead: the derived `walk-estimate` row is attributed and
+                // links to `/sources` without needing a URL of its own.
+                provenance={
+                  <div className="flex flex-col gap-1">
+                    <span
+                      data-testid="walk-fallback-provenance-text"
+                      className="break-words text-xs leading-4 text-on-surface-variant"
+                    >
+                      {t('walkFallback.provenance')}
+                    </span>
+                    <ProvenanceChip
+                      sourcesFromItinerary={itinerary.sources}
+                      knownSources={sources}
+                    />
+                  </div>
+                }
+              />
             ) : (
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-on-surface-variant">
                 <span data-testid="fare-total" className="font-semibold text-on-surface">

@@ -3,6 +3,10 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import {
+  WALK_FALLBACK_NOT_REALISTIC_KM,
+  WALK_FALLBACK_NOT_REALISTIC_M,
+} from '../components/transit/WalkFallback';
 import { defaultT } from '../i18n/strings';
 import {
   makeItinerary,
@@ -187,9 +191,42 @@ describe('HomePage recent trips', () => {
     expect(within(row).getByTestId('walk-fallback-badge')).toHaveTextContent(
       defaultT('walkFallback.badge'),
     );
+    expect(within(row).getByTestId('walk-fallback')).toHaveAttribute('data-variant', 'compact');
+    expect(within(row).getByTestId('walk-fallback-stat')).toHaveTextContent('2.1 km');
+    expect(within(row).getByTestId('walk-fallback-body')).toHaveTextContent(
+      defaultT('walkFallback.body'),
+    );
+    expect(within(row).queryByTestId('walk-fallback-warning')).toBeNull();
     expect(row).not.toHaveTextContent('₱');
     expect(row).toHaveTextContent('27 min');
     expect(row).not.toHaveTextContent(/fare effective/i);
+  });
+
+  it('warns on a home fallback over 25 km while still showing the estimate', () => {
+    seedRecents([
+      recentRow(makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 })),
+    ]);
+
+    render(<HomePage />);
+
+    const row = screen.getByTestId('recent-trip');
+    expect(within(row).getByTestId('walk-fallback-stat')).toHaveTextContent('25.0 km');
+    expect(within(row).getByTestId('walk-fallback-warning')).toHaveTextContent(
+      defaultT('walkFallback.tooFar', { km: WALK_FALLBACK_NOT_REALISTIC_KM }),
+    );
+    expect(row).not.toHaveTextContent('₱');
+  });
+
+  it('renders the BFF fallback payload with its generic endpoint labels', () => {
+    seedRecents([recentRow(makeWalkFallbackItinerary({ realPayload: true }))]);
+
+    render(<HomePage />);
+
+    const row = screen.getByTestId('recent-trip');
+    // The BFF does not echo the request's place labels; the row titles itself
+    // from the legs it was actually given rather than inventing names.
+    expect(row).toHaveTextContent('Origin → Destination');
+    expect(row).not.toHaveTextContent('₱');
   });
 
   it('does not crash when the recents store is unreadable', () => {
@@ -239,6 +276,16 @@ describe('HomePage accessibility', () => {
     ]);
     const { container } = render(<HomePage onSavedClick={() => undefined} />);
 
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it('has no axe violations on a walk-fallback recent row', async () => {
+    seedRecents([
+      recentRow(makeWalkFallbackItinerary({ distanceM: WALK_FALLBACK_NOT_REALISTIC_M + 1 })),
+    ]);
+    const { container } = render(<HomePage onSavedClick={() => undefined} />);
+
+    expect(screen.getByTestId('walk-fallback-warning')).toBeInTheDocument();
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 });

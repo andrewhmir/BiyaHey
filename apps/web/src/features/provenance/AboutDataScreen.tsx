@@ -1,8 +1,8 @@
-import type { DataSource } from '@biyahey/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { useT } from '../../i18n/useT';
 import type { Translate } from '../../i18n/strings';
+import type { ProvenanceRow } from '../../lib/api';
 import { DatasetCard } from './DatasetCard';
 import { LicenceSheet } from './LicenceSheet';
 import { useSources, type SourcesOutcome } from './useSources';
@@ -40,7 +40,7 @@ function statusMessage(sources: SourcesOutcome, t: Translate): string {
 export function AboutDataScreen({ onBack }: AboutDataScreenProps) {
   const { t } = useT();
   const sources = useSources();
-  const [selected, setSelected] = useState<DataSource | null>(null);
+  const [selected, setSelected] = useState<ProvenanceRow | null>(null);
   // M5: the hook's typed error is used, not dead: a transport failure reads
   // differently from an HTTP/shape failure.
   const errorMessage =
