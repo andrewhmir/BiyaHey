@@ -98,6 +98,12 @@ here.
   (PUP-San Juan → Unimart Greenhills, 2026-11-05): **5 itineraries, `walk > tricycle`**, 12 min,
   `fareIncomplete: true`, the tricycle leg `fareNotPublished: true`. A real tricycle leg replaces
   the walk connector on that corridor.
+  **Before/after, stated precisely:** before Task 8 those same two OSM relations were ingested by
+  the generic `share_taxi → jeep-` rule, so a plan on this corridor would have shown a **jeepney**
+  leg priced by the jeepney matrix — a wrong mode and an invented fare. The change is therefore
+  mode correctness (jeepney → tricycle) plus an honest unpublished fare, not a walk→ride
+  replacement; no corridor in this feed changes from walk to tricycle because the e-trike relations
+  were already in the feed under the ambiguous share_taxi rule.
 - Terminal hints: `data/build/tricycle-terminals.json` carries the single mapped NCR terminal
   (OSM node 2145359501 "METTA TODA", `amenity=tricycle_station`). The BFF attaches
   `tricycleHint` only to walk legs within 300 m of a mapped terminal. Region IV-A's two mapped
