@@ -30,6 +30,12 @@
  * documented R34 alias layer; a build that silently skipped it would drop
  * curated routes.
  *
+ * The national publish also passes `--landmarks-pbf data/build/osm/ncr.osm.pbf`
+ * (ruling R17): the curated inventory is NCR-only, so resolving its terminals
+ * against the 612 MB national extract would dominate the build for no gain.
+ * The NCR clip must therefore exist before `--region ph` publishes; the script
+ * checks that explicitly instead of letting landmark resolution be skipped.
+ *
  * Timings on this machine (recorded in docs/runbooks/data-build.md §1.2): the
  * NCR clip takes ~72 minutes, publish ~6 minutes. The national region skips the
  * clip entirely (it copies the downloaded extract only when needed) and skips
@@ -85,12 +91,22 @@ const REGION_TARGETS = {
   ncr: {
     pbf: join(buildDir, 'osm', 'ncr.osm.pbf'),
     publishDir: buildDir,
+    // null: landmark resolution reuses the main --pbf extract, so the NCR
+    // publish command and its feed bytes are unchanged.
+    landmarksPbf: null,
     // null: the image's default MOTIS config (/etc/motis/config.yml).
     routingConfig: null,
   },
   ph: {
     pbf: join(buildDir, 'osm', 'ph.osm.pbf'),
+    // Ruling R6: publish writes <out>/gtfs/gtfs.zip, <out>/manifest.json,
+    // <out>/build-report.json and <out>/coverage-regional.json, so the national
+    // root stays data/build/gtfs/ph (the NCR root stays data/build/gtfs).
     publishDir: join(buildDir, 'gtfs', 'ph'),
+    // Ruling R17: the curated inventory is NCR-only, so the national build
+    // resolves its terminals against the NCR clip instead of running a
+    // locations=True pass over the 612 MB national extract.
+    landmarksPbf: join(buildDir, 'osm', 'ncr.osm.pbf'),
     // Selected through the compose env override; see the next-step text below.
     routingConfig: '/etc/motis/config.ph.yml',
   },
@@ -231,7 +247,19 @@ if (!existsSync(target.pbf)) {
   process.exit(1);
 }
 
-runStage('publish GTFS + fares + manifest + build report (offline)', [
+// Ruling R17: a national publish must not silently fall back to landmark
+// resolution on the national extract. Fail here with the reason before the
+// stage starts; the pipeline also fails loudly (exit 2) if the file disappears.
+if (target.landmarksPbf !== null && !existsSync(target.landmarksPbf)) {
+  console.error(
+    `data:build: --region ${region} needs the NCR clip ${target.landmarksPbf} ` +
+      'for curated landmark resolution (the inventory is NCR-only). ' +
+      'Build it with `npm run data:build -- --region ncr` (or the osm stage) first.',
+  );
+  process.exit(1);
+}
+
+const publishArgs = [
   '-m',
   'pipeline.cli',
   'publish',
@@ -241,13 +269,26 @@ runStage('publish GTFS + fares + manifest + build report (offline)', [
   target.publishDir,
   '--aliases',
   aliases,
-]);
+];
+if (target.landmarksPbf !== null) {
+  publishArgs.push('--landmarks-pbf', target.landmarksPbf);
+}
+
+runStage(
+  'publish GTFS + fares + manifest + report + regional coverage (offline)',
+  publishArgs,
+);
 
 console.log(`
 data:build: done (region ${region})
   feed      ${feedPath}
   manifest  ${manifestPath}
   report    ${join(target.publishDir, 'build-report.json')}
-
+  coverage  ${join(target.publishDir, 'coverage-regional.json')}
+${
+  target.landmarksPbf !== null
+    ? `  landmarks ${target.landmarksPbf}\n`
+    : ''
+}
 ${nextStepLines(target).join('\n')}
 `);

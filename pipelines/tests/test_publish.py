@@ -29,12 +29,15 @@ from pathlib import Path
 import pytest
 import yaml
 
+from pipeline import publish as publish_module
 from pipeline.cli import main
+from pipeline.coverage import compute_coverage, read_feed_route_ids
 from pipeline.fares import FARE_ATTRIBUTES_FILENAME, FARE_RULES_FILENAME
 from pipeline.gtfs import RouteDef
 from pipeline.inventory import load_inventory, route_id_for
 from pipeline.manifest import BlockedDatasetError
 from pipeline.publish import (
+    COVERAGE_REGIONAL_FILENAME,
     DEFAULT_ALIASES,
     FEED_END,
     FEED_START,
@@ -44,6 +47,7 @@ from pipeline.publish import (
     run_stage_publish,
     unsupported_route_reason,
 )
+from pipeline.regions import REGION_NAMES, REGION_ROLLUPS, UNASSIGNED
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -590,3 +594,205 @@ def test_cli_publish_runs_the_stage(tmp_path, capsys):
     printed = capsys.readouterr().out
     assert "gtfs.zip" in printed
     assert "manifest.json" in printed
+
+
+# ---------------------------------------------------------------------------
+# Task 3: regional coverage artifact and the landmarks extract (ruling R17)
+# ---------------------------------------------------------------------------
+
+
+def test_publish_writes_the_regional_coverage_artifact(published):
+    out, report = published
+    artifact_path = out / COVERAGE_REGIONAL_FILENAME
+    assert artifact_path.is_file()
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    inventory = load_inventory(INVENTORY)
+    # The acceptance definition: the artifact's `curated` block is exactly the
+    # coverage of the feed written to disk, not a second implementation.
+    expected = compute_coverage(
+        inventory, read_feed_route_ids(out / "gtfs" / "gtfs.zip")
+    )
+    assert artifact["curated"] == expected
+    assert artifact["curated"] == report["coverage"]
+
+    assert artifact["feed"]["routes"] == report["feed"]["routes"]
+    assert artifact["feed"]["stops"] == report["feed"]["stops"]
+    assert artifact["feed"]["trips"] == report["feed"]["trips"]
+    assert artifact["feed"]["sha256"] == report["feed"]["sha256"]
+
+    regional = artifact["regional"]
+    assert regional["totals"] == {
+        "routes": report["feed"]["routes"],
+        "stops": report["feed"]["stops"],
+        "trips": report["feed"]["trips"],
+    }
+    assert set(regional["by_region"]) == set(REGION_NAMES) | {UNASSIGNED}
+    assert (
+        sum(entry["stops"] for entry in regional["by_region"].values())
+        == report["feed"]["stops"]
+    )
+    for group, regions in REGION_ROLLUPS.items():
+        for metric in ("routes", "stops", "trips"):
+            assert regional["by_island_group"][group][metric] == sum(
+                regional["by_region"][region][metric] for region in regions
+            )
+    # The committed fixture is an NCR extract, so its stops must land in NCR.
+    assert regional["by_region"]["NCR"]["stops"] > 0
+
+
+def _spy_on_named_stops(monkeypatch):
+    """Record every extract the landmark pass reads; return the list."""
+    seen = []
+    real = publish_module.load_named_stops
+
+    def spy(path):
+        seen.append(Path(path))
+        return real(Path(path))
+
+    monkeypatch.setattr(publish_module, "load_named_stops", spy)
+    return seen
+
+
+def test_publish_reads_landmarks_from_the_main_extract_by_default(
+    tmp_path, monkeypatch
+):
+    """NCR build unchanged: the default landmarks extract is the --pbf one."""
+    seen = _spy_on_named_stops(monkeypatch)
+
+    run_stage_publish(
+        PBF,
+        tmp_path / "default",
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
+    )
+
+    assert seen == [PBF]
+
+
+def test_publish_reads_landmarks_from_an_explicit_extract(tmp_path, monkeypatch):
+    """R17: a national build can point the landmark pass at the NCR clip."""
+    seen = _spy_on_named_stops(monkeypatch)
+    # Keep the fixture's XML format: pyosmium dispatches on the extension, and
+    # a .pbf filename over OSM XML is an invalid BlobHeader, not a fixture.
+    landmarks = tmp_path / "ncr-clip.osm"
+    landmarks.write_bytes(PBF.read_bytes())
+
+    default_out = tmp_path / "default"
+    run_stage_publish(
+        PBF,
+        default_out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        built_at=BUILT_AT,
+    )
+    explicit_out = tmp_path / "explicit"
+    run_stage_publish(
+        PBF,
+        explicit_out,
+        INVENTORY,
+        FARES,
+        SOURCES,
+        None,
+        landmarks_pbf=landmarks,
+        built_at=BUILT_AT,
+    )
+
+    assert seen == [PBF, landmarks]
+    # Same landmark data, so the NCR feed bytes must not move when the argument
+    # is supplied: the option changes which extract is read, nothing else.
+    assert (explicit_out / "gtfs" / "gtfs.zip").read_bytes() == (
+        default_out / "gtfs" / "gtfs.zip"
+    ).read_bytes()
+
+
+def test_publish_fails_loudly_when_the_landmarks_extract_is_missing(tmp_path):
+    """R17: a missing landmarks extract is an input error, never a silent skip."""
+    missing = tmp_path / "ncr.osm.pbf"
+    out = tmp_path / "out"
+
+    with pytest.raises(FileNotFoundError, match="landmarks"):
+        run_stage_publish(
+            PBF,
+            out,
+            INVENTORY,
+            FARES,
+            SOURCES,
+            None,
+            landmarks_pbf=missing,
+            built_at=BUILT_AT,
+        )
+
+    assert not (out / "gtfs" / "gtfs.zip").exists()
+    assert not (out / "manifest.json").exists()
+
+
+def test_cli_publish_accepts_an_explicit_landmarks_extract(
+    tmp_path, monkeypatch, capsys
+):
+    seen = _spy_on_named_stops(monkeypatch)
+    landmarks = tmp_path / "landmarks.osm"
+    landmarks.write_bytes(PBF.read_bytes())
+    out = tmp_path / "build"
+
+    code = main(
+        [
+            "publish",
+            "--pbf",
+            str(PBF),
+            "--landmarks-pbf",
+            str(landmarks),
+            "--out",
+            str(out),
+            "--inventory",
+            str(INVENTORY),
+            "--fares",
+            str(FARES),
+            "--sources",
+            str(SOURCES),
+            "--no-aliases",
+            "--built-at",
+            BUILT_AT,
+        ]
+    )
+
+    assert code == 0
+    assert seen == [landmarks]
+    assert (out / COVERAGE_REGIONAL_FILENAME).is_file()
+    assert "landmarks" in capsys.readouterr().out
+
+
+def test_cli_publish_reports_a_missing_landmarks_extract_as_input_error(
+    tmp_path, capsys
+):
+    missing = tmp_path / "missing.osm.pbf"
+    code = main(
+        [
+            "publish",
+            "--pbf",
+            str(PBF),
+            "--landmarks-pbf",
+            str(missing),
+            "--out",
+            str(tmp_path / "build"),
+            "--inventory",
+            str(INVENTORY),
+            "--fares",
+            str(FARES),
+            "--sources",
+            str(SOURCES),
+            "--no-aliases",
+            "--built-at",
+            BUILT_AT,
+        ]
+    )
+
+    assert code == 2
+    stderr = capsys.readouterr().err
+    assert "landmarks" in stderr
+    assert "missing.osm.pbf" in stderr

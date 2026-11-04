@@ -8,10 +8,15 @@ turned those two layers into the one artifact the router reads (ruling R30), and
 nothing normalised the curated route ids against the OSM slugs (ruling R29).
 This stage is that link. It:
 
-1. reads named stop features from the NCR extract and resolves every curated
-   terminal through :mod:`pipeline.landmarks` (no nearest-neighbour guessing),
-   consulting ``data/routes/landmark-aliases.yaml`` (ruling R34) when a curated
-   landmark's exact name is not an OSM stop name;
+1. reads named stop features from the landmark extract and resolves every
+   curated terminal through :mod:`pipeline.landmarks` (no nearest-neighbour
+   guessing), consulting ``data/routes/landmark-aliases.yaml`` (ruling R34) when
+   a curated landmark's exact name is not an OSM stop name. The landmark extract
+   defaults to ``pbf``, so the NCR build is unchanged; a national build points
+   it at the NCR clip explicitly (ruling R17) because the curated inventory is
+   NCR-only and a ``locations=True`` pass over the 612 MB national extract would
+   dominate the build. A missing landmark extract fails the build, never skips
+   resolution;
 2. lowercases curated ids and merges them with the OSM routes case-insensitively
    so ``jeep-T101`` and ``jeep-t101`` can never both enter the feed (R29), with
    OSM winning the collision because measured geometry beats a transcription;
@@ -19,11 +24,23 @@ This stage is that link. It:
    :mod:`pipeline.fares`;
 4. writes ``<out>/gtfs/gtfs.zip`` (deterministic bytes, with the ODbL notice
    and the CC BY-SA 2.0 inventory attribution inside), ``<out>/manifest.json``
-   (sha256 + datasets + attributions) and ``<out>/build-report.json`` (the
-   coverage report Task 11 consumes);
+   (sha256 + datasets + attributions), ``<out>/build-report.json`` (the
+   coverage report Task 11 consumes) and ``<out>/coverage-regional.json`` (the
+   per-region and per-island-group counts plus the curated coverage embedded
+   verbatim; additive, ruling R6);
 5. refuses to publish if the provenance registry names a blocked dataset, or if
    the manifest or the written feed loses the ODbL notice or the CC BY-SA 2.0
    inventory attribution (spec 8.1/8.2; rulings R22, R32).
+
+Regional coverage artifact
+--------------------------
+``<out>/coverage-regional.json`` is additive: it does not alter the manifest's,
+the build report's or the zip's shape. It carries ``feed`` (the route/stop/trip
+totals and the zip sha256), ``regional`` (exactly
+:func:`pipeline.regions.regional_counts` over the built feed), ``curated``
+(exactly :func:`pipeline.coverage.compute_coverage` over that same feed) and
+``built_at``, so the regional numbers and the acceptance coverage number come
+from one implementation each and cannot drift.
 
 Build-report contract
 ---------------------
@@ -108,8 +125,10 @@ from .manifest import (
     sha256_file,
 )
 from .osm_routes import iter_route_relations
+from .regions import regional_counts
 
 __all__ = [
+    "COVERAGE_REGIONAL_FILENAME",
     "DEFAULT_ALIASES",
     "DEFAULT_BUILD_DIR",
     "DEFAULT_FARES",
@@ -130,6 +149,10 @@ __all__ = [
 #: (the fare matrix is effective 2026-09-28; Task 6's tests use the same range).
 FEED_START = date(2026, 11, 1)
 FEED_END = date(2027, 10, 31)
+
+#: Additive coverage artifact written beside ``manifest.json`` (Task 3, ruling
+#: R6). Exported so the CLI can print its path without a second string literal.
+COVERAGE_REGIONAL_FILENAME = "coverage-regional.json"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -259,16 +282,18 @@ def run_stage_publish(
     sources_path: Path = DEFAULT_SOURCES,
     aliases_path: Optional[Path] = DEFAULT_ALIASES,
     *,
+    landmarks_pbf: Optional[Path] = None,
     built_at: Optional[str] = None,
     agency: AgencyInfo = AgencyInfo.SYNTHETIC,
 ) -> Dict[str, Any]:
     """Run the publish stage and return the build report.
 
     Args:
-        pbf: NCR OSM extract (``data/build/osm/ncr.osm.pbf`` in production, a
+        pbf: region OSM extract (``data/build/osm/ncr.osm.pbf`` for the NCR
+            build, ``data/build/osm/ph.osm.pbf`` for the national one, a
             committed fixture in tests).
-        out_dir: build directory; writes ``gtfs/gtfs.zip``, ``manifest.json`` and
-            ``build-report.json`` below it.
+        out_dir: build directory; writes ``gtfs/gtfs.zip``, ``manifest.json``,
+            ``build-report.json`` and ``coverage-regional.json`` below it.
         inventory_path: curated inventory YAML.
         fares_path: hand-curated fare matrix YAML.
         sources_path: provenance registry YAML.
@@ -277,6 +302,11 @@ def run_stage_publish(
             id absent from the extract or a renamed feature) are reported in
             ``landmark_aliases.invalid`` and the affected landmark stays
             unresolved; a malformed file fails the build.
+        landmarks_pbf: OSM extract the landmark/terminal pass reads. ``None``
+            (the default) means ``pbf``, so the NCR build is unchanged. A
+            national build passes the NCR clip (ruling R17) because the curated
+            inventory is NCR-only; a missing file fails the build rather than
+            silently skipping landmark resolution.
         built_at: ISO-8601 UTC timestamp recorded in the manifest/report;
             defaults to the current UTC time.
         agency: GTFS publisher metadata (the committed synthetic agency).
@@ -285,7 +315,8 @@ def run_stage_publish(
         The build report mapping (also written to ``build-report.json``).
 
     Raises:
-        FileNotFoundError: an input file (or the OSM extract) is missing.
+        FileNotFoundError: an input file, the OSM extract, or the landmarks
+            extract is missing.
         ValueError: an input is malformed (inventory schema, aliases schema,
             fare matrix, registry) or the build cannot produce a valid feed.
         BlockedDatasetError: the registry names a blocked dataset (spec 8.1).
@@ -298,9 +329,11 @@ def run_stage_publish(
     fares_path = Path(fares_path)
     sources_path = Path(sources_path)
     aliases: Optional[Path] = None if aliases_path is None else Path(aliases_path)
+    landmarks: Path = pbf if landmarks_pbf is None else Path(landmarks_pbf)
 
     for label, path in (
         ("OSM extract", pbf),
+        ("landmarks OSM extract", landmarks),
         ("curated inventory", inventory_path),
         ("fare matrix", fares_path),
         ("provenance registry", sources_path),
@@ -327,8 +360,9 @@ def run_stage_publish(
         load_landmark_aliases(aliases) if aliases is not None else []
     )
 
-    # Resolve curated terminals against named stop features in the extract.
-    named_stops = load_named_stops(pbf)
+    # Resolve curated terminals against named stop features in the landmark
+    # extract (the main extract unless a national build supplies the NCR clip).
+    named_stops = load_named_stops(landmarks)
     stop_lookup = build_stop_lookup(named_stops)
     alias_lookup, invalid_aliases = alias_coordinates(
         alias_list, stop_feature_lookup(named_stops)
@@ -458,6 +492,40 @@ def run_stage_publish(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
 
+    # Task 3 (ruling R6): the per-region coverage artifact sits beside the
+    # national manifest. It is additive - the manifest, the build report and the
+    # feed bytes written above are unchanged. `curated` is the same
+    # compute_coverage object the report carries, and `regional` is the sole
+    # regional implementation, so the two artifacts cannot disagree.
+    feed_sha256 = sha256_file(zip_path)
+    regional_path = out_dir / COVERAGE_REGIONAL_FILENAME
+    regional_path.write_text(
+        json.dumps(
+            {
+                "built_at": built_at,
+                "feed": {
+                    "path": str(zip_path),
+                    "routes": len(feed.routes),
+                    "stops": len(feed.stops),
+                    "trips": len(feed.trips),
+                    "sha256": feed_sha256,
+                },
+                "method": (
+                    "axis-aligned approximate region boxes (recon doc section 3); "
+                    "a stop is assigned by its coordinates and a route/trip is "
+                    "counted once per region its served stops touch, so per-region "
+                    "route and trip sums can exceed the feed totals"
+                ),
+                "regional": regional_counts(feed),
+                "curated": coverage,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     used_names = {
         normalise_name(landmark)
         for entry in inventory
@@ -495,7 +563,7 @@ def run_stage_publish(
             "stops": len(feed.stops),
             "trips": len(feed.trips),
             "stop_times": len(feed.stop_times),
-            "sha256": sha256_file(zip_path),
+            "sha256": feed_sha256,
             "route_ids": sorted(written_route_ids),
         },
         "curated_routes_total": len(inventory),

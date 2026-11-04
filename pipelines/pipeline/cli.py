@@ -10,10 +10,12 @@ Stages (run from the ``pipelines/`` directory with the venv interpreter):
   the downloaded national extract unchanged (no clip, no re-download);
   ``--region bbox:min_lat,min_lon,max_lat,max_lon`` clips to an explicit box.
   Offline: it only reads local files.
-* ``publish`` — resolve the curated terminals against the clipped extract (with
-  the documented landmark aliases, ruling R34), merge OSM + curated routes,
-  build the GTFS feed with fare tables, and write ``<out>/gtfs/gtfs.zip``,
-  ``<out>/manifest.json`` and ``<out>/build-report.json``. Offline.
+* ``publish`` — resolve the curated terminals against the landmark extract (the
+  main ``--pbf`` extract by default, or ``--landmarks-pbf``; a national build
+  points it at the NCR clip per ruling R17), with the documented landmark
+  aliases (ruling R34), merge OSM + curated routes, build the GTFS feed with
+  fare tables, and write ``<out>/gtfs/gtfs.zip``, ``<out>/manifest.json``,
+  ``<out>/build-report.json`` and ``<out>/coverage-regional.json``. Offline.
 * ``coverage`` — compare the curated inventory with a built feed and print the
   coverage percentage plus the missing routes (spec §3 criterion 7, ruling R29's
   case-insensitive ids). Exits 1 when coverage is below ``--threshold``.
@@ -63,6 +65,7 @@ from .osm import (
     run_stage_osm,
 )
 from .publish import (
+    COVERAGE_REGIONAL_FILENAME,
     DEFAULT_ALIASES,
     DEFAULT_BUILD_DIR,
     DEFAULT_FARES,
@@ -136,19 +139,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     publish = stages.add_parser(
         "publish",
-        help="build the merged GTFS feed, fares, manifest and build report (offline)",
+        help="build the merged GTFS feed, fares, manifest, report and regional coverage (offline)",
         description=(
-            "Resolve the curated jeepney/UV terminals against the NCR extract, merge "
-            "them with the OSM routes (R29/R30), build the GTFS feed with the fare "
-            "tables and write gtfs/gtfs.zip, manifest.json and build-report.json. "
-            "Offline: reads local files only; fails on a blocked dataset or a lost "
-            "ODbL notice."
+            "Resolve the curated jeepney/UV terminals against the landmark extract, "
+            "merge them with the OSM routes (R29/R30), build the GTFS feed with the "
+            "fare tables and write gtfs/gtfs.zip, manifest.json, build-report.json "
+            "and coverage-regional.json. --landmarks-pbf selects the extract the "
+            "landmark pass reads (default: the --pbf extract); the national build "
+            "passes data/build/osm/ncr.osm.pbf because the curated inventory is "
+            "NCR-only (ruling R17). Offline: reads local files only; fails on a "
+            "blocked dataset, a lost ODbL notice, or a missing landmarks extract."
         ),
     )
     publish.add_argument(
         "--pbf",
         default=str(DEFAULT_PBF),
-        help="NCR OSM extract (default: %(default)s)",
+        help="region OSM extract (default: %(default)s)",
+    )
+    publish.add_argument(
+        "--landmarks-pbf",
+        default=None,
+        help=(
+            "OSM extract used for landmark/terminal resolution (default: the --pbf "
+            "extract). Pass data/build/osm/ncr.osm.pbf for the national build: the "
+            "curated inventory is NCR-only (ruling R17). A missing file fails the "
+            "publish rather than skipping landmark resolution."
+        ),
     )
     publish.add_argument(
         "--out",
@@ -313,8 +329,11 @@ def _run_licence_gate(args: argparse.Namespace) -> int:
 
 
 def _run_publish(args: argparse.Namespace) -> int:
-    """``publish``: build the merged GTFS feed, manifest and build report."""
+    """``publish``: build the merged GTFS feed, manifest, report and regional coverage."""
     aliases_path = None if args.no_aliases else Path(args.aliases)
+    # None means "the main --pbf extract", which keeps the NCR build's command
+    # and behaviour unchanged; --region ph supplies the NCR clip (ruling R17).
+    landmarks_pbf = None if args.landmarks_pbf is None else Path(args.landmarks_pbf)
     try:
         report = run_stage_publish(
             Path(args.pbf),
@@ -323,6 +342,7 @@ def _run_publish(args: argparse.Namespace) -> int:
             Path(args.fares),
             Path(args.sources),
             aliases_path,
+            landmarks_pbf=landmarks_pbf,
             built_at=args.built_at,
         )
     except (BlockedDatasetError, LicenceGateError) as exc:
@@ -360,6 +380,8 @@ def _run_publish(args: argparse.Namespace) -> int:
     print(f"gtfs: {feed['path']}")
     print(f"manifest: {report['manifest_path']} (sha256 {feed['sha256']})")
     print(f"report: {report['report_path']}")
+    print(f"landmarks pbf: {args.landmarks_pbf or args.pbf}")
+    print(f"regional: {Path(args.out) / COVERAGE_REGIONAL_FILENAME}")
     print(
         "licence gate: ok (blocked datasets checked, ODbL-1.0 and "
         "CC BY-SA 2.0 notices present in artifact)"
