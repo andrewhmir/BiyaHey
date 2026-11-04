@@ -8,6 +8,7 @@ import { resolveDataDir } from '@biyahey/shared/provenance';
 import { buildApp } from '../src/app.js';
 import { isPlausibleItinerary } from '../src/routing/map-itinerary.js';
 import {
+  FALLBACK_HEADER,
   IMPLAUSIBLE_DROPPED_HEADER,
   MAX_ITINERARIES,
   MOTIS_CALLS_HEADER,
@@ -342,7 +343,25 @@ describe('POST /plan', () => {
     ]);
   });
 
-  it('drops an itinerary whose transit geometry implies an impossible speed', async () => {
+  it('never adds a walk fallback when a usable itinerary exists', async () => {
+    const { app, urls } = capturingPlanApp();
+    const { statusCode, headers, body } = await postPlan(app, {
+      origin: CUBAO,
+      destination: AYALA,
+      departAt: DEPART_AT,
+    });
+
+    expect(statusCode).toBe(200);
+    expect(body.itineraries).toHaveLength(4);
+    expect(body.itineraries.some((itinerary) => itinerary.fallback === 'walk')).toBe(false);
+    expect(headers[FALLBACK_HEADER]).toBeUndefined();
+    // The happy path adds no walking-graph request: the fixture already met the
+    // three-option target on its first plan call.
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('1');
+    expect(urls.every((url) => !url.includes('directModes=WALK'))).toBe(true);
+  });
+
+  it('drops an implausible itinerary and labels the resulting walk fallback', async () => {
     const app = planApp({ itineraries: [planFixture.itineraries[1]] });
     const { statusCode, headers, body } = await postPlan(app, {
       origin: CUBAO,
@@ -351,11 +370,17 @@ describe('POST /plan', () => {
     });
 
     expect(statusCode).toBe(200);
-    expect(body.itineraries).toEqual([]);
+    // Nothing usable survived the guard, so the response is a labelled walking
+    // estimate rather than an empty list.
+    expect(body.itineraries).toHaveLength(1);
+    expect(body.itineraries[0].fallback).toBe('walk');
+    expect(body.itineraries[0].legs[0].approximate).toBe(true);
+    expect(headers[FALLBACK_HEADER]).toBe('walk');
     expect(headers[IMPLAUSIBLE_DROPPED_HEADER]).toBe('1');
     // Nothing plausible arrived, so the fan-out ran all three attempts and the
-    // same bad itinerary was counted once (deduped across attempts).
-    expect(headers[MOTIS_CALLS_HEADER]).toBe('3');
+    // same bad itinerary was counted once (deduped across attempts); the walk
+    // fallback then made one direct-walk request (the fixture has no direct).
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('4');
   });
 
   it('drops an itinerary whose rail line v1 cannot price', async () => {
@@ -372,9 +397,11 @@ describe('POST /plan', () => {
       departAt: DEPART_AT,
     });
     expect(statusCode).toBe(200);
-    expect(body.itineraries).toEqual([]);
-    // The mode gate is observable: one unsupported option was dropped, not
-    // silently turned into an empty corridor.
+    // The mode gate is observable: one unsupported option was dropped, and the
+    // empty result is filled with the labelled walk fallback.
+    expect(body.itineraries).toHaveLength(1);
+    expect(body.itineraries[0].fallback).toBe('walk');
+    expect(headers[FALLBACK_HEADER]).toBe('walk');
     expect(headers[UNSUPPORTED_DROPPED_HEADER]).toBe('1');
   });
 
@@ -395,11 +422,14 @@ describe('POST /plan', () => {
       departAt: DEPART_AT,
     });
     expect(statusCode).toBe(200);
-    expect(body.itineraries).toEqual([]);
+    expect(body.itineraries).toHaveLength(1);
+    expect(body.itineraries[0].fallback).toBe('walk');
+    expect(headers[FALLBACK_HEADER]).toBe('walk');
     expect(headers[UNSUPPORTED_DROPPED_HEADER]).toBe('1');
     // Nothing plausible arrived, so the fan-out ran all three attempts and the
-    // same unsupported itinerary was counted once (deduped across attempts).
-    expect(headers[MOTIS_CALLS_HEADER]).toBe('3');
+    // same unsupported itinerary was counted once (deduped across attempts),
+    // plus the walk fallback's direct-walk request.
+    expect(headers[MOTIS_CALLS_HEADER]).toBe('4');
   });
 
   it('caps a crowded corridor at five ranked itineraries', async () => {
@@ -631,7 +661,7 @@ describe('POST /plan', () => {
         throw new Error('connect ECONNREFUSED 127.0.0.1:8080');
       },
     });
-    const { statusCode, body } = await postPlan(app, {
+    const { statusCode, body, headers } = await postPlan(app, {
       origin: CUBAO,
       destination: AYALA,
       departAt: DEPART_AT,
@@ -641,6 +671,8 @@ describe('POST /plan', () => {
     expect(statusCode).toBe(502);
     expect(body.error?.code).toBe('ROUTER_UNAVAILABLE');
     expect(body.error?.message).toContain('ECONNREFUSED');
+    // A failed base plan keeps its 502: the walk fallback never papers over it.
+    expect(headers[FALLBACK_HEADER]).toBeUndefined();
   });
 
   it('returns 502 ROUTER_ERROR with details when MOTIS rejects the request', async () => {
@@ -651,7 +683,7 @@ describe('POST /plan', () => {
         return new Response('fromPlace is invalid', { status: 400 });
       },
     });
-    const { statusCode, body } = await postPlan(app, {
+    const { statusCode, body, headers } = await postPlan(app, {
       origin: CUBAO,
       destination: AYALA,
       departAt: DEPART_AT,
@@ -662,6 +694,7 @@ describe('POST /plan', () => {
     expect(body.error?.code).toBe('ROUTER_ERROR');
     expect(body.error?.message).toContain('400');
     expect(body.error?.message).toContain('fromPlace is invalid');
+    expect(headers[FALLBACK_HEADER]).toBeUndefined();
   });
 
   it('rejects malformed user input with 400, never 500', async () => {

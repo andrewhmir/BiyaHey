@@ -15,6 +15,12 @@ import {
   itineraryKey,
   mapPlanItinerariesDetailed,
 } from '../routing/map-itinerary.js';
+import {
+  buildWalkFallback,
+  mapRoutedWalk,
+  walkRouteMaxDirectTime,
+  type MappedWalkGeometry,
+} from '../routing/walk-fallback.js';
 
 /** Fewer than this and the route asks MOTIS again with a shifted departure. */
 const TARGET_ITINERARIES = 3;
@@ -29,11 +35,22 @@ const SHIFTED_DEPARTURE_MIN = 10;
 
 /**
  * Response header carrying the number of logical MOTIS `/plan` calls the
- * fan-out made. Base, +10 min and direct-only are up to three calls; the stress
- * probe (`scripts/motis-stress.mjs`) asserts this is 3 so the R37 proof really
- * exercises the multi-call path instead of a corridor that answers in one call.
+ * fan-out made. Base, +10 min and direct-only are up to three calls; the walk
+ * fallback adds one direct-walk call when it asks MOTIS for road geometry (it
+ * adds none on the happy path or when the pair is beyond the walk ceiling).
+ * The R37 stress probe (`scripts/motis-stress.mjs`) asserts 3 on a corridor
+ * that has transit, which is unchanged.
  */
 export const MOTIS_CALLS_HEADER = 'x-biyahey-motis-calls';
+
+/**
+ * Response header set to `walk` when the served itinerary is the synthesised
+ * walking estimate rather than a routed transit option.
+ *
+ * Absent on every normal plan, so a client (and acceptance) can distinguish a
+ * real zero-transfer walk from a fallback without inspecting the payload.
+ */
+export const FALLBACK_HEADER = 'x-biyahey-fallback';
 
 /**
  * Response header carrying the number of unique itineraries dropped by the
@@ -144,6 +161,57 @@ async function collectItineraries(
   };
 }
 
+interface WalkFallbackResult {
+  itinerary: ItineraryDto;
+  /** Logical MOTIS calls the fallback added: 0 or 1. */
+  motisCalls: number;
+}
+
+/**
+ * Build the walking estimate served when {@link collectItineraries} found
+ * nothing.
+ *
+ * The road-following request (F1) is best effort: when MOTIS reports no
+ * walking path, the pair is beyond the walk ceiling, or the request itself
+ * fails, the straight-line estimate is the honest last resort. A failure here
+ * must never turn a usable (if empty) plan into a 502; a failing base plan
+ * already threw inside `collectItineraries` before this function runs.
+ */
+async function collectWalkFallback(
+  client: MotisClient,
+  plan: PlanRequest,
+  departAt: string,
+): Promise<WalkFallbackResult> {
+  const maxDirectTime = walkRouteMaxDirectTime(plan.origin, plan.destination);
+  let routedWalk: MappedWalkGeometry | undefined;
+  let motisCalls = 0;
+  if (maxDirectTime !== undefined) {
+    motisCalls = 1;
+    try {
+      routedWalk = mapRoutedWalk(
+        await client.walkRoute({
+          origin: plan.origin,
+          destination: plan.destination,
+          time: departAt,
+          maxDirectTime,
+        }),
+      );
+    } catch {
+      // Degrade to the straight line rather than failing the whole plan.
+      routedWalk = undefined;
+    }
+  }
+  return {
+    itinerary: buildWalkFallback({
+      origin: plan.origin,
+      destination: plan.destination,
+      departAt,
+      routedWalk,
+    }),
+    motisCalls,
+  };
+}
+
 /**
  * `POST /plan` — MOTIS itineraries mapped to v1 DTOs, enriched with fares and
  * the provenance ids of every dataset actually used.
@@ -170,14 +238,24 @@ export function registerPlanRoutes(
     // Spec §9 / final-review item 5: rank and dedupe first, then serve the best
     // 3–5 options. The cap never drops below the three-option target because a
     // corridor with fewer options already triggered the extra MOTIS attempts.
-    const itineraries = applyPreferences(collected.itineraries, plan.preferences).slice(
+    let itineraries = applyPreferences(collected.itineraries, plan.preferences).slice(
       0,
       MAX_ITINERARIES,
     );
+    let motisCalls = collected.motisCalls;
+    // PH-wide coverage D4: emit the fallback only when every attempt returned
+    // zero usable itineraries, so a real option always wins and the happy path
+    // adds no MOTIS call.
+    const usesWalkFallback = collected.itineraries.length === 0;
+    if (usesWalkFallback) {
+      const fallback = await collectWalkFallback(client, plan, departAt);
+      itineraries = [fallback.itinerary];
+      motisCalls += fallback.motisCalls;
+    }
 
     // Observable proof for the R37 stress probe, the R10 guard and the mode
     // gate: the fan-out actually made N calls and both drop counts are visible.
-    reply.header(MOTIS_CALLS_HEADER, String(collected.motisCalls));
+    reply.header(MOTIS_CALLS_HEADER, String(motisCalls));
     reply.header(IMPLAUSIBLE_DROPPED_HEADER, String(collected.implausibleDropped));
     reply.header(UNSUPPORTED_DROPPED_HEADER, String(collected.unsupportedDropped));
 
@@ -186,6 +264,11 @@ export function registerPlanRoutes(
       // centralized handler. The adapter only emits registry ids, so this is a
       // contract check.
       itinerary.sources = assertKnownSources(itinerary.sources, registry);
+    }
+    if (usesWalkFallback) {
+      // Set only once the fallback survived source validation; a 422 must not
+      // advertise a fallback that was never served.
+      reply.header(FALLBACK_HEADER, 'walk');
     }
     const sourceIds: SourceId[] = assertKnownSources(
       itineraries.flatMap((itinerary) => itinerary.sources),

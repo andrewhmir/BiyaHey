@@ -26,9 +26,32 @@ export interface MotisPlanQuery {
   via?: readonly string[];
 }
 
-/** Thin, injectable client for the two MOTIS endpoints the BFF needs. */
+/**
+ * Query accepted by {@link MotisClient.walkRoute}.
+ *
+ * This is the verified road-following walk mechanism (Lead finding F1): the
+ * pinned MOTIS build serves walk geometry from `/api/v6/plan` only, with an
+ * empty `transitModes` and `directModes=WALK`. `/api/v1/route` is a 404 there.
+ */
+export interface MotisWalkQuery {
+  origin: { lat: number; lon: number };
+  destination: { lat: number; lon: number };
+  /** ISO 8601 departure timestamp, passed through to MOTIS. */
+  time: string;
+  /**
+   * Upper bound on the direct walk in **seconds** (MOTIS `maxDirectTime`).
+   *
+   * MOTIS's `maxTravelTime` is the minutes-valued parameter and is never set
+   * here; mixing the two units would size the search wrong by 60x.
+   */
+  maxDirectTime: number;
+}
+
+/** Thin, injectable client for the MOTIS endpoints the BFF needs. */
 export interface MotisClient {
   plan(query: MotisPlanQuery): Promise<unknown>;
+  /** Direct-only walking request; returns the raw `/api/v6/plan` payload. */
+  walkRoute(query: MotisWalkQuery): Promise<unknown>;
   geocode(text: string): Promise<unknown>;
 }
 
@@ -187,6 +210,22 @@ export function createMotisClient(options: MotisClientOptions): MotisClient {
         time: query.time,
         maxTransfers: query.maxTransfers,
         via,
+      });
+    },
+    walkRoute(query) {
+      // F1 (probed 2026-11-04): `transitModes=` empty disables transit,
+      // `directModes=WALK` asks for a walking path, and the answer arrives in
+      // `direct[0]` with `legs[0].legGeometry` (precision 6) plus real
+      // `duration` (seconds) and `distance` (metres). `transitModes` must be
+      // sent as an empty parameter, which `requestJson` preserves.
+      // `maxDirectTime` is SECONDS; `maxTravelTime` would be minutes.
+      return requestJson('/api/v6/plan', {
+        fromPlace: `${query.origin.lat},${query.origin.lon}`,
+        toPlace: `${query.destination.lat},${query.destination.lon}`,
+        time: query.time,
+        transitModes: '',
+        directModes: 'WALK',
+        maxDirectTime: query.maxDirectTime,
       });
     },
     geocode(text) {
