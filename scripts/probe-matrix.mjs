@@ -36,10 +36,10 @@ const API_URL = (process.env.BIYAHEY_API_URL ?? 'http://localhost:8787').replace
 const LONG_WALK_BRIDGE_M = 1200;
 
 /**
- * Acceptance pairs (session prompt §6). `expect` documents intent, not a hard
- * branch: every pair must return ≥1 itinerary that is transit-with-sources or
- * a labelled walk fallback.
- * - `served`: the feed is expected to carry transit here (the fallback is a regression if returned alone).
+ * Acceptance pairs (session prompt §6). `expect` documents intent:
+ * - `served`: the feed is expected to carry transit here, so a labelled walk
+ *   fallback alone is a FAILURE (Task 6B showed a fallback can otherwise mask a
+ *   missing transit answer).
  * - `any`: no known transit corridor; a labelled fallback is the honest answer.
  */
 const PAIRS = [
@@ -195,6 +195,14 @@ async function probePair(pair) {
     const bad = classified.filter((entry) => !entry.ok);
     for (const entry of bad) {
       record.problems.push(`${entry.kind}: ${entry.reason}`);
+    }
+    // A served corridor must have a real transit answer: a labelled fallback
+    // alone is not coverage (Task 6B found the fallback can mask a lost answer).
+    if (pair.expect === 'served') {
+      const hasTransit = classified.some((entry) => entry.kind === 'transit');
+      if (!hasTransit) {
+        record.problems.push('served corridor returned only a walk fallback (no transit itinerary)');
+      }
     }
     // The walk fallback must be observable through the header too.
     const fallbackHeader = result.headers.fallback;
