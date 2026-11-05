@@ -181,14 +181,16 @@ on Cubao→Pasig and jeepney coverage on Novaliches→Cubao. Recorded in
    confidence/effective date); the UI labels the total as partial and the leg "fare not published",
    but a dedicated `unpriced` quote shape would be cleaner.
 5. **PNR and long-distance ferries** stay excluded from the feed (suspended / no sourced
-   fares). **P2P is deferred as a leg mode (R48), but the national feed contains OSM-mapped P2P
-   shuttles as ordinary `bus-` route ids** (33 nationally): MOTIS's v6 payload does not carry
-   the route long name that labels them, so the BFF cannot yet distinguish them from ordinary
-   buses and prices them with the documented ordinary-city-bus formula. That is a recorded
-   **pricing caveat**, not a served P2P fare; the fix is a feed-level `p2p-` route-id marker
-   plus a rebuild (follow-up). The BFF already marks a leg `fareNotPublished` when MOTIS does
-   supply a P2P label in displayName/routeShortName/headsign (guard added 2026-11-05).
-   No realtime claims anywhere.
+   fares). **P2P is deferred as a leg mode (R48), but the national feed contains 33 OSM-mapped
+   P2P shuttles as ordinary `bus-` route ids**; they are served as bus legs and carried
+   **unpriced**, never priced by the ordinary-city-bus matrix. MOTIS v6 does publish the label
+   that identifies them: the GTFS route long name (`routeLongName`). Probed 2026-11-05 on the
+   PITX→Baguio P2P: the leg is `displayName: "P50"`, `routeLongName: "PITX–Baguio City P2P
+   (outbound)"` — the token is only in the long name, which the first guard did not check. The
+   guard now checks `routeLongName` as well as displayName/routeShortName/headsign (R49), so the
+   live BFF returns that leg `fareNotPublished` and the itinerary `fareIncomplete` (5
+   itineraries, fare 0) instead of a fabricated city-bus fare. No P2P leg mode and no P2P fare
+   are claimed, and no feed rebuild is needed. No realtime claims anywhere.
 6. **`x-biyahey-motis-calls`** now counts the fallback's walk request when one is made (R22);
    README and the phase-1 runbook say so.
 7. **Counter scopes differ**: the national `osm_ingest.skipped_members` (reader scope, 1,782)
@@ -201,3 +203,27 @@ on Cubao→Pasig and jeepney coverage on Novaliches→Cubao. Recorded in
 9. **Backend performance**: Lighthouse remains PARTIAL (this run: median LCP 2,537 ms, **TBT
    7,628 ms FAIL**, TTI 11,796 ms, transfer 809 KB, score 57/100 — slightly worse than the
    phase-2 recorded run, recorded honestly; the perf verdict is not re-badged green).
+
+## 8. Continuation (2026-11-05) — P2P pricing caveat closed (R49)
+
+The final whole-branch review's one open Critical was that 33 OSM-mapped P2P shuttles in the
+national feed are `bus-` route ids and were priced by the ordinary city-bus matrix while the
+record deferred P2P (R48). The fix-round claim that "MOTIS v6 exposes no P2P label" was wrong:
+a raw `/api/v6/plan` probe on the PITX→Baguio P2P (2026-11-05) returns `displayName: "P50"`,
+`routeShortName: "P50"`, `headsign: "Baguio City"` and
+`routeLongName: "PITX–Baguio City P2P (outbound)"` — the token is in the **route long name**,
+which the guard did not check (ruling R49).
+
+Verified after the guard fix (API image rebuilt):
+- `POST /plan` PITX→Baguio (14.536933,120.992372 → 15.572366,120.632269, next 08:00 PHT): 5
+  itineraries, each `walk > bus`; bus leg `fareNotPublished: true`; itinerary `fareIncomplete:
+  true`; fare 0.
+- Ordinary corridors unchanged: probe matrix **PASS 11/11** (same structure — 5 real-transit
+  corridors, 6 labelled fallbacks, longest inter-transit walk 616 m; p50 61 ms / p95 84 ms) and
+  live golden + MOTIS integration **5 passed**.
+- Regression: BFF suite **149 passed / 5 skipped** (was 148). The full-suite `npm test` re-run
+  hit a host disk-pressure forks-worker flake (free disk 6.5 GB; 2 web files failed to *start* a
+  worker, no assertion failed) — both pass when re-run individually (8/8); recorded as an
+  environment flake, not a code failure. Lint and typecheck clean.
+- No feed or graph rebuild was required; the national feed sha `fb70d1ab…` and the national graph
+  are unchanged. P2P remains deferred as a leg mode; the 33 shuttles are served unpriced.

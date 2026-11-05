@@ -413,8 +413,22 @@ dev server.
   `--tagsFilter=integration`.
 - **Known gaps carried forward:** Cebu/Baguio/Davao transit absent in OSM (labelled fallback);
   Region IV-A tricycle terminals outside the NCR landmark extract; 12 NCR / 13 national two-point shapes (6B 3c);
-  tricycle-only itineraries reuse the zero-fare quote shape (UI labels it partial); PNR,
-  long-distance ferries stay excluded and P2P is deferred as a leg mode — but the national feed
-carries OSM-mapped P2P shuttles as `bus-` ids that MOTIS v6 cannot label, so they are currently
-priced by the ordinary city-bus formula (recorded pricing caveat; feed-level `p2p-` marker + rebuild
-is the fix); Lighthouse PARTIAL; no realtime claims anywhere.
+  tricycle-only itineraries reuse the zero-fare quote shape (UI labels it partial); PNR and
+  long-distance ferries stay excluded, and P2P stays deferred as a leg mode — the national feed's
+  33 OSM-mapped P2P shuttles are served as bus legs marked `fareNotPublished`, identified by the
+  `P2P` token in the MOTIS-published route long name (R49), so no city-bus fare is fabricated for
+  them; Lighthouse PARTIAL; no realtime claims anywhere.
+
+## 2026-11-05 continuation — P2P pricing caveat closed (R49)
+
+The only open Critical from the final whole-branch review was the P2P pricing caveat. Its
+fix-round premise ("MOTIS v6 exposes no P2P label") did not survive a direct probe: the label is
+in the GTFS route long name, which MOTIS publishes as `routeLongName` (PITX→Baguio P2P:
+`displayName "P50"`, `routeLongName "PITX–Baguio City P2P (outbound)"`). The BFF guard now checks
+`routeLongName` too, so the 33 P2P shuttles are carried `fareNotPublished` / `fareIncomplete`
+instead of being priced as ordinary city buses. Live BFF probe: 5 itineraries, bus leg
+`fareNotPublished: true`, fare 0. No feed or graph rebuild needed; the national feed sha
+(`fb70d1ab…`) is unchanged. Gates on the updated stack: probe matrix PASS 11/11, golden + live
+integration 5 passed, BFF unit 149 passed / 5 skipped, lint/typecheck green (a full-suite re-run
+hit a host disk-pressure forks-worker flake — both affected files pass alone; recorded in the
+acceptance runbook §8). D3 cold import remains unmeasured (recorded).

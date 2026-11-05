@@ -356,6 +356,7 @@ Recon evidence: `docs/research/2026-11-04-ph-wide-coverage-recon.md` (git-ignore
 - **R28 — Tricycle curated route/fare files are deliberately deferred.** No LGU or other citable source for tricycle routes or fares exists in this pass (recon §2), so `data/routes/tricycle-routes.yaml`, `data/fares/tricycle-fares.yaml` + its schema, the `fares.py` loader and the `check:fares` wiring are **not** shipped: there is nothing to ingest or price, and inventing either would violate D5/D6. The ingestion path for this pass is the OSM-mapped e-trike classification; tricycle legs show "fare not published" by absence.
 - **R30/R31/R32 — Route-id keeper rules** (implemented + verified): keeper = lowest-OSM-id **feed-ready** candidate (≥1 non-stop way member AND (stop members ≥2 OR 0)); reverse dedupe compares against **any kept relation of the same base slug**; nameless relations are ingested as `<family>-osm<id>` and counted; the reader's counters reach `build-report.json` under the additive `osm_ingest` key (`route_relations = unsupported_route + tricycle_relations_seen + excluded_mistagged + candidates`).
 - **R34 — Mistagged tricycle TODA corridors are excluded, never published or priced.** 10 OSM `route=bus` relations named "Baliwag/Bustos Tricycle" are tricycle corridors mistagged as bus (no stop members, from/to present); with zero stop members they are "feed-ready" as landmark routes and every `bus-` id is priced by the city-bus matrix, so publishing them would present and price a tricycle corridor as a bus service. They are counted (`excluded_mistagged_tricycle_relations`) and excluded. `route=tricycle` detection is case-insensitive so `route=Tricycle` (§2's second relation) is counted and explained rather than falling into `unsupported_route_values`.
+- **R49 — P2P identification uses the MOTIS-published route long name (corrects the 2026-11-05 fix-round claim).** The national feed's 33 OSM-mapped P2P shuttles are `bus-` route ids whose display/short names are the route refs (e.g. `P50`); the only `P2P` token is in the GTFS route long name, which MOTIS v6 exposes as `routeLongName` (probed 2026-11-05 on PITX→Baguio: `displayName "P50"`, `routeLongName "PITX–Baguio City P2P (outbound)"`). The BFF marks such a leg `fareNotPublished` (itinerary `fareIncomplete`) and never prices it with the city-bus matrix. No feed-level `p2p-` marker or rebuild is needed; P2P stays deferred as a leg mode (R48).
 
 ## Execution result (2026-11-05)
 
@@ -373,6 +374,17 @@ All tasks executed; the acceptance record is `docs/runbooks/ph-wide-coverage-acc
   cheapest), R34 (mistagged tricycle-bus exclusion), R35 (national config selected via local `.env`).
 - Known gaps: Cebu/Baguio/Davao OSM transit absent; IV-A tricycle terminals outside the NCR
   landmark extract; 12 NCR / 13 national two-point shapes (6B 3c); tricycle-only zero-fare quote shape; Lighthouse
-  PARTIAL; PNR/long-distance ferries excluded and P2P deferred as a leg mode — the national feed
-  still carries OSM-mapped P2P shuttles as `bus-` ids priced by the ordinary city-bus formula
-  (recorded pricing caveat; fix = feed-level `p2p-` marker + rebuild); no realtime claims.
+  PARTIAL; PNR/long-distance ferries excluded and P2P deferred as a leg mode — the national
+  feed's 33 OSM-mapped P2P shuttles are served as bus legs marked `fareNotPublished` (identified
+  by the `P2P` token in `routeLongName`, R49), never priced with the city-bus matrix; no realtime
+  claims.
+
+## Continuation result (2026-11-05, R49)
+
+- Closed the final review's one open Critical without a feed rebuild: the BFF guard now reads the
+  `routeLongName` field MOTIS actually populates with the P2P token. Live PITX→Baguio probe: bus
+  leg `fareNotPublished: true`, itinerary `fareIncomplete: true`, fare 0; probe matrix PASS 11/11
+  unchanged; golden + live integration 5 passed; BFF unit 149 passed / 5 skipped; lint/typecheck
+  green.
+- National feed sha `fb70d1ab…` and the national graph are unchanged. D3 cold import remains
+  unmeasured (the recorded 1006.6 s is the pre-D3 recon import).

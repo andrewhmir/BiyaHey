@@ -154,16 +154,26 @@ export function normalizeRouteId(routeId: string): string | undefined {
  * fare (ruling R48), so such a leg must be served but **not** priced by the
  * ordinary-city-bus matrix — that would state a fare no operator publishes and
  * contradict the record that P2P is deferred. Detection is deliberately narrow:
- * only the labels MOTIS publishes (displayName / routeShortName / headsign) with
- * the token `P2P` delimited from other characters; never inferred from shape,
- * distance or operator.
+ * only the labels MOTIS publishes with the token `P2P` delimited from other
+ * characters; never inferred from shape, distance or operator.
+ *
+ * `routeLongName` is the label that actually carries it in the live feed: the
+ * 33 OSM-mapped P2P shuttles publish their route ref (e.g. `P50`) as the short
+ * and display name, so the token appears only in the GTFS long name — probed
+ * 2026-11-05 on the PITX–Baguio P2P (`displayName: "P50"`,
+ * `routeLongName: "PITX–Baguio City P2P (outbound)"`). Checking
+ * displayName/routeShortName/headsign alone therefore missed every one of them
+ * and priced them as ordinary city buses (ruling R49).
  */
 const P2P_LABEL_PATTERN = /(?:^|[^a-z0-9])p2p(?:[^a-z0-9]|$)/i;
 
 function isP2pServiceLabel(record: JsonRecord): boolean {
-  return [asString(record.displayName), asString(record.routeShortName), asString(record.headsign)].some(
-    (label) => label !== undefined && P2P_LABEL_PATTERN.test(label),
-  );
+  return [
+    asString(record.displayName),
+    asString(record.routeShortName),
+    asString(record.routeLongName),
+    asString(record.headsign),
+  ].some((label) => label !== undefined && P2P_LABEL_PATTERN.test(label));
 }
 
 /**

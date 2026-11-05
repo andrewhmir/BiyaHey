@@ -217,11 +217,11 @@ without a reuse grant are **never shipped**.
   `docs/runbooks/phase2-acceptance.md` §6.
 - **Data gaps.** Coverage is 12/16 curated routes; PNR and non-PRFS ferries are
   excluded from the v1 feed and counted; P2P is deferred as a leg mode (R48), but the
-  national feed carries OSM-mapped P2P shuttles as ordinary `bus-` ids that the router
-  cannot yet distinguish, so they are priced by the ordinary city-bus formula — a recorded
-  pricing caveat with a feed-level `p2p-` id marker as the planned fix; the LRT-2 fare band
-  is provisional (`needs_verification: true`). See `docs/runbooks/phase1-acceptance.md` §8
-  and `docs/runbooks/ph-wide-coverage-acceptance.md`.
+  national feed carries 33 OSM-mapped P2P shuttles as ordinary `bus-` ids — they are
+  served as bus legs marked `fareNotPublished` (identified by the `P2P` token in the
+  MOTIS-published route long name, R49), never priced with the city-bus matrix; the
+  LRT-2 fare band is provisional (`needs_verification: true`). See
+  `docs/runbooks/phase1-acceptance.md` §8 and `docs/runbooks/ph-wide-coverage-acceptance.md`.
 - **UI gaps for public beta.** Home's peek sheet does not yet list recent trips
   (spec screen 1), the English-fallback toggle has no settings UI (spec §11), and
   mixed Taglish/English sentences are tagged as one primary language (R81). All

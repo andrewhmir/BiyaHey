@@ -376,10 +376,11 @@ Two different reports use the word "coverage"; do not confuse them:
   per-route P2P fare, so any such shuttle would be mispriced as an ordinary city bus.
   P2P is absent from v1 options; it is a data-acquisition task, not a code gap.
   **2026-11-05 update:** the national feed contains OSM-mapped P2P shuttles as ordinary `bus-`
-  routes (33 nationally) and MOTIS v6 does not expose their long-name label, so v1 currently
-  prices them with the ordinary city-bus formula — a recorded pricing caveat, not a served P2P
-  fare. The BFF marks a leg `fareNotPublished` whenever a P2P label is present in the payload
-  (guard added 2026-11-05); a feed-level `p2p-` route-id marker plus a rebuild is the follow-up.
+  routes (33 nationally). MOTIS v6 publishes the identifying label in the route long name
+  (`routeLongName`), so the BFF marks such a leg `fareNotPublished` (itinerary `fareIncomplete`)
+  instead of pricing it with the ordinary city-bus formula; no P2P fare is claimed and no leg
+  mode is served (R49, correcting the earlier "MOTIS does not expose the label" note). A
+  feed-level `p2p-` route-id marker is not needed.
 - **`gtfs-validator` was not executed locally (R46).** Java 21 is present and the
   pinned v8.0.1 CLI jar was downloaded with a verified sha256
   (`19293ddd…1000e2`), but this host's JVM fails to resolve the validator's own

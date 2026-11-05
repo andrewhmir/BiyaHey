@@ -979,12 +979,17 @@ describe('P2P services are served but never priced as an ordinary city bus', () 
   const FROM = { name: 'START', lat: 14.5515, lon: 121.0148 };
   const TO = { name: 'STOP', lat: 14.441, lon: 121.013 };
 
-  function busLeg(displayName: string, headsign?: string): Record<string, unknown> {
+  function busLeg(
+    displayName: string,
+    headsign?: string,
+    routeLongName?: string,
+  ): Record<string, unknown> {
     return {
       mode: 'BUS',
       routeId: 'gtfs_bus-p29',
       routeShortName: 'P29',
       displayName,
+      routeLongName,
       headsign,
       from: FROM,
       to: TO,
@@ -995,9 +1000,13 @@ describe('P2P services are served but never priced as an ordinary city bus', () 
     };
   }
 
-  function mapOne(displayName: string, headsign?: string): ItineraryDto | undefined {
+  function mapOne(
+    displayName: string,
+    headsign?: string,
+    routeLongName?: string,
+  ): ItineraryDto | undefined {
     return mapPlanItineraries(
-      { itineraries: [{ startTime: start, legs: [busLeg(displayName, headsign)] }] },
+      { itineraries: [{ startTime: start, legs: [busLeg(displayName, headsign, routeLongName)] }] },
       emptyContext,
     )[0];
   }
@@ -1020,8 +1029,22 @@ describe('P2P services are served but never priced as an ordinary city bus', () 
     expect(itinerary?.fareIncomplete).toBe(true);
   });
 
+  it('detects the P2P token in the route long name, where MOTIS publishes it', () => {
+    // Real MOTIS v6 shape for the OSM-mapped P2P shuttles (probed 2026-11-05 on
+    // the PITX–Baguio P2P): the short/display name is the route ref and the
+    // only "P2P" token is in the GTFS route long name. Checking the other
+    // labels alone priced every one of the 33 as an ordinary city bus (R49).
+    const itinerary = mapOne('P50', 'Baguio City', 'PITX–Baguio City P2P (outbound)');
+    expect(itinerary?.legs[0]?.fareNotPublished).toBe(true);
+    expect(itinerary?.fareIncomplete).toBe(true);
+    expect(itinerary?.fare.amount).toBe(0);
+    expect(itinerary?.fare.breakdown).toEqual([]);
+  });
+
   it('prices an ordinary bus leg with the documented city-bus matrix', () => {
-    const itinerary = mapOne('Greenbelt 1-Las Piñas');
+    // A long name without the standalone P2P token stays an ordinary bus: the
+    // token is delimited, never inferred from a route serving a P2P corridor.
+    const itinerary = mapOne('P50', 'Baguio City', 'PITX–Baguio City (outbound)');
     expect(itinerary?.legs[0]?.fareNotPublished).toBeUndefined();
     expect(itinerary?.fareIncomplete).toBeUndefined();
     expect(itinerary?.fare.amount).toBeGreaterThan(0);
