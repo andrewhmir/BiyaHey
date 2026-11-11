@@ -57,6 +57,8 @@ export default defineConfig({
   // MapLibre is a large ESM package; pre-bundling breaks its worker URL.
   optimizeDeps: { exclude: ['maplibre-gl'] },
   build: { manifest: true },
-  server: { port: 5173, strictPort: true },
-  preview: { port: 5173, strictPort: true },
+  // Dev/preview are local tools behind the host's own access control (tailnet),
+  // so accept the Host header those URLs arrive with.
+  server: { port: 5173, strictPort: true, allowedHosts: true },
+  preview: { port: 5173, strictPort: true, allowedHosts: true },
 });
