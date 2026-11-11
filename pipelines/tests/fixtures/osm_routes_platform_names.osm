@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Hand-written miniature OSM extract for the unnamed-platform regression.
+
+  PTv2 rail relations routinely carry a named station node beside unnamed
+  platform ways. Left alone, the platform way's only name is its OSM id
+  ("Platform 6001"), which leaked into rider-facing trip steps. The reader
+  must let an unnamed stop/platform member inherit the nearest named stop
+  member of the same relation (within 150 m), and keep the id-based fallback
+  when no named member is close enough.
+
+  Nodes:
+    5001  Test Station   (14.60000, 121.00000)  named station node, way 6003
+    5002  unnamed        (14.60040, 121.00010)  way 6003
+    5003  unnamed        (14.61200, 121.01000)  way 6003
+    5004  unnamed        (14.61230, 121.01040)  way 6003
+
+  Ways:
+    6003  nodes 5001,5002,5003,5004  railway=subway (the shape)
+    6001  nodes 5002,5001            unnamed platform beside Test Station
+    6002  nodes 5003,5004            unnamed platform ~1.4 km from any named stop
+
+  Relation:
+    7001  route=light_rail, ref=TL
+          members: way 6003 (shape), way 6001 role=platform,
+                   way 6002 role=platform, node 5001 role=stop
+          Expected stop names: "Test Station" (platform 6001 inherits it),
+          "Platform 6002" (too far to inherit) and "Test Station" (node).
+-->
+<osm version="0.6" generator="biyahey-test-fixture">
+  <node id="5001" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6000000" lon="121.0000000">
+    <tag k="name" v="Test Station"/>
+    <tag k="public_transport" v="stop_position"/>
+  </node>
+  <node id="5002" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6004000" lon="121.0001000"/>
+  <node id="5003" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6120000" lon="121.0100000"/>
+  <node id="5004" version="1" timestamp="2026-10-31T21:23:00Z" lat="14.6123000" lon="121.0104000"/>
+  <way id="6003" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5001"/>
+    <nd ref="5002"/>
+    <nd ref="5003"/>
+    <nd ref="5004"/>
+    <tag k="railway" v="subway"/>
+  </way>
+  <way id="6001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5002"/>
+    <nd ref="5001"/>
+    <tag k="public_transport" v="platform"/>
+  </way>
+  <way id="6002" version="1" timestamp="2026-10-31T21:23:00Z">
+    <nd ref="5003"/>
+    <nd ref="5004"/>
+    <tag k="public_transport" v="platform"/>
+  </way>
+  <relation id="7001" version="1" timestamp="2026-10-31T21:23:00Z">
+    <member type="way" ref="6003" role=""/>
+    <member type="way" ref="6001" role="platform"/>
+    <member type="way" ref="6002" role="platform"/>
+    <member type="node" ref="5001" role="stop"/>
+    <tag k="type" v="route"/>
+    <tag k="route" v="light_rail"/>
+    <tag k="ref" v="TL"/>
+    <tag k="name" v="Test Line"/>
+    <tag k="public_transport:version" v="2"/>
+  </relation>
+</osm>

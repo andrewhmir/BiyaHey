@@ -813,6 +813,13 @@ _EARTH_RADIUS_M = 6371000.0
 #: vertices, so this only matters for platform-centroid stops.
 _STOP_COVERAGE_M = 100.0
 
+#: An unnamed stop/platform inherits the name of the nearest named stop member
+#: of the same route relation within this radius (metres). PTv2 relations put a
+#: named station node beside its unnamed platform ways, so this keeps raw OSM
+#: ids ("Platform 793338664") out of rider-facing stop names. Beyond this
+#: radius the id-based fallback name is kept and stays honest about the gap.
+_PLATFORM_NAME_RADIUS_M = 150.0
+
 Point = Tuple[float, float]
 
 
@@ -1068,6 +1075,21 @@ def _serves_stop(points: Sequence[Point], stop: Point) -> bool:
     return False
 
 
+def _nearest_named_stop_name(
+    named_stops: Sequence[Tuple[str, float, float]], point: Point
+) -> Optional[str]:
+    """Name of the closest named stop member within the naming radius, or ``None``."""
+    best_name: Optional[str] = None
+    best_distance = 0.0
+    for name, lat, lon in named_stops:
+        distance = _distance_m(point, (lat, lon))
+        if distance > _PLATFORM_NAME_RADIUS_M:
+            continue
+        if best_name is None or distance < best_distance - 1e-9:
+            best_name, best_distance = name, distance
+    return best_name
+
+
 def _distance_m(a: Point, b: Point) -> float:
     """Great-circle distance in metres between two ``(lat, lon)`` pairs."""
     lat1, lon1 = a
@@ -1226,6 +1248,18 @@ def _resolve_stops(
     stops: List[StopRef] = []
     reasons: Dict[str, int] = {}
 
+    # PTv2 relations usually carry the named station node next to the unnamed
+    # platform ways, so collect the named members once and let an unnamed
+    # member inherit the closest one below.
+    named_stops: List[Tuple[str, float, float]] = []
+    for member_type, ref, role in members:
+        if member_type != "n" or role not in STOP_ROLES:
+            continue
+        coord = node_coords.get(ref)
+        name = node_names.get(ref, "").strip()
+        if coord is not None and name:
+            named_stops.append((name, coord[0], coord[1]))
+
     for member_type, ref, role in members:
         if role not in STOP_ROLES:
             continue
@@ -1234,7 +1268,11 @@ def _resolve_stops(
             if coord is None:
                 _add_counts(reasons, {"dangling_stop_node": 1})
                 continue
-            name = node_names.get(ref) or f"Stop {ref}"
+            name = (
+                node_names.get(ref, "").strip()
+                or _nearest_named_stop_name(named_stops, coord)
+                or f"Stop {ref}"
+            )
             stops.append(StopRef(f"{route_id}:node:{ref}", name, coord[0], coord[1]))
         elif member_type == "w":
             node_refs = way_nodes.get(ref)
@@ -1248,7 +1286,11 @@ def _resolve_stops(
                 continue
             lat = sum(coord[0] for coord in coords) / len(coords)
             lon = sum(coord[1] for coord in coords) / len(coords)
-            name = way_names.get(ref) or f"Platform {ref}"
+            name = (
+                way_names.get(ref, "").strip()
+                or _nearest_named_stop_name(named_stops, (lat, lon))
+                or f"Platform {ref}"
+            )
             stops.append(StopRef(f"{route_id}:way:{ref}", name, lat, lon))
         else:
             _add_counts(reasons, {"stop_relation_member": 1})

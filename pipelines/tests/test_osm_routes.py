@@ -56,6 +56,9 @@ FIXTURE = Path(__file__).parent / "fixtures" / "osm_routes_collisions.osm"
 KEEPER_FIXTURE = Path(__file__).parent / "fixtures" / "osm_routes_keeper.osm"
 TRIM_FIXTURE = Path(__file__).parent / "fixtures" / "osm_routes_shape_trim.osm"
 NCR_FIXTURE = Path(__file__).parent / "fixtures" / "osm_routes.osm"
+PLATFORM_NAMES_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "osm_routes_platform_names.osm"
+)
 FEED_START = date(2026, 11, 1)
 FEED_END = date(2027, 10, 31)
 
@@ -1078,3 +1081,20 @@ def test_relation_only_composition_reports_the_mistagged_bus_bucket(tmp_path):
     )
     assert composition.candidates == full.candidates == 1
     assert composition.accepted == full.accepted == 1
+
+
+# --------------------------------------------------------------------------
+# unnamed stop/platform members inherit a nearby named stop (rider-facing names)
+# --------------------------------------------------------------------------
+
+
+def test_unnamed_platform_inherits_the_nearest_named_station():
+    relation = {
+        r.route_id: r for r in read_route_relations(PLATFORM_NAMES_FIXTURE).relations
+    }["rail-tl"]
+
+    names = [stop.name for stop in relation.stops]
+    # way 6001 sits beside the named station node 5001, so it inherits its name
+    # instead of leaking "Platform 6001"; way 6002 is out of range and keeps the
+    # honest id-based fallback; node 5001 keeps its own name.
+    assert names == ["Test Station", "Platform 6002", "Test Station"]
