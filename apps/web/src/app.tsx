@@ -1,33 +1,31 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
-import { BrowserRouter } from 'react-router-dom';
-import { LocaleProvider } from './i18n/useT';
-import { AppRoutes } from './routes';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { LocaleProvider } from './i18n';
+import { AboutData } from './screens/AboutData';
+import { Home } from './screens/Home';
+import { Live } from './screens/Live';
+import { Results } from './screens/Results';
+import { Saved } from './screens/Saved';
+import { Search } from './screens/Search';
+import { Trip } from './screens/Trip';
 
 export function App() {
-  // One client per mount keeps tests isolated; screens add queries in Task 4.
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 30_000,
-            retry: 1,
-            refetchOnWindowFocus: false,
-          },
-        },
-      }),
-  );
-
-  // v1 ships Taglish only; the provider owns `<html lang>` and makes a future
-  // English toggle a one-prop change (Task 9 report's locale ruling).
   return (
-    <QueryClientProvider client={queryClient}>
-      <LocaleProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </LocaleProvider>
-    </QueryClientProvider>
+    <LocaleProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route path="search" element={<Search />} />
+            <Route path="plan" element={<Results />} />
+            <Route path="trip/:id" element={<Trip />} />
+            <Route path="trip/:id/live" element={<Live />} />
+            <Route path="saved" element={<Saved />} />
+            <Route path="sources" element={<AboutData />} />
+            <Route path="*" element={<Home />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </LocaleProvider>
   );
 }

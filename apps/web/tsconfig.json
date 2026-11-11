@@ -1,22 +1,24 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "outDir": "./dist",
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "types": ["vite/client", "vitest/globals"]
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [
+      "vite/client",
+      "node",
+      "geojson"
+    ]
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "vite.config.ts",
-    "playwright.config.ts",
-    "e2e/**/*.ts"
-  ],
-  "references": [{ "path": "../../packages/shared" }]
+    "src"
+  ]
 }
