@@ -14,8 +14,7 @@ services:
       # MOTIS ftruncates/mmaps sparse graph files and that fails on a
       # Windows-backed bind mount ("resize error"). The volume also keeps the
       # entrypoint's hash-keyed import a ~1.5 s no-op across container
-      # recreations (verified in the PH-wide-coverage recon, docs/research/
-      # 2026-11-04-ph-wide-coverage-recon.md §4).
+      # recreations.
       - routing-data:/var/lib/motis/data
     environment:
       # NCR config by default. Select the national graph with, for example:

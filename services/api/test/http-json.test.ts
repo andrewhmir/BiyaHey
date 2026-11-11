@@ -10,7 +10,7 @@ import { httpJsonFetch } from '../src/routing/http-json.js';
  * closed a keep-alive connection. These tests pin the replacement's contract:
  * one socket per request (`Connection: close`), JSON decoding, status passthrough
  * and abort handling. The live `Parser.finish` crash itself is proved by the
- * repeated heavy-plan stress run in `docs/runbooks/phase1-acceptance.md`, because
+ * repeated heavy-plan stress run, because
  * it can only occur against a real router.
  */
 

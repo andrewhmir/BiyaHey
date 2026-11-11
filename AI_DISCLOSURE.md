@@ -13,12 +13,11 @@ from turning into quiet fabrication.
 
 ## Project-level disclosure
 
-Plan 1 (the data spine, router and BFF on `feature/data-spine`, 2026-11-01) was
-implemented with heavy AI assistance: task briefs and plans, code, tests,
-research probes and review passes were produced with AI agents under human
-direction, then reviewed task-by-task by a separate reviewer agent and a
-controller. Every release note or PR that includes AI-assisted work must say so;
-the reviewed artifacts and the acceptance evidence live in the runbooks.
+BiyaHey! is built with heavy AI assistance: code, tests, documentation and data
+transcription are produced with AI agents under human direction, then reviewed
+task-by-task by a maintainer. Every release note or PR that includes
+AI-assisted work must say so, and every claim in this repository is expected to
+be backed by a committed artifact, a test or a command output.
 
 This file does **not** grant permission to ship unverified data. It records how
 the project actually works.

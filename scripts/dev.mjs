@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Local-first entry point: boot the computer-side stack (spec §7).
+ * Local-first entry point: boot the computer-side stack.
  *
  * `npm run dev` starts the two computer-side services — MOTIS (`routing`, port
  * 8080) and the Fastify BFF (`api`, port 8787) — through Docker Compose and
@@ -9,7 +9,7 @@
  * is already in the API's CORS allow-list.
  *
  * Prerequisites: Docker is running and the data build has produced
- * `data/build/gtfs/gtfs.zip` (see docs/runbooks/data-build.md). Both are checked
+ * `data/build/gtfs/gtfs.zip` (see docs/DEVELOPMENT.md). Both are checked
  * before compose runs so a missing build fails with the command that fixes it.
  */
 import { spawnSync } from 'node:child_process';
@@ -33,7 +33,7 @@ for (const [label, path] of [
   if (!existsSync(path)) {
     fail(
       `missing ${label} at ${path}. Run \`npm run data:build\` first ` +
-        '(docs/runbooks/data-build.md).',
+        '(docs/DEVELOPMENT.md#data-build).',
     );
   }
 }
@@ -55,8 +55,8 @@ dev: stack is up
            (Vite dev server, separate terminal; origin already CORS-allowed)
 
 Next:
-  npm run test:e2e          # Playwright against this stack (builds the PWA first)
-  npm run verify:phase2     # phase-2 acceptance (performance recorded PARTIAL)
-  docker compose logs -f api # if /health is not ready
-  docker compose down        # stop the stack
+  npm run build                            # production PWA build (apps/web/dist)
+  npm run test:integration                 # live API/router suites (API_URL/MOTIS_URL)
+  docker compose logs -f api               # if /health is not ready
+  docker compose down                      # stop the stack
 `);

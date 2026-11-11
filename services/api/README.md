@@ -74,4 +74,4 @@ npx vitest run services/api/test/golden.test.ts         # live golden acceptance
 ```
 
 The golden suite is tagged `integration`, so `npm run ci` never depends on a
-running stack. Runbook: `docs/runbooks/phase1-acceptance.md`.
+running stack. See [`docs/DEVELOPMENT.md`](../../docs/DEVELOPMENT.md).

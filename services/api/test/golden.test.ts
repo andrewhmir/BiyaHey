@@ -10,7 +10,7 @@ import { implausibleTransitLegs, isPlausibleItinerary } from '../src/routing/map
  * tagged `integration`, so `npm test` / `npm run ci` filter it out (Vitest
  * `--tagsFilter=!integration`; see `vitest.config.ts`) and no ambient `API_URL`
  * can make CI depend on a live stack. It is also skipped unless `API_URL` is
- * set. `npm run verify:phase1` starts the API on a free port, sets `API_URL`,
+ * set. A live-stack harness starts the API on a free port, sets `API_URL`,
  * and runs this file. Manual run:
  *
  *   $env:API_URL = 'http://localhost:8787'
@@ -34,7 +34,7 @@ import { implausibleTransitLegs, isPlausibleItinerary } from '../src/routing/map
  * It also measures p95 plan latency over the ten trips (criterion 3) and p95
  * search latency over six real NCR queries (criterion 2), both against the
  * 1.5 s limit. When `GOLDEN_REPORT` names a path, the same measurements are
- * written there as JSON so `verify:phase1` can print them.
+ * written there as JSON for live acceptance runs.
  */
 
 interface GoldenTrip {

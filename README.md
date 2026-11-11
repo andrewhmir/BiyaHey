@@ -1,242 +1,136 @@
 # BiyaHey!
 
-An open-source, local-first commute planner for Metro Manila — an installable
-PWA. Search a place, compare the best 3–5 jeepney / bus / rail / ferry options
-with **honest fares and visible data provenance**, follow step-by-step sakay
-instructions, and save trips that still open offline.
+An open-source, local-first commute planner for the Philippines — an installable
+PWA built by the [BetterGov.ph](https://bettergov.ph) community. Search a place,
+compare the best jeepney / bus / rail / ferry options with **honest fares and
+visible data provenance**, follow step-by-step sakay instructions, and save
+trips that still open offline.
 
-BiyaHey! is built in the open with [BetterGov](https://bettergov.ph)
-conventions: MIT code, open data, Conventional Commits, and an explicit
-AI-assisted-work disclosure.
+The default voice is **Taglish**, with an English toggle. BiyaHey! is honest
+about what it is not: there is no realtime data anywhere in the app — schedules
+and fare matrices only, stated plainly in the UI.
 
-> **Status (2026-11-05):** Plans 1–2 and the UX v2 "Kalsada" identity are complete and merged
-> locally (this repository has no remote configured, so nothing is pushed). Phase-2 acceptance is
-> **PARTIAL by measurement**, not omission: spec §3 criteria 2–6 pass while the §11 performance
-> budget (interactive map, TBT) is not met — numbers in `docs/runbooks/phase2-acceptance.md`.
->
-> **PH-wide coverage pass (2026-11-05):** routing now works nationwide on one MOTIS graph built
-> from the full Philippines OSM extract plus a national GTFS (**1,073 routes / 10,941 stops /
-> 351,944 trips**, feed sha `fb70d1aba7d9…`). The acceptance probe matrix passes 11/11 pairs —
-> real transit where the data exists (NCR, Bulacan, Cavite, Batangas, Iloilo) and a clearly-labelled
-> **walk estimate** where it genuinely does not, with a "walking is not realistic beyond 25 km"
-> warning. OSM-mapped Wilson E-trike corridors enter routing as real `tricycle` legs with **"fare not
-> published"** (no invented fares); no realtime claims anywhere. Evidence:
-> `docs/runbooks/ph-wide-coverage-acceptance.md`.
+## BetterGov.ph family
 
-## Screenshots
+BiyaHey! is a standalone app in the [BetterGov.ph](https://bettergov.ph) family,
+the community-run Philippine government portal. BetterGov services ship as
+independent apps on their own subdomains (e.g. `hotlines.bettergov.ph`,
+`budget.bettergov.ph`) — BiyaHey! is its own installable PWA in that family, not
+an iframe embed.
 
-Captured from the running app at **390 × 844** (Pixel 7, 2× DPR) with the live
-local stack. These are real screenshots, not mockups:
-`node apps/web/scripts/screenshots.mjs` regenerates them after UI changes.
-
-| Home | Search | Route options |
-|:---:|:---:|:---:|
-| <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home: live map behind the bottom sheet with the search pill" width="250"></a> | <a href="docs/screenshots/search-results.png"><img src="docs/screenshots/search-results.png" alt="Search: directions form (From/To) with grouped results for Cubao" width="250"></a> | <a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Route options: fare-forward cards over the map, planned from the current location to Cubao" width="250"></a> |
-| Map + sheet, search pill | From/To form, grouped stops | Fare, ETA, effectivity date |
-
-| Trip detail | Live trip | Saved |
-|:---:|:---:|:---:|
-| <a href="docs/screenshots/trip-detail.png"><img src="docs/screenshots/trip-detail.png" alt="Trip detail: map header with the leg-coloured route, leg rail and step timeline" width="250"></a> | <a href="docs/screenshots/live-trip.png"><img src="docs/screenshots/live-trip.png" alt="Live trip: leg-by-leg walkthrough with the honest no-live-data banner" width="250"></a> | <a href="docs/screenshots/saved.png"><img src="docs/screenshots/saved.png" alt="Saved: the endpoint-titled saved trip snapshot" width="250"></a> |
-| Map + leg rail, signage, fare breakdown | Guided steps, no real-time claims | Offline-capable snapshots |
-
-| About data |
-|:---:|
-| <a href="docs/screenshots/about-data.png"><img src="docs/screenshots/about-data.png" alt="About data: every dataset with publisher and licence" width="250"></a> |
-| Provenance for every dataset |
-
-The approved design reference is the **Option A** mockup
-[`.superpowers/mockups/option-a-maps-faithful.html`](.superpowers/mockups/option-a-maps-faithful.html)
-(full-bleed map + standard bottom sheet); the implementation follows its
-container, not Google's data. UX v2's approved identity mockup is
-[`.superpowers/mockups/option-a-kalsada.html`](.superpowers/mockups/option-a-kalsada.html).
+The UI follows the BetterGov design language: the [Kapwa](https://www.npmjs.com/package/@bettergov/kapwa)
+design system (`@bettergov/kapwa` v1.4.1, CC0, Tailwind v4, React 19), the
+**Figtree** typeface, and BetterGov blue **`#0066eb`** on a white canvas. The
+integration contract is in [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 ## Features
 
-- **Configurable trip planner** — the search screen is a directions form: set an
-  explicit **From**, **To**, and up to two optional transit stops (sakayan), with
-  a one-tap "use my current location" shortcut for the start. The trip travels in
-  the URL, so route options can always send you back to change the starting
-  point; a device location outside the routing feed can no longer silently make
-  every destination say *Walang ruta*. (MOTIS `via` accepts stop IDs only, so an
-  optional stop is a real served stop, capped at two.)
-- **Fare-first route cards** — every option leads with the total time, arrival,
-  **₱ fare**, transfers and walk distance, and every fare shows its
-  `effective_from` date and its source. No fare is ever shown without either.
-- **The paths you will actually take** — route options draw every alternative as
-  its own path on the map and the selected itinerary leg-by-leg in mode colours
-  (walk dashes, jeep/bus/rail lines, transfer dots, origin/destination pins),
-  with a Moovit-style leg-strip ribbon on every card. Selecting a card re-fits
-  the camera to that route; tapping a path on the map selects its card.
-- **Provenance in three layers** — a map/tile credit and a route-card chip (L1),
-  the About-data dataset list with publisher, SPDX licence, last-checked date and
-  coverage (L2), and a licence sheet with the full source URL (L3). Every dataset
-  attribution string comes from the API's `sources[]`; the required basemap tile
-  credit is the documented exception (R42/R55).
-- **Step-by-step trips on a map** — a sticky map header shows the chosen route,
-  an interactive leg rail plus expandable timeline (walk / jeep / bus / rail /
-  ferry / wait) keep the map and steps in sync, with the alight stop pinned,
-  "Hanapin" signage on board legs, and an itemised fare breakdown with
-  effectivity dates.
-- **Leg-by-leg live walkthrough** — the in-trip screen steps through the planned
-  legs with previous/next controls and the current leg emphasised on the map. It
-  always states there is no real-time data; it never fabricates a live ETA.
-- **Saved trips that work offline** — a saved trip keeps its fare snapshot and
-  dataset version, survives a reload with the network cut, and labels itself
-  "Saved route (no live data)" with an honest staleness stamp.
-- **Installable PWA** — Workbox service worker, precached app shell, web app
-  manifest with 192/512/maskable icons; the offline reload is proven by a
-  Playwright test against the built app (not inferred from file existence).
-- **Honest Taglish UI** — the default locale is Taglish with an English fallback
-  string set, `<html lang="tl">`, correct language tagging and WCAG 2.2 AA
-  targets (48 dp entry points, focus management, reduced motion, axe tests).
+- **Map-first, one screen** — a persistent MapLibre map behind a mobile bottom
+  sheet (desktop gets a 400 px sidebar): search, route options, trip detail,
+  the live walkthrough, saved trips and the data page all render in the panel.
+- **Directions form with stops** — From and To, up to two optional served-stop
+  "via" stops, swap and one-tap current location; the trip lives in the URL, so
+  back/edit links always work.
+- **Fare-first route options** — 3–5 ranked alternatives leading with duration,
+  arrival, **₱ fare**, transfers and walk distance. Every fare shows its
+  effectivity date and source.
+- **Step-by-step trips on the map** — a leg timeline with board/alight stops,
+  itemised fares and a map that follows the focused leg. The walkthrough always
+  states there is no realtime data and never invents a live ETA.
+- **Saved trips that work offline** — save a trip with its fare and dataset
+  snapshot; it reopens after a reload with the network cut and labels itself as
+  a saved snapshot with a staleness stamp.
+- **Provenance in the app** — every dataset, publisher, licence, coverage and
+  last-checked date comes from the BFF's `/sources`; About data lists what
+  actually exists.
+- **Honest Taglish UI, installable PWA** — mobile-first, WCAG 2.2 AA targets,
+  English fallback, app-shell service worker and a web app manifest.
 
-## Quick start (complete local stack + PWA)
+## Screenshots
 
-### Prerequisites
+Captured from the running app with live routing data at **390 × 844** (Pixel 7,
+2× DPR) and **1440 × 900**; `node apps/web/e2e/screenshots.mjs` regenerates them
+after UI changes.
 
-- **Node 22+** (this checkout runs **Node 24.19.0**, npm **11.17.0**)
-- **Docker Desktop** with Compose v2 (MOTIS + the API image)
-- **Python 3.10+** for the data pipeline (this machine: 3.10.11)
-- **Java 21+** only if you want to run MobilityData `gtfs-validator` locally
-  (CI also runs it; see `.github/workflows/data.yml`)
-- Windows PowerShell is enough — **no bash/WSL required**
+| Home | Search | Route options |
+|:---:|:---:|:---:|
+| <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home: live map behind the bottom sheet with the search pill" width="250"></a> | <a href="docs/screenshots/search-results.png"><img src="docs/screenshots/search-results.png" alt="Search: directions form with From set and grouped stop results" width="250"></a> | <a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Route options: fare-first cards over the map, planned from Guadalupe to Cubao" width="250"></a> |
+| Map + sheet, search pill | Directions form, grouped results | Fare, ETA, effectivity date |
 
-### 1. Install dependencies
+| Trip detail | Live walkthrough | Saved |
+|:---:|:---:|:---:|
+| <a href="docs/screenshots/trip-detail.png"><img src="docs/screenshots/trip-detail.png" alt="Trip detail: leg timeline, itemised fare and the route on the map" width="250"></a> | <a href="docs/screenshots/live-trip.png"><img src="docs/screenshots/live-trip.png" alt="Live walkthrough: one leg at a time with the honest no-live-data banner" width="250"></a> | <a href="docs/screenshots/saved.png"><img src="docs/screenshots/saved.png" alt="Saved: snapshot rows with fare effectivity and staleness notes" width="250"></a> |
+| Timeline, fare breakdown | Guided steps, no fake realtime | Offline-capable snapshots |
 
-```powershell
+| About data | Desktop home | Desktop route options |
+|:---:|:---:|:---:|
+| <a href="docs/screenshots/about-data.png"><img src="docs/screenshots/about-data.png" alt="About data: every dataset with publisher and licence" width="250"></a> | <a href="docs/screenshots/home-desktop.png"><img src="docs/screenshots/home-desktop.png" alt="Desktop home: 400px sidebar with the persistent map" width="420"></a> | <a href="docs/screenshots/route-options-desktop.png"><img src="docs/screenshots/route-options-desktop.png" alt="Desktop route options: sidebar cards and the selected route drawn on the map" width="420"></a> |
+| Provenance for every dataset | Sidebar + full map | Compare options on the map |
+
+## Quick start
+
+Prerequisites: **Node 22+**, **Docker** with Compose v2, and **Python 3.10+**
+for the data build.
+
+```bash
 npm ci
-```
 
-### 2. Create the pipeline virtualenv (once)
-
-```powershell
-cd pipelines
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-cd ..
-```
-
-### 3. Build the data (one-time, ~90 minutes on this machine)
-
-```powershell
+# One-time data build: downloads the ~612 MB Geofabrik PH extract, clips the
+# NCR area and publishes the GTFS/fare artifacts (~90 min on the dev machine;
+# see scripts/data-build.mjs and docs/DEVELOPMENT.md).
 npm run data:build
+
+# Start the router (:8080) and the BFF (:8787), waiting for both healthchecks.
+docker compose up -d --wait        # or the checked wrapper: npm run dev
+
+# In a second terminal, start the app (:5173).
+npm run dev --workspace @biyahey/web
 ```
 
-That runs `download → osm → publish` from the repository root, passing the
-documented landmark aliases. The Geofabrik download is ~612 MB; the NCR clip is
-the slow part (~72 min; see `docs/runbooks/data-build.md` for measured timings
-and every generated artifact). Subsequent iterations can reuse inputs:
+Open <http://localhost:5173>. The app calls the BFF at
+<http://localhost:8787> by default; set `VITE_API_URL` before starting Vite to
+change that, and put the browser origin in the BFF's `CORS_ORIGINS`.
 
-```powershell
-npm run data:build -- --skip-download    # reuse the PH extract, re-clip + publish
-npm run data:build -- --publish-only     # reuse the NCR clip, rebuild the feed
-```
-
-`data/build/` and `data/snapshots/` are gitignored — **never commit generated
-data**.
-
-### 4. Start the services
-
-```powershell
-docker compose up -d --wait      # routing :8080 + api :8787, waits for health
-# or the checked wrapper (validates data/build first and prints the URLs):
-npm run dev
-```
-
-### 5. Start the PWA
-
-In a second terminal:
-
-```powershell
-npm run dev --workspace @biyahey/web    # http://localhost:5173
-```
-
-Open **<http://localhost:5173>**. The app calls the BFF at
-`http://localhost:8787` by default; override with `VITE_API_URL` before starting
-Vite. `:5173` is the origin in the API's CORS allow-list.
-
-### 6. Verify
-
-```powershell
-npm run ci                      # lint + typecheck + offline tests + data schemas + fare staleness
-npm run test:e2e                # builds, then Playwright against the live stack
-npm run verify:phase2           # phase-2 acceptance (spec §3 criteria 2–6; performance PARTIAL)
-npm run verify:phase1           # full phase-1 acceptance (expect PARTIAL)
-npm run perf:web                # Lighthouse mobile, 5-run median (expect exit 1 on TBT)
-```
-
-`docs/runbooks/local-dev.md` is the full local guide: prerequisites, every
-command, Windows notes and troubleshooting (ports, CORS, the MapLibre worker,
-PWA preview vs dev, Lighthouse host contention).
-
-## Repository layout
-
-```
-apps/web/            # React 19 + Vite PWA: Option A map + sheet, all six screens
-services/api/        # Fastify BFF (TypeScript)
-services/routing/    # pinned MOTIS Docker image + config
-packages/shared/     # browser-safe DTOs, fare engine, attribution helper
-pipelines/           # Python data build (download/osm/publish/coverage/licence-gate)
-data/                # provenance registry, fares, curated routes (build output gitignored)
-docs/                # research, specs, plans, runbooks, screenshots, handoff
-scripts/             # dev/data:build/checks/smoke/acceptance harnesses
-```
+Before opening a PR, run `npm run ci` (lint, typecheck, offline tests, data
+schemas, fare staleness). `npm run build` produces the static PWA in
+`apps/web/dist`. Everything else — repo layout, commands, data build, env vars
+and how screens route — is in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Data provenance and licences
 
 Every dataset is registered in `data/provenance/sources.yaml` and returned by
-`/sources`; `/plan` only cites datasets the returned itineraries actually used.
+`/sources`. `/plan` cites the datasets each itinerary actually used; no fare is
+shown without its source and effectivity date. Details:
+[data/LICENSE-DATA.md](data/LICENSE-DATA.md).
 
 | Asset | Licence | Notes |
 |---|---|---|
-| Repository code (`packages/`, `services/`, `apps/`, `pipelines/`, `scripts/`) | **MIT** (`LICENSE`) | |
-| Generated GTFS database (`data/build/gtfs/gtfs.zip`) | **ODbL 1.0** | derived from OpenStreetMap; the notice ships inside the zip (`LICENSE-DATA.txt`) |
-| Curated jeepney/UV inventory (`data/routes/jeepney-inventory.yaml`) | **CC BY-SA 2.0** | OSM Wiki; any GTFS derived from it states the attribution inside the artifact |
-| Fare matrices (`data/fares/`) | Government public information, transcribed | LTFRB / LRTA / LRMC / MMDA; effectivity dates are always displayed |
+| Repository code (`apps/`, `services/`, `packages/`, `pipelines/`, `scripts/`) | **MIT** ([LICENSE](LICENSE)) | |
+| Generated GTFS feed (`data/build/gtfs/gtfs.zip`) | **ODbL 1.0** | derived from OpenStreetMap; the notice ships inside the zip |
+| Curated jeepney/UV inventory (`data/routes/`) | **CC BY-SA 2.0** | OSM Wiki; attribution ships inside the GTFS |
+| Fare matrices (`data/fares/`) | government public information, transcribed | LTFRB / LRTA / LRMC / MRT-3; effectivity dates always displayed |
 | Documentation (`docs/`, `README.md`, `CONTRIBUTING.md`) | **CC BY 4.0** | includes the screenshots |
 
-Details: `data/LICENSE-DATA.md`, `data/provenance/PROVENANCE_NOTES.md`, and the
-runbooks' known-gaps sections. Sakay/PTAC 2014 GTFS, BusMaps and any feed
-without a reuse grant are **never shipped**.
+Sakay/PTAC 2014 GTFS, BusMaps and any feed without a reuse grant are **never**
+shipped. Data changes must pass `npm run validate:data` and the licence gate in
+CI (`.github/workflows/licence-gate.yml`).
 
-## Known gaps (recorded, not hidden)
+## Known limits
 
-- **PH-wide pass (2026-11-05):** Cebu City→Lapu-Lapu, NCR→Baguio and Davao City→Tagum have no OSM
-  transit chain for the probed pairs and return the labelled walk estimate (raw MOTIS verified 0);
-  Region IV-A's tricycle terminals are outside the NCR landmark extract so the terminal hint
-  artifact carries one NCR terminal; 12 routes still publish a two-point straight-line shape
-  (measured, not repaired); tricycle-only itineraries reuse the zero-fare quote shape and the UI
-  labels them partial; the phase-2 Lighthouse verdict stays PARTIAL (TBT 7.6 s in the 2026-11-05 run).
-
-- **Performance is PARTIAL.** The current paint-only budget passes (112.3 KB gzip vs
-  250 KB), but the spec §11 "cold start → interactive map ≤ 3 s" target is **not
-  met**, TBT is above the Lighthouse "good" guidance, the ≤ 40 tiles/viewport
-  budget is measured but not enforced, and the `saveData` raster fallback is not
-  implemented. The CI `perf` job is authoritative; see
-  `docs/runbooks/phase2-acceptance.md` §6.
-- **Data gaps.** Coverage is 12/16 curated routes; PNR and non-PRFS ferries are
-  excluded from the v1 feed and counted; P2P is deferred as a leg mode (R48), but the
-  national feed carries 33 OSM-mapped P2P shuttles as ordinary `bus-` ids — they are
-  served as bus legs marked `fareNotPublished` (identified by the `P2P` token in the
-  MOTIS-published route long name, R49), never priced with the city-bus matrix; the
-  LRT-2 fare band is provisional (`needs_verification: true`). See
-  `docs/runbooks/phase1-acceptance.md` §8 and `docs/runbooks/ph-wide-coverage-acceptance.md`.
-- **UI gaps for public beta.** Home's peek sheet does not yet list recent trips
-  (spec screen 1), the English-fallback toggle has no settings UI (spec §11), and
-  mixed Taglish/English sentences are tagged as one primary language (R81). All
-  are listed in `docs/runbooks/phase2-acceptance.md` §6.
+- **No realtime data.** Routes, schedules and fares are planned data; there are
+  no live vehicle positions or live ETAs, and the live walkthrough says so.
+- **Fare gaps.** Some legs have no published fare ("fare not published"), the
+  LRT-2 fare band is provisionally transcribed (`needs_verification: true`), and
+  not every PH corridor is modelled in the feed.
+- **Walk fallback.** Where the feed has no usable transit chain, the BFF returns
+  a clearly-labelled **walking estimate** — not a served route — with a
+  distance warning instead of an empty result or a fabricated ride.
+- **Mapping gaps.** OSM/GTFS coverage is uneven outside Metro Manila; the data
+  page shows the datasets that exist rather than implying national completeness.
 
 ## Contributing
 
-Read `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`. AI-assisted contributions are
-welcome and must be disclosed (see `AI_DISCLOSURE.md` and the PR template).
-Data changes must pass `npm run validate:data`, the licence gate, and (when they
-touch the feed) the pipeline tests. UI changes have their own conventions —
-Option A container, fare-first cards, API-only provenance, `t()`-only copy,
-accessibility checklist, performance budget — in `CONTRIBUTING.md`.
-
-## Licence
-
-Code is MIT. Derived transit data is ODbL 1.0 with attribution; the wiki-derived
-route inventory is CC BY-SA 2.0. Documentation and screenshots are CC BY 4.0.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). AI-assisted contributions are welcome and
+must be disclosed — see [AI_DISCLOSURE.md](AI_DISCLOSURE.md) and the PR
+template.

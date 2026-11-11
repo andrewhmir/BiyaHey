@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * One-command data build: download → osm → publish (spec §7/§8.2, final-review
- * item 2). The PWA is Plan 2; this is the root entry point Plan 1 promises.
+ * One-command data build: download → osm → publish. This is the root entry
+ * point that turns the licensed public inputs into the routing artifacts.
  *
  * Usage:
  *   npm run data:build                  # full NCR chain (network: ~612 MB download)
@@ -42,8 +42,8 @@
  * under `data/build`, the canonical copy too; this script verifies both layouts
  * and promotes the region copy if only that one exists.
  *
- * Timings on this machine (recorded in docs/runbooks/data-build.md §1.2): the
- * NCR clip takes ~72 minutes, publish ~6 minutes. The national region skips the
+ * Timings on this machine (recorded in docs/DEVELOPMENT.md): the NCR clip takes
+ * ~72 minutes, publish ~6 minutes. The national region skips the
  * clip entirely (it copies the downloaded extract only when needed) and skips
  * the download whenever data/build/philippines-latest.osm.pbf already exists,
  * so a repeat `--region ph` build is offline; only a missing download is
@@ -197,7 +197,7 @@ if (!existsSync(pipelinesDir)) {
 if (!existsSync(python) && python !== 'python' && python !== 'python3') {
   console.error(
     `data:build: no pipeline virtualenv interpreter at ${venvPython}. ` +
-      'Create it with the commands in docs/runbooks/data-build.md §0.',
+      'Create it with the commands in docs/DEVELOPMENT.md#data-build.',
   );
   process.exit(1);
 }

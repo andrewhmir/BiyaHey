@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Fare-matrix staleness gate (spec §8.3, final-review item 9).
+ * Fare-matrix staleness gate.
  *
  * Fails when the LTFRB PUV fare matrix's `effective_from` is more than 183 days
  * before the check date. Runs in `npm run ci`, so a stale matrix blocks CI
@@ -125,7 +125,7 @@ function main(argv = process.argv.slice(2)) {
     if (status.stale) {
       console.error(
         'check:fares: FAIL — the fare matrix is older than 183 days; update ' +
-          'data/fares/ and packages/shared/src/fares.ts together (spec §8.3).',
+          'data/fares/ and packages/shared/src/fares.ts together.',
       );
       return 1;
     }

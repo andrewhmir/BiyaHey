@@ -38,7 +38,7 @@ const SHIFTED_DEPARTURE_MIN = 10;
  * fan-out made. Base, +10 min and direct-only are up to three calls; the walk
  * fallback adds one direct-walk call when it asks MOTIS for road geometry (it
  * adds none on the happy path or when the pair is beyond the walk ceiling).
- * The R37 stress probe (`scripts/motis-stress.mjs`) asserts 3 on a corridor
+ * The stress probe asserts 3 on a corridor
  * that has transit, which is unchanged.
  */
 export const MOTIS_CALLS_HEADER = 'x-biyahey-motis-calls';

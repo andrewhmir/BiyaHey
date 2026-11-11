@@ -1,6 +1,6 @@
 name: Licence gate
 
-# Polices spec 8.1 / ruling R22 on every change to data or the pipeline:
+# Polices every change to data or the pipeline:
 #  - no blocked dataset (Sakay/PTAC 2014 GTFS, BusMaps, unlicensed feeds) may be
 #    registered, and
 #  - the published GTFS must never lose its ODbL licence/attribution.

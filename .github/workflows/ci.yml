@@ -1,12 +1,19 @@
 name: CI
 
+# Offline checks only: the suite never downloads OSM data and never calls the
+# live API or router. The data build is a deliberate local/network action.
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   ci:
+    name: Lint, typecheck, tests, data validation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,4 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run validate:data
+      - run: npm run check:fares

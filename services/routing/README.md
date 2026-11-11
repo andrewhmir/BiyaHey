@@ -21,8 +21,7 @@ The container mounts `./data/build` **read-only** at `/data` and expects:
 - `/data/gtfs/gtfs.zip` — merged feed from the publish stage
 
 Build them with the data pipeline first (see
-[`docs/runbooks/data-build.md`](../../docs/runbooks/data-build.md)); `data/build/`
-is gitignored.
+[`docs/DEVELOPMENT.md`](../../docs/DEVELOPMENT.md)); `data/build/` is gitignored.
 
 ## Build and run
 
@@ -66,7 +65,6 @@ To verify:
 ```powershell
 docker compose ps                      # routing … (healthy)
 curl.exe -fsS "http://localhost:8080/api/v1/geocode?text=Cubao"
-npm run smoke:routing                  # from the repository root
 ```
 
 Expected smoke output:
@@ -136,6 +134,6 @@ Docker service.
 | container exits with `path /data/... does not exist` | inputs missing — build them and check `data/build/osm/ncr.osm.pbf` and `data/build/gtfs/gtfs.zip` |
 | container logs `motis: import failed; refusing to serve…` then restarts | import failed (invalid/absent inputs); fix `data/build` — the service will not serve a stale graph |
 | healthcheck failing for the first several minutes | expected while `motis import` runs; watch `docker compose logs -f routing` |
-| `npm run smoke:routing` → `fetch failed` | service not up yet or not listening on 8080; check `docker compose ps` |
+| healthcheck/geocode fails (`connection refused`) | service not up yet or not listening on 8080; check `docker compose ps` |
 | `geocode failed: no results for Cubao` | graph imported without the NCR extract (wrong `/data` mount) |
 | `plan failed: no transit itinerary` | timetable empty or its service days do not cover 2026-11-02; rebuild the feed |

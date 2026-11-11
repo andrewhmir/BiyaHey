@@ -2,7 +2,7 @@
  * Validates every YAML/JSON data file under `data/` against the JSON Schema
  * found in the matching `data/<area>/schema/` directory.
  *
- * Convention (ruling R24 — filename stem first):
+ * Convention (filename stem first):
  *  - `data/<area>/schema/<name>.schema.json` claims `data/<area>/<name>.yaml`
  *    first (e.g. `rail-tables.schema.json` covers `rail-tables.yaml`).
  *  - It then claims files whose stem starts with `<name>-`
@@ -106,7 +106,7 @@ for (const schema of schemas) {
 }
 
 /**
- * Match a data file to an area schema by filename stem first (ruling R24):
+ * Match a data file to an area schema by filename stem first:
  * `rail-tables.yaml` -> `rail-tables.schema.json`, then a `<stem>-` prefix
  * (`fares-2026-09-28.yaml` -> `fares.schema.json`), then the area's only
  * schema. Returns `undefined` when an area has several schemas and none match.
