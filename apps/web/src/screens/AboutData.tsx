@@ -6,7 +6,13 @@ import { usePanelDetent } from '../components/Panel';
 import { DatasetCard } from '../components/provenance/DatasetCard';
 import { useScrollTopOnMount } from '../components/trip/useScrollTop';
 import { useCopy } from '../i18n';
-import { ApiError, fetchFaresStatus, fetchSources } from '../lib/api';
+import {
+  ApiError,
+  cachedFaresStatus,
+  cachedSources,
+  revalidateFaresStatus,
+  revalidateSources,
+} from '../lib/api';
 
 type Loadable<T> =
   | { status: 'loading' }
@@ -35,33 +41,45 @@ function SkeletonCard() {
 export function AboutData() {
   usePanelDetent('full');
   const { t } = useCopy();
-  const [sources, setSources] = useState<Loadable<DataSource[]>>({ status: 'loading' });
-  const [fares, setFares] = useState<Loadable<FareStatusDto>>({ status: 'loading' });
+  // A previous screen or the idle prefetch may already have the payload: paint
+  // it on the first render instead of flashing a skeleton, then revalidate.
+  const [sources, setSources] = useState<Loadable<DataSource[]>>(() => {
+    const cached = cachedSources();
+    return cached === undefined ? { status: 'loading' } : { status: 'ready', data: cached };
+  });
+  const [fares, setFares] = useState<Loadable<FareStatusDto>>(() => {
+    const cached = cachedFaresStatus();
+    return cached === undefined ? { status: 'loading' } : { status: 'ready', data: cached };
+  });
   const [attempt, setAttempt] = useState(0);
   const scrollRef = useScrollTopOnMount('about');
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    setSources({ status: 'loading' });
-    setFares({ status: 'loading' });
-    fetchSources(controller.signal)
+    // A retry with nothing cached shows the skeleton again; a cached snapshot
+    // stays on screen while this revalidation runs in the background.
+    setSources((current) => (current.status === 'ready' ? current : { status: 'loading' }));
+    setFares((current) => (current.status === 'ready' ? current : { status: 'loading' }));
+    revalidateSources(controller.signal)
       .then((data) => {
         if (active) setSources({ status: 'ready', data });
       })
       .catch((error: unknown) => {
         if (!active) return;
         if (error instanceof ApiError && error.code === 'aborted') return;
-        setSources(failed(error));
+        // Keep the cached snapshot when the background revalidation fails; the
+        // error UI is for a cold visit that has no data to show at all.
+        setSources((current) => (current.status === 'ready' ? current : failed(error)));
       });
-    fetchFaresStatus(controller.signal)
+    revalidateFaresStatus(controller.signal)
       .then((data) => {
         if (active) setFares({ status: 'ready', data });
       })
       .catch((error: unknown) => {
         if (!active) return;
         if (error instanceof ApiError && error.code === 'aborted') return;
-        setFares(failed(error));
+        setFares((current) => (current.status === 'ready' ? current : failed(error)));
       });
     return () => {
       active = false;

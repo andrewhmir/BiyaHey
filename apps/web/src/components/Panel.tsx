@@ -19,6 +19,20 @@ const DETENTS: Record<Detent, string> = {
 
 const NEXT: Record<Detent, Detent> = { peek: 'half', half: 'full', full: 'peek' };
 
+/**
+ * The detent each screen asks for via `usePanelDetent` (kept in step with the
+ * screens). Panels are created before those effects run, so deriving the first
+ * render's height from the route makes a cold deep link paint the sheet at its
+ * final size. Without it, Home starts at the default `half`, animates to
+ * `peek` after mount and the 300 ms height transition is a measurable layout
+ * shift on the first screen the rider sees.
+ */
+function initialDetentFor(pathname: string): Detent {
+  if (pathname === '/search' || pathname === '/saved' || pathname === '/sources') return 'full';
+  if (pathname === '/plan' || pathname.startsWith('/trip/')) return 'half';
+  return 'peek';
+}
+
 interface PanelValue {
   detent: Detent;
   setDetent: (detent: Detent) => void;
@@ -44,7 +58,9 @@ export function usePanelDetent(detent: Detent): void {
  */
 export function Panel({ children }: { children: ReactNode }) {
   const { t } = useCopy();
-  const [detent, setDetent] = useState<Detent>('half');
+  const [detent, setDetent] = useState<Detent>(() =>
+    typeof window === 'undefined' ? 'half' : initialDetentFor(window.location.pathname),
+  );
   const [desktop, setDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );

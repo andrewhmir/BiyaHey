@@ -5,7 +5,7 @@ import { useScrollTopOnMount } from '../components/trip/useScrollTop';
 import { usePanelDetent } from '../components/Panel';
 import { SavedTripRow } from '../components/saved/SavedTripRow';
 import { useCopy } from '../i18n';
-import { ApiError, fetchFaresStatus } from '../lib/api';
+import { ApiError, cachedFaresStatus, revalidateFaresStatus } from '../lib/api';
 import {
   deleteSaved,
   listRecents,
@@ -48,7 +48,14 @@ export function Saved() {
   const { t } = useCopy();
   const online = useOnline();
   const [lists, setLists] = useState(() => ({ saved: listSaved(), recents: listRecents() }));
-  const [matrix, setMatrix] = useState<MatrixState>({ status: 'loading' });
+  // The matrix date may already be known from About-data/the idle prefetch;
+  // the stored lists are device snapshots and never wait for it either way.
+  const [matrix, setMatrix] = useState<MatrixState>(() => {
+    const cached = cachedFaresStatus();
+    return cached === undefined
+      ? { status: 'loading' }
+      : { status: 'ready', effectiveFrom: cached.effective_from };
+  });
   const [announcement, setAnnouncement] = useState('');
   const [undo, setUndo] = useState<SavedTrip | null>(null);
   const [tab, setTab] = useState<Tab>('saved');
@@ -82,20 +89,22 @@ export function Saved() {
   // A failed or silent request can never blank the stored lists.
   useEffect(() => {
     if (!online) {
-      setMatrix({ status: 'unavailable' });
+      // The fare matrix's effective date is metadata, not a live reading: a
+      // cached one stays truthful offline. Only a cold offline visit hides it.
+      setMatrix((current) => (current.status === 'ready' ? current : { status: 'unavailable' }));
       return;
     }
     const controller = new AbortController();
     let active = true;
-    setMatrix({ status: 'loading' });
-    fetchFaresStatus(controller.signal)
+    setMatrix((current) => (current.status === 'ready' ? current : { status: 'loading' }));
+    revalidateFaresStatus(controller.signal)
       .then((status) => {
         if (active) setMatrix({ status: 'ready', effectiveFrom: status.effective_from });
       })
       .catch((error: unknown) => {
         if (!active) return;
         if (error instanceof ApiError && error.code === 'aborted') return;
-        setMatrix({ status: 'unavailable' });
+        setMatrix((current) => (current.status === 'ready' ? current : { status: 'unavailable' }));
       });
     return () => {
       active = false;

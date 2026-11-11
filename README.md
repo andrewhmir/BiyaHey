@@ -91,6 +91,23 @@ Open <http://localhost:5173>. The app calls the BFF at
 <http://localhost:8787> by default; set `VITE_API_URL` before starting Vite to
 change that, and put the browser origin in the BFF's `CORS_ORIGINS`.
 
+### Fast path (phones, other machines, demos)
+
+The Vite dev server serves ~22 MB of uncompressed modules — fine on localhost,
+slow over Wi-Fi. To open the app from a phone or another machine, serve the
+production build instead:
+
+```bash
+npm run preview:web:watch     # build + serve the PWA on :8099, rebuild on save
+```
+
+The preview server (`scripts/serve-web.mjs`) answers with brotli-compressed,
+immutably cached assets and proxies `/api` to the BFF on the same origin, so a
+cold load is ~0.5 MB and a repeat visit is served from the service worker. On
+the dev VM the tailnet URLs <https://devvm1.tailf19a1a.ts.net/> and
+`:8443` already point at it. Numbers, cache policy and the audit harness
+(`npm run perf:audit`) are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
 Before opening a PR, run `npm run ci` (lint, typecheck, offline tests, data
 schemas, fare staleness). `npm run build` produces the static PWA in
 `apps/web/dist`. Everything else — repo layout, commands, data build, env vars

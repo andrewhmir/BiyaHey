@@ -297,3 +297,96 @@ describe('fare staleness', () => {
     await app.close();
   });
 });
+
+/**
+ * The provenance registry and the fare-matrix status are deploy-static bodies:
+ * the client paints a cached copy and revalidates in the background, so these
+ * routes must offer a stable ETag and answer `If-None-Match` with a bodyless
+ * 304 instead of re-sending 5 KB on every warm visit.
+ */
+describe('HTTP caching for the deploy-static GETs', () => {
+  const CACHE_CONTROL = 'public, max-age=60, stale-while-revalidate=300';
+
+  it('gives /sources a byte-stable ETag and a 304 for If-None-Match', async () => {
+    const app = buildApp();
+    const first = await app.inject({ method: 'GET', url: '/sources' });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers['cache-control']).toBe(CACHE_CONTROL);
+    const etag = String(first.headers.etag);
+    // A weak validator: revalidation is about the serialized body, not framing.
+    expect(etag).toMatch(/^W\/"[A-Za-z0-9_-]{16,}"$/);
+
+    // The same registry must serialize byte-identically, or the ETag would lie.
+    const second = await app.inject({ method: 'GET', url: '/sources' });
+    expect(second.body).toBe(first.body);
+    expect(second.headers.etag).toBe(etag);
+    expect(second.json()).toHaveLength(11);
+
+    const revalidated = await app.inject({
+      method: 'GET',
+      url: '/sources',
+      headers: { 'if-none-match': etag },
+    });
+    expect(revalidated.statusCode).toBe(304);
+    expect(revalidated.body).toBe('');
+    // A 304 still carries the freshness policy so the cache can extend its life.
+    expect(revalidated.headers.etag).toBe(etag);
+    expect(revalidated.headers['cache-control']).toBe(CACHE_CONTROL);
+
+    // RFC 9110: weak comparison, so a strong spelling or a list also matches.
+    for (const header of [etag.replace(/^W\//, ''), `W/"not-it", ${etag}`, '*']) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/sources',
+        headers: { 'if-none-match': header },
+      });
+      expect(res.statusCode, header).toBe(304);
+    }
+
+    // A different representation must be resent in full.
+    const mismatch = await app.inject({
+      method: 'GET',
+      url: '/sources',
+      headers: { 'if-none-match': 'W/"a-different-registry"' },
+    });
+    expect(mismatch.statusCode).toBe(200);
+    expect(mismatch.body).toBe(first.body);
+    await app.close();
+  });
+
+  it('gives /fares/status a per-date ETag and a 304 for If-None-Match', async () => {
+    const app = buildApp();
+    const fresh = await app.inject({ method: 'GET', url: '/fares/status?today=2026-11-01' });
+    expect(fresh.statusCode).toBe(200);
+    expect(fresh.headers['cache-control']).toBe(CACHE_CONTROL);
+    const freshEtag = String(fresh.headers.etag);
+    expect(freshEtag).toMatch(/^W\/"[A-Za-z0-9_-]{16,}"$/);
+
+    const same = await app.inject({ method: 'GET', url: '/fares/status?today=2026-11-01' });
+    expect(same.body).toBe(fresh.body);
+    expect(same.headers.etag).toBe(freshEtag);
+
+    const revalidated = await app.inject({
+      method: 'GET',
+      url: '/fares/status?today=2026-11-01',
+      headers: { 'if-none-match': freshEtag },
+    });
+    expect(revalidated.statusCode).toBe(304);
+    expect(revalidated.body).toBe('');
+    expect(revalidated.headers['cache-control']).toBe(CACHE_CONTROL);
+
+    // Crossing the staleness boundary changes the body, so the old validator
+    // must not 304 the new representation.
+    const stale = await app.inject({ method: 'GET', url: '/fares/status?today=2027-04-01' });
+    expect(stale.statusCode).toBe(200);
+    expect(stale.headers.etag).not.toBe(freshEtag);
+    const mixed = await app.inject({
+      method: 'GET',
+      url: '/fares/status?today=2027-04-01',
+      headers: { 'if-none-match': freshEtag },
+    });
+    expect(mixed.statusCode).toBe(200);
+    expect(mixed.body).toBe(stale.body);
+    await app.close();
+  });
+});

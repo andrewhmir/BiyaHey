@@ -5,6 +5,7 @@ import {
   setWorkerUrl,
   type ExpressionSpecification,
   type GeoJSONSource,
+  type MapMouseEvent,
 } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -18,9 +19,19 @@ import { getMapState, mapActions, useMapState, type FitKind, type MapState } fro
 // asset and MapLibre loads it from here in dev and in the built PWA.
 setWorkerUrl(maplibreWorkerUrl);
 
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+// Self-hosted (and trimmed) copy of the OpenFreeMap Liberty style. It is
+// committed under apps/web/public/map/style.json, preloaded from index.html and
+// precached by the service worker, so the map no longer waits on a cross-origin
+// style JSON fetch (or its sprite atlas) before it can draw.
+const STYLE_URL = '/map/style.json';
 const INITIAL_CENTER: [number, number] = [120.9842, 14.5995];
 const INITIAL_ZOOM = 11;
+
+/** True when any input can hover (phones report `none`, so we skip hover work). */
+function hasHoverInput(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true;
+  return window.matchMedia('(any-hover: hover)').matches;
+}
 
 const ROUTES_SOURCE = 'biyahey-routes';
 const PINS_SOURCE = 'biyahey-pins';
@@ -271,6 +282,15 @@ export function MapCanvas() {
       center: INITIAL_CENTER,
       zoom: INITIAL_ZOOM,
       attributionControl: false,
+      // Metro Manila only: wrapping the world duplicates tiles/place labels at
+      // low zoom for no benefit and costs extra tile/placement work.
+      renderWorldCopies: false,
+      // No tile/symbol fade-in animation: the first frame is already the map
+      // the rider will read, and phones stop re-compositing fades on every pan.
+      fadeDuration: 0,
+      // While the initial fitBounds/flyTo camera animates, do not finish tile
+      // requests for zoom levels we are leaving - cancels wasted tile loads.
+      cancelPendingTileRequestsWhileZooming: true,
     });
     mapRef.current = map;
     map.dragRotate.disable();
@@ -300,14 +320,31 @@ export function MapCanvas() {
       }
     });
 
-    map.on('mousemove', (event) => {
-      const features = map.queryRenderedFeatures(event.point, {
+    // Hover highlighting is desktop-only and must never run per mousemove: a
+    // pointer move fires 60-120x/s and queryRenderedFeatures is one of the most
+    // expensive MapLibre calls. Coalesce into one query per animation frame and
+    // skip it entirely on touch-only devices (no hover state exists there).
+    let hoverFrame: number | null = null;
+    let hoverPoint: MapMouseEvent['point'] | null = null;
+    const updateHover = () => {
+      hoverFrame = null;
+      const point = hoverPoint;
+      hoverPoint = null;
+      if (point === null) return;
+      const features = map.queryRenderedFeatures(point, {
         layers: ROUTE_LAYERS as unknown as string[],
       });
-      map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : '';
-    });
+      const cursor = features.length > 0 ? 'pointer' : '';
+      if (map.getCanvas().style.cursor !== cursor) map.getCanvas().style.cursor = cursor;
+    };
+    const onMouseMove = (event: MapMouseEvent) => {
+      hoverPoint = event.point;
+      if (hoverFrame === null) hoverFrame = requestAnimationFrame(updateHover);
+    };
+    if (hasHoverInput()) map.on('mousemove', onMouseMove);
 
     return () => {
+      if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
       map.remove();
       mapRef.current = null;
     };

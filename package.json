@@ -16,6 +16,10 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "npm run build --workspace @biyahey/web",
+    "map:style": "node scripts/build-map-style.mjs",
+    "preview:web": "node scripts/serve-web.mjs",
+    "preview:web:watch": "node scripts/serve-web.mjs --watch",
+    "perf:audit": "node scripts/perf-audit.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b packages/shared services/api && tsc -p apps/web --noEmit",
     "test": "vitest run --tagsFilter=!integration",

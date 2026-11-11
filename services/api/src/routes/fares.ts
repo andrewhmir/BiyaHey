@@ -9,6 +9,7 @@ import {
 } from '@biyahey/shared';
 import type { FareMode, FareQuoteResponse, FareStatusDto } from '@biyahey/shared';
 import { InvalidBodyError, InvalidModeError } from '../errors.js';
+import { REGISTRY_CACHE_CONTROL, ifNoneMatchHits, weakEtag } from './sources.js';
 
 /** Distance/route fares must be real, non-negative money or kilometre values. */
 const finiteNonNegative = z
@@ -75,6 +76,43 @@ function staleFor(effectiveFrom: string, today: Date): boolean {
   }
 }
 
+/** How many distinct `checked_on:stale` bodies to keep (one per day of traffic). */
+const STATUS_BODIES_LIMIT = 8;
+
+/**
+ * Serialized `/fares/status` bodies keyed by `checked_on:stale`.
+ *
+ * The body only changes when the calendar date (or a test's `today=`) crosses
+ * a staleness boundary, so the JSON and its validator are computed once per
+ * outcome instead of per request. Bounded so repeated `today=` probes cannot
+ * grow the map without limit.
+ */
+const statusBodies = new Map<string, { payload: string; etag: string }>();
+
+/**
+ * Build (or reuse) the byte-identical JSON body and weak validator for one
+ * fare-matrix status outcome.
+ */
+function statusBody(checkedOn: string, stale: boolean): { payload: string; etag: string } {
+  const key = `${checkedOn}:${String(stale)}`;
+  const cached = statusBodies.get(key);
+  if (cached !== undefined) return cached;
+  const dto: FareStatusDto = {
+    effective_from: FARE_MATRIX_EFFECTIVE_FROM,
+    stale,
+    stale_after_days: FARE_STALE_AFTER_DAYS,
+    checked_on: checkedOn,
+  };
+  const payload = JSON.stringify(dto);
+  const entry = { payload, etag: weakEtag(payload) };
+  if (statusBodies.size >= STATUS_BODIES_LIMIT) {
+    const oldest = statusBodies.keys().next().value;
+    if (oldest !== undefined) statusBodies.delete(oldest);
+  }
+  statusBodies.set(key, entry);
+  return entry;
+}
+
 /**
  * `POST /fares/quote` — price one leg with the shared 2026 fare engine.
  *
@@ -116,8 +154,12 @@ export function registerFaresRoutes(app: FastifyInstance): void {
    * The About-data/fare footer can flag an old matrix without loading the YAML
    * or reimplementing the date rule. `today` is accepted for deterministic CI
    * and tests; it is optional in normal use.
+   *
+   * Deploy-static payload: ETag + a short public max-age let a repeat visit
+   * revalidate to a bodyless 304 while the client keeps painting the last
+   * status it saw (see lib/api.ts).
    */
-  app.get('/fares/status', async (request): Promise<FareStatusDto> => {
+  app.get('/fares/status', async (request, reply) => {
     const query = request.query as Record<string, unknown> | undefined;
     const rawToday = query?.today;
     if (rawToday !== undefined && typeof rawToday !== 'string') {
@@ -134,11 +176,14 @@ export function registerFaresRoutes(app: FastifyInstance): void {
     const checkedOn = Number.isNaN(today.getTime())
       ? ''
       : today.toISOString().slice(0, 10);
-    return {
-      effective_from: FARE_MATRIX_EFFECTIVE_FROM,
-      stale,
-      stale_after_days: FARE_STALE_AFTER_DAYS,
-      checked_on: checkedOn,
-    };
+    const { payload, etag } = statusBody(checkedOn, stale);
+    reply.header('cache-control', REGISTRY_CACHE_CONTROL);
+    reply.header('etag', etag);
+    if (ifNoneMatchHits(request.headers['if-none-match'], etag)) {
+      reply.code(304);
+      return;
+    }
+    reply.type('application/json; charset=utf-8');
+    return payload;
   });
 }

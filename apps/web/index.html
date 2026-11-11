@@ -8,12 +8,14 @@
       name="description"
       content="BiyaHey! — plan your Philippine commute on a BetterGov.ph map. Honest fares, honest data."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Self-hosted Figtree (see src/theme.css and public/fonts/). Preloading the
+         primary latin face removes the old third-party fonts.googleapis.com
+         stylesheet from the render-blocking path; the ext face is fetched by the
+         browser only if a page needs a glyph outside latin (e.g. ₱). -->
+    <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- The map style is fetched by MapCanvas after the shell paints; start it
+         in parallel instead of waiting for that chunk's request. -->
+    <link rel="preload" href="/map/style.json" as="fetch" crossorigin />
     <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
     <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
     <link rel="icon" type="image/svg+xml" href="/icons/mark.svg" />

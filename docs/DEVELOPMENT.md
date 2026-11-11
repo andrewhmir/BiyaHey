@@ -12,8 +12,8 @@ services/routing/  pinned MOTIS 2.11.4 Docker image + NCR/national configs
 packages/shared/   browser-safe DTOs, fare engine, attribution helpers
 pipelines/         Python data build: download → osm clip → publish
 data/              provenance registry, fare matrices, curated routes (no build output)
-scripts/           dev, data-build, validate-data, check-fares helpers
-docs/              this page, integration guide, screenshots
+scripts/           dev, data-build, validate-data, check-fares, serve-web, perf-audit
+docs/              this page, integration guide, performance notes, screenshots
 ```
 
 `data/build/` and `data/snapshots/` are generated and gitignored — never commit
@@ -26,12 +26,26 @@ them.
 | `routing` (MOTIS 2.11.4) | Docker Compose | <http://localhost:8080> | `docker compose up -d --wait` or `npm run dev` |
 | `api` (Fastify BFF) | Docker Compose | <http://localhost:8787> | same |
 | `web` (Vite dev server) | host Node | <http://localhost:5173> | `npm run dev --workspace @biyahey/web` |
+| `web` (production preview) | host Node | <http://localhost:8099> | `npm run preview:web` (build once) or `npm run preview:web:watch` |
 
 The app is **not** a compose service. The browser origin `http://localhost:5173`
 is in the BFF's CORS allow-list by default (both `localhost` and `127.0.0.1`
 spellings); a deployment must set `CORS_ORIGINS` to its real web origin.
 Health checks: `curl http://localhost:8787/health` and
 `curl 'http://localhost:8080/api/v1/geocode?text=Cubao'`.
+
+The BFF image copies `services/api/src` and `packages/shared/src` at build
+time, so after changing either run
+`docker compose build api && docker compose up -d --force-recreate --wait api`
+(the running container does not hot-reload). The routing container only needs a
+recreate after a data rebuild.
+
+The dev server is for HMR, tests and e2e. **Anything a phone or another machine
+opens should use the production preview server** (`scripts/serve-web.mjs`, port
+8099): it serves the built PWA with brotli, immutable caching, a same-origin
+`/api` proxy and `--watch` rebuilds. On the dev VM the tailnet entrypoints
+already point there. Why that matters, the measured numbers and the cache policy
+are in [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Data build
 
@@ -67,7 +81,7 @@ docker compose up -d --force-recreate --wait routing
 
 | Variable | Used by | Default | Meaning |
 |---|---|---|---|
-| `VITE_API_URL` | web (build/dev) | `http://localhost:8787` | BFF origin; inlined at build time |
+| `VITE_API_URL` | web (build/dev) | `http://localhost:8787` | BFF origin; inlined at build time. The preview server builds with `/api` so the BFF is reached through its own reverse proxy (no CORS) |
 | `CORS_ORIGINS` | api | `http://localhost:5173,http://127.0.0.1:5173` | comma-separated browser origins allowed to call the BFF |
 | `MOTIS_URL` | api | `http://localhost:8080` | router base URL (compose sets `http://routing:8080`) |
 | `BIYAHEY_DATA_DIR` | api | repository `data/` | provenance registry, fares, curated inventory (compose mounts it at `/data`) |
@@ -86,12 +100,17 @@ docker compose up -d --force-recreate --wait routing
 | `npm run check:fares` | no | fare-matrix staleness (183-day rule) |
 | `npm run ci` | no | all of the above in CI order |
 | `npm run build` | no | production PWA in `apps/web/dist` |
+| `npm run preview:web` | no (needs BFF for data) | build + serve the production PWA on `:8099` |
+| `npm run preview:web:watch` | no (needs BFF for data) | same, rebuilding on source changes |
+| `npm run perf:audit -- --throttle tailnet <url>` | target server | Playwright load audit (FCP, bytes, map canvas); see [PERFORMANCE.md](PERFORMANCE.md) |
 
 The Vite dev server has no service worker, so installability and offline
-behaviour are tested against the production build. `apps/web/vite.config.ts`
-pins `preview` to port 5173 for parity with dev, and the BFF only allows the
-origins in `CORS_ORIGINS`, so a preview on another port needs both sides moved
-together, e.g.:
+behaviour are tested against the production build. `scripts/serve-web.mjs`
+serves one on `:8099` with a same-origin `/api` proxy (its build inlines
+`VITE_API_URL=/api`), which is also what the tailnet serves. `apps/web/vite.config.ts`
+pins `vite preview` to port 5173 for parity with dev, and the BFF only allows the
+origins in `CORS_ORIGINS`, so a `vite preview` on another port needs both sides
+moved together, e.g.:
 
 ```bash
 cd apps/web
