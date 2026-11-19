@@ -1,10 +1,9 @@
 # BiyaHey!
 
-An open-source, local-first commute planner for the Philippines — an installable
-PWA. Search a place,
-compare the best jeepney / bus / rail / ferry options with **honest fares and
-visible data provenance**, follow step-by-step sakay instructions, and save
-trips that still open offline.
+A community-driven, open-source, local-first commute planner for the Philippines
+— an installable PWA. Search a place, compare the best jeepney / bus / rail /
+ferry options with **honest fares and visible data provenance**, follow
+step-by-step sakay instructions, and save trips that still open offline.
 
 The default voice is **Taglish**, with an English toggle. BiyaHey! is honest
 about what it is not: there is no realtime data anywhere in the app — schedules
@@ -12,9 +11,9 @@ and fare matrices only, stated plainly in the UI.
 
 ## Open source
 
-BiyaHey! is an independent, open-source application: there is no corporate,
-government or institutional affiliation behind it, and it is not part of any
-other portal or app family. The code is MIT-licensed (see [LICENSE](LICENSE)),
+BiyaHey! is an independent, open-source, community-driven application: there is
+no corporate, government or institutional affiliation behind it, and it is not
+part of any other portal or app family. The code is MIT-licensed (see [LICENSE](LICENSE)),
 every dataset it uses is registered with its publisher and licence, and
 contributions are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 

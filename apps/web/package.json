@@ -2,7 +2,7 @@
   "name": "@biyahey/web",
   "version": "0.0.0",
   "private": true,
-  "description": "BiyaHey! commuter map — an open-source PWA for Philippine commutes",
+  "description": "Community-driven, open-source commuter map — an installable PWA for Philippine commutes",
   "license": "MIT",
   "type": "module",
   "scripts": {

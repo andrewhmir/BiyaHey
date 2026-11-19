@@ -2,7 +2,7 @@
   "name": "biyahey",
   "version": "0.0.0",
   "private": true,
-  "description": "Open-source Philippine commuter route planner PWA",
+  "description": "Community-driven, open-source Philippine commuter route planner PWA",
   "license": "MIT",
   "type": "module",
   "engines": {

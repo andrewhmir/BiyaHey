@@ -66,10 +66,10 @@ export default defineConfig({
       includeManifestIcons: false,
       manifest: {
         id: '/',
-        name: 'BiyaHey! — Philippine commute map',
+        name: 'BiyaHey! — Philippine community commute map',
         short_name: 'BiyaHey!',
         description:
-          'Plan a Philippine commute, compare jeepney, bus and rail options with honest fares, and follow the sakay steps on a map.',
+          'Plan a Philippine commute on a community-driven, open-source map — compare jeepney, bus and rail options with honest fares, and follow the sakay steps.',
         lang: 'tl',
         start_url: '/',
         scope: '/',
