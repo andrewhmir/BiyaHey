@@ -22,7 +22,7 @@ function MapSkeleton() {
   );
 }
 
-/** BetterGov chrome + one persistent map + the screen panel. */
+/** App chrome + one persistent map + the screen panel. */
 export function Layout() {
   const { t } = useCopy();
   const inset = useMapState().inset;

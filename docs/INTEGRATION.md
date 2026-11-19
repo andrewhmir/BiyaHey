@@ -1,11 +1,10 @@
-# BetterGov.ph integration
+# Deployment & integration
 
-BiyaHey! is a standalone app in the [BetterGov.ph](https://bettergov.ph) family
-— the community-run Philippine government portal. BetterGov services are
-independent apps on their own subdomains (e.g. `hotlines.bettergov.ph`,
-`budget.bettergov.ph`); BiyaHey! is its own installable PWA, **not** an iframe
-embed of the portal. This page is the contract for deploying and listing it as a
-family app.
+BiyaHey! is an independent, open-source commute planner PWA — a static React app
+plus a small BFF and a routing engine that you host yourself. There is no portal
+wrapper, no account system and no affiliation with any other service or
+organisation: a deployment is just this repository's services on your own
+domains. This page is the contract for deploying and integrating it.
 
 ## What the app calls
 
@@ -21,15 +20,16 @@ talks to MOTIS directly and never computes a fare client-side.
 | `GET` | `/fares/status` | fare matrix `effective_from` + staleness verdict |
 
 Responses are JSON. `/plan` and `/search` requests can fail fast; the app shows
-honest error/empty states, so a family deployment must keep the BFF reachable.
+honest error/empty states, so a deployment must keep the BFF reachable.
 
 ## Required configuration
 
 - **`CORS_ORIGINS`** must include the deployed web origin, e.g.
-  `CORS_ORIGINS=https://biyahey.bettergov.ph`. The BFF allows only that list (no
+  `CORS_ORIGINS=https://biyahey.example.org`. The BFF allows only that list (no
   wildcard, no credentials) for `GET`, `POST`, `OPTIONS` and `Content-Type`.
 - **`VITE_API_URL`** is inlined into the PWA at build time and must point at the
-  public BFF origin (e.g. `https://api.biyahey.bettergov.ph`).
+  public BFF origin (e.g. `https://api.biyahey.example.org`), or at `/api` when
+  the same origin proxies it (the bundled preview server does this).
 - **`MOTIS_URL`** points the BFF at the routing service (`http://routing:8080`
   in compose); `BIYAHEY_DATA_DIR` points it at the mounted data directory.
 - The BFF should be behind TLS/HTTPS at its public origin; there is no auth and
@@ -46,29 +46,25 @@ honest error/empty states, so a family deployment must keep the BFF reachable.
    service `api`, port 8787) with `CORS_ORIGINS`, `MOTIS_URL` and
    `BIYAHEY_DATA_DIR` set for the environment.
 4. **Web**: `npm run build` emits the static PWA in `apps/web/dist`. Serve it as
-   static files over HTTPS on the app subdomain (any static host/CDN). The build
+   static files over HTTPS on your app domain (any static host/CDN). The build
    also emits the service worker and `manifest.webmanifest`.
 
 Health-gate a deployment on `GET /health` (BFF) and the MOTIS geocode endpoint
 used by its compose healthcheck.
 
-## Listing on bettergov.ph
+## Deep links and hosting
 
-Open a PR/issue with the BetterGov.ph maintainers to add BiyaHey! to the family
-app listing, linking to the deployed PWA subdomain. The portal links out to
-independent apps; there is no portal wrapper, and the app must keep working as
-its own URL (deep links to `/search`, `/plan?...`, `/trip/:id`, `/saved`). Keep
-the BetterGov visual language described in the next section.
+The app must keep working as its own URL: deep links to `/search`, `/plan?...`,
+`/trip/:id` and `/saved` all resolve through the SPA history fallback, so the
+static host has to serve `index.html` for unknown paths (the bundled
+`scripts/serve-web.mjs` does this, plus compression and a same-origin `/api`
+proxy).
 
-## Design-token alignment
+## Design tokens
 
-The UI uses the [Kapwa](https://www.npmjs.com/package/@bettergov/kapwa) design
-system (`@bettergov/kapwa` v1.4.1, CC0, Tailwind v4, React 19), the **Figtree**
-typeface and the bettergov.ph palette, whose primary is **`#0066eb`**. The
-tokens live in `apps/web/src/theme.css` (`brand`, `ink`, `line`, `canvas`,
-`success`, `warning`, `danger`, …); components use the tokens, not raw colours.
-A Kapwa/Tailwind upgrade changes the design system in one dependency bump plus
-that token file.
+The UI uses Tailwind v4 tokens from `apps/web/src/theme.css` (`brand` `#0066eb`,
+`ink`, `line`, `canvas`, `success`, `warning`, `danger`, …); components use the
+tokens, not raw colours. Figtree is the typeface.
 
 ## Standalone PWA / manifest
 

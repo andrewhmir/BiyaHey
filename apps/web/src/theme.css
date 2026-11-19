@@ -1,12 +1,8 @@
-/* BiyaHey! theme — Tailwind v4 + Kapwa (the BetterGov.ph design system).
+/* BiyaHey! theme — Tailwind v4 with the app's own design tokens.
  *
- * Kapwa ships the component styles and the semantic BetterGov tokens; this
- * file only re-skins its brand ramp to the bettergov.ph production palette
- * (`#0066eb` primary, Figtree type) and adds the handful of BiyaHey tokens
- * the map shell needs. */
+ * Brand palette (`#0066eb` primary, Figtree type) plus the handful of
+ * BiyaHey tokens the map shell needs. */
 @import 'tailwindcss';
-@source '../../../node_modules/@bettergov/kapwa/dist';
-@import '@bettergov/kapwa/kapwa.css';
 
 /* Figtree, self-hosted (SIL OFL 1.1 — see public/fonts/OFL.txt).
  *
@@ -41,11 +37,10 @@
 }
 
 @theme {
-  /* Type: bettergov.ph uses Figtree. */
+  /* Type: Figtree. */
   --font-sans: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-kapwa-sans: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* bettergov.ph production palette. */
+  /* Brand palette. */
   --color-brand: #0066eb;
   --color-brand-strong: #0052bc;
   --color-brand-deep: #00439b;
@@ -72,26 +67,7 @@
   --color-mode-tricycle: #d97706;
 }
 
-/* The Kapwa brand ramp, re-pitched on bettergov.ph blue. */
-@theme {
-  --color-kapwa-brand-50: #e6f0fd;
-  --color-kapwa-brand-100: #cfe2fc;
-  --color-kapwa-brand-200: #a6c8f8;
-  --color-kapwa-brand-300: #75aaf4;
-  --color-kapwa-brand-400: #3d8bef;
-  --color-kapwa-brand-500: #0066eb;
-  --color-kapwa-brand-600: #0052bc;
-  --color-kapwa-brand-700: #00439b;
-  --color-kapwa-brand-800: #00347a;
-  --color-kapwa-brand-900: #00142f;
-  --color-kapwa-brand-950: #000d1f;
-}
-
 :root {
-  /* bettergov.ph primary action colours (Kapwa reads these directly). */
-  --color-kapwa-bg-brand-default: #0066eb;
-  --color-kapwa-bg-brand-hover: #0052bc;
-  --color-kapwa-bg-brand-active: #00439b;
   color-scheme: light;
 }
 
@@ -120,7 +96,7 @@
     text-underline-offset: 2px;
   }
 
-  /* MapLibre's own controls are unused (we build ours in BetterGov style). */
+  /* MapLibre's own controls are unused (we build ours in the app style). */
   .maplibregl-ctrl-attrib,
   .maplibregl-ctrl-bottom-right {
     display: none;

@@ -1,7 +1,7 @@
 # BiyaHey!
 
 An open-source, local-first commute planner for the Philippines — an installable
-PWA built by the [BetterGov.ph](https://bettergov.ph) community. Search a place,
+PWA. Search a place,
 compare the best jeepney / bus / rail / ferry options with **honest fares and
 visible data provenance**, follow step-by-step sakay instructions, and save
 trips that still open offline.
@@ -10,18 +10,18 @@ The default voice is **Taglish**, with an English toggle. BiyaHey! is honest
 about what it is not: there is no realtime data anywhere in the app — schedules
 and fare matrices only, stated plainly in the UI.
 
-## BetterGov.ph family
+## Open source
 
-BiyaHey! is a standalone app in the [BetterGov.ph](https://bettergov.ph) family,
-the community-run Philippine government portal. BetterGov services ship as
-independent apps on their own subdomains (e.g. `hotlines.bettergov.ph`,
-`budget.bettergov.ph`) — BiyaHey! is its own installable PWA in that family, not
-an iframe embed.
+BiyaHey! is an independent, open-source application: there is no corporate,
+government or institutional affiliation behind it, and it is not part of any
+other portal or app family. The code is MIT-licensed (see [LICENSE](LICENSE)),
+every dataset it uses is registered with its publisher and licence, and
+contributions are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-The UI follows the BetterGov design language: the [Kapwa](https://www.npmjs.com/package/@bettergov/kapwa)
-design system (`@bettergov/kapwa` v1.4.1, CC0, Tailwind v4, React 19), the
-**Figtree** typeface, and BetterGov blue **`#0066eb`** on a white canvas. The
-integration contract is in [docs/INTEGRATION.md](docs/INTEGRATION.md).
+The UI is Tailwind v4 on an app-owned token set in
+[`apps/web/src/theme.css`](apps/web/src/theme.css) — BiyaHey blue **`#0066eb`**,
+the **Figtree** typeface and a light canvas. The deployment contract is in
+[docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 ## Features
 

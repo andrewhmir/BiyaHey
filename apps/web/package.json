@@ -2,7 +2,7 @@
   "name": "@biyahey/web",
   "version": "0.0.0",
   "private": true,
-  "description": "BiyaHey! commuter map — a BetterGov.ph family app",
+  "description": "BiyaHey! commuter map — an open-source PWA for Philippine commutes",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -12,7 +12,6 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@bettergov/kapwa": "^1.4.1",
     "@biyahey/shared": "*",
     "lucide-react": "^0.575.0",
     "maplibre-gl": "^6.16.0",

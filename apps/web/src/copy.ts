@@ -2,7 +2,7 @@
  * All rider-facing copy, in Taglish (`tl`, the default voice) and English
  * (`en`). One dictionary, one `t()`; screens never hardcode a sentence.
  *
- * Values follow the BetterGov.ph plain-language style: short, concrete,
+ * Values follow a plain-language style: short, concrete,
  * lowercase Filipino loanwords kept where riders actually use them.
  */
 
@@ -14,12 +14,11 @@ export type StringVars = Readonly<Record<string, string | number>>;
 export type Translate = (key: string, vars?: StringVars) => string;
 
 const TL = {
-  // --- BetterGov shell / app chrome --------------------------------------
+  // --- Shell / app chrome ------------------------------------------------
   'app.skipToContent': 'Lumaktaw sa pangunahing nilalaman',
   'app.tagline': 'Community-run na commute map ng Pilipinas',
-  'app.communityPortal': 'Isang community-powered na portal para sa Pilipinas',
-  'app.bettergov': 'BetterGov.ph',
-  'app.partOf': 'Bahagi ng BetterGov.ph',
+  'app.communityPortal': 'Isang open-source na commute planner para sa Pilipinas',
+  'app.partOf': 'Isang open-source na proyekto',
   'app.install': 'I-install',
   'app.installHint': 'I-install sa home screen',
   'app.installed': 'Naka-install na',
@@ -432,12 +431,11 @@ type StringKey = keyof typeof TL;
  * misspelled key fails `tsc`, not a runtime lookup.
  */
 const EN: Record<StringKey, string> = {
-  // --- BetterGov shell / app chrome --------------------------------------
+  // --- Shell / app chrome ------------------------------------------------
   'app.skipToContent': 'Skip to main content',
   'app.tagline': 'A community-run commute map for the Philippines',
-  'app.communityPortal': 'A community-powered portal for the Philippines',
-  'app.bettergov': 'BetterGov.ph',
-  'app.partOf': 'Part of BetterGov.ph',
+  'app.communityPortal': 'An open-source commute planner for the Philippines',
+  'app.partOf': 'An open-source project',
   'app.install': 'Install',
   'app.installHint': 'Install to your home screen',
   'app.installed': 'Installed',

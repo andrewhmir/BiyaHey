@@ -1,7 +1,7 @@
 import { useCopy } from '../i18n';
 import type { Locale } from '../copy';
 
-/** TL / EN segmented control, in the BetterGov utility-bar style. */
+/** TL / EN segmented control, in the utility-bar style. */
 export function LocaleToggle({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
   const { locale, setLocale, t } = useCopy();
   const options: { value: Locale; label: string }[] = [

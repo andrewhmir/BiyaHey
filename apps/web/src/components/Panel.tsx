@@ -53,7 +53,7 @@ export function usePanelDetent(detent: Detent): void {
 }
 
 /**
- * The one surface every screen renders into: a BetterGov-style card panel that
+ * The one surface every screen renders into: a card panel that
  * is a bottom sheet on phones and the left sidebar on desktop.
  */
 export function Panel({ children }: { children: ReactNode }) {

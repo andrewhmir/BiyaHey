@@ -8,7 +8,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-brand-tint text-brand' : 'text-ink-soft hover:bg-canvas hover:text-ink'
   }`;
 
-/** BetterGov-style chrome: navy utility bar over a white, sticky service bar. */
+/** App chrome: navy utility bar over a white, sticky service bar. */
 export function Header() {
   const { t } = useCopy();
 
@@ -17,14 +17,11 @@ export function Header() {
       <div className="hidden h-9 items-center justify-between gap-4 bg-navy px-4 text-xs text-white/80 md:flex lg:px-6">
         <p className="truncate">{t('app.communityPortal')}</p>
         <div className="flex items-center gap-4">
-          <a href="https://bettergov.ph" className="hover:text-white hover:underline">
-            {t('app.bettergov')}
-          </a>
           <Link to="/sources" className="hover:text-white hover:underline">
             {t('nav.data')}
           </Link>
           <a
-            href="https://github.com/bettergovph"
+            href="https://github.com/andrewhmir/BiyaHey"
             className="hover:text-white hover:underline"
             rel="noreferrer"
           >

@@ -3,7 +3,7 @@ import { CORRIDOR_PATH, expectNoAppErrors, guardConsole, waitForPlan } from './h
 
 /**
  * Desktop layout (1440x900): the persistent map beside the 400 px sidebar,
- * BetterGov utility bar + nav, and route lines actually painted on the canvas.
+ * the utility bar + nav, and route lines actually painted on the canvas.
  *
  * MapLibre paints a WebGL canvas, so the DOM cannot describe the drawn route.
  * Instead we screenshot the map canvas and count exact route/mode colours in the
@@ -69,7 +69,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow.scrollWidth).toBe(overflow.clientWidth);
 }
 
-test('desktop shell: 400px sidebar, persistent map, BetterGov chrome', async ({ page }) => {
+test('desktop shell: 400px sidebar, persistent map, app chrome', async ({ page }) => {
   const guard = guardConsole(page);
   await page.goto('/');
 
@@ -95,16 +95,16 @@ test('desktop shell: 400px sidebar, persistent map, BetterGov chrome', async ({ 
     page.locator('a[href="https://www.openstreetmap.org/copyright"]'),
   ).toContainText('OpenStreetMap');
 
-  // BetterGov chrome: navy utility bar, service bar, nav links, Figtree type.
+  // App chrome: navy utility bar, service bar, nav links, Figtree type.
   await expect(page.locator('.bg-navy')).toBeVisible();
-  await expect(page.locator('.bg-navy')).toContainText('BetterGov.ph');
+  await expect(page.locator('.bg-navy')).toContainText('open-source');
   const nav = page.locator('header nav');
   await expect(nav.getByRole('link', { name: 'Plano' })).toHaveAttribute('href', '/search');
   await expect(nav.getByRole('link', { name: 'Naka-save' })).toHaveAttribute('href', '/saved');
   await expect(nav.getByRole('link', { name: 'Data' })).toHaveAttribute('href', '/sources');
   await expect(page.locator('body')).toHaveCSS('font-family', /Figtree/);
 
-  // BetterGov blue is the live theme token, not a stale palette.
+  // Brand blue is the live theme token, not a stale palette.
   const brand = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim(),
   );

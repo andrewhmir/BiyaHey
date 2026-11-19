@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCopy } from '../i18n';
 
-/** The BetterGov-family footer: provenance, licence and where to contribute. */
+/** Footer: provenance, licence and where to contribute. */
 export function Footer() {
   const { t } = useCopy();
 
@@ -13,14 +13,11 @@ export function Footer() {
           <p className="mt-1 text-xs text-white/60">{t('app.partOf')} · {t('app.tagline')}</p>
         </div>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
-          <a href="https://bettergov.ph" className="text-white/80 hover:text-white hover:underline">
-            {t('app.bettergov')}
-          </a>
           <Link to="/sources" className="text-white/80 hover:text-white hover:underline">
             {t('footer.linkData')}
           </Link>
           <a
-            href="https://github.com/bettergovph"
+            href="https://github.com/andrewhmir/BiyaHey"
             className="text-white/80 hover:text-white hover:underline"
             rel="noreferrer"
           >

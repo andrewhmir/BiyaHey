@@ -1,7 +1,7 @@
 # Contributing to BiyaHey!
 
-Thanks for helping build a commuter tool people can actually trust. BiyaHey! is a
-[BetterGov.ph](https://bettergov.ph) family app: open by default, small
+Thanks for helping build a commuter tool people can actually trust. BiyaHey! is
+an independent, open-source project: open by default, small
 reviewable changes, real data with visible provenance, and explicit disclosure
 of AI-assisted work. By participating you agree to the
 [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -42,11 +42,11 @@ against the live stack). Unit tests are offline: no network calls in `npm test`.
 - **Copy**: never hardcode rider-facing strings. Every sentence goes through
   `t('key')` from `src/i18n.tsx`, with keys added to both `tl` (default) and `en`
   in `apps/web/src/copy.ts`. This covers `aria-label`s, titles and status text.
-- **Design**: use the Kapwa/Tailwind v4 tokens from `apps/web/src/theme.css`
+- **Design**: use the Tailwind v4 tokens from `apps/web/src/theme.css`
   (`brand`, `ink`, `line`, `canvas`, …), not raw hex colours. Figtree is the
   typeface; cards are `rounded-lg border border-line bg-white`; buttons use the
-  Kapwa `Button` or the `bg-brand` token. Keep it small — no new dependencies
-  without a measured reason.
+  `bg-brand` token. Keep it small — no new dependencies without a measured
+  reason.
 - **Accessibility (WCAG 2.2 AA)**: semantic headings; real `<button>`/`<a>`
   elements; every icon button has an `aria-label`; visible focus states; colour
   is never the only signal; 48 dp targets for entry-point controls; honour
